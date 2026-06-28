@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "composite": true,
+    "skipLibCheck": true,
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "allowSyntheticDefaultImports": true,
+    "strict": true,
+    // Emit the composite build-info / declarations into a temp dir so tsc -b
+    // never drops a stale vite.config.js next to vite.config.ts (which Vite
+    // would load in preference, silently ignoring the real config).
+    "outDir": "./node_modules/.tmp/tsc-node",
+    "emitDeclarationOnly": true
+  },
+  "include": ["vite.config.ts"]
+}

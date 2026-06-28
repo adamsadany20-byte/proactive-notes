@@ -1,0 +1,11 @@
+node_modules
+dist
+*.tsbuildinfo
+
+# build artifacts that must never shadow vite.config.ts
+/vite.config.js
+/vite.config.d.ts
+
+# server secrets / tokens
+server/.env
+server/.google-tokens.json

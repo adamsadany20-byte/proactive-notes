@@ -1,0 +1,162 @@
+import type { Entities, InferenceResult, Note, NoteKind, Stage } from '../types'
+import { extractDate, extractEntities, topicsFromAnswer } from './entities'
+import { classify } from './classify'
+import { nextQuestion } from './questions'
+
+// Fold answers the user gave (via chips / free text) back into the entity set,
+// so an answered date or topic list feeds the generators exactly like one typed
+// into the note body would. Without this, "When is it? → This Friday" would
+// never reach the calendar block.
+function mergeAnswers(entities: Entities, note: Note): Entities {
+  const merged = { ...entities, topics: [...entities.topics] }
+  if (!merged.date && note.answers.date) {
+    const d = extractDate(note.answers.date)
+    if (d) merged.date = d
+  }
+  if (!merged.topics.length && note.answers.topics) {
+    merged.topics = topicsFromAnswer(note.answers.topics)
+  }
+  return merged
+}
+
+// Fields that must be known before a note's workspace is considered "complete".
+// (For events with no date we fall back to requiring a date below.)
+const ESSENTIAL: Record<string, string[]> = {
+  academic: ['date'],
+  event: [],
+  project: ['stack'],
+  goal: ['cadence'],
+  tasks: [],
+}
+
+function fieldSatisfied(field: string, note: Note, entities: Entities): boolean {
+  if (field in note.answers) return true
+  if (field === 'date' && entities.date) return true
+  if (field === 'topics' && entities.topics.length) return true
+  return false
+}
+
+function essentialPending(
+  kind: NoteKind,
+  note: Note,
+  entities: Entities,
+): boolean {
+  let fields = ESSENTIAL[kind] ?? []
+  if (kind === 'event' && !entities.knownEvent) fields = ['date']
+  return fields.some((f) => !fieldSatisfied(f, note, entities))
+}
+
+// Has the note produced anything concrete we could start building a feature
+// from? (A named subject alone is only a classification signal, not yet data.)
+function featureReady(note: Note, entities: Entities): boolean {
+  return (
+    !!entities.date ||
+    entities.topics.length > 0 ||
+    !!entities.knownEvent ||
+    Object.keys(note.answers).length > 0
+  )
+}
+
+// Do we have enough to fully populate every segment this kind would generate?
+function allSegmentsFilled(
+  kind: NoteKind,
+  note: Note,
+  entities: Entities,
+): boolean {
+  const topics =
+    entities.topics.length > 0 || !!entities.subject || 'topics' in note.answers
+  switch (kind) {
+    case 'academic':
+      return !!entities.date && topics
+    case 'event':
+      return !!entities.knownEvent || !!entities.date
+    case 'project':
+      return 'stack' in note.answers && 'timeline' in note.answers
+    case 'goal':
+      return 'cadence' in note.answers
+    case 'tasks':
+      return true
+    default:
+      return featureReady(note, entities)
+  }
+}
+
+function computeStage(
+  kind: NoteKind,
+  confidence: number,
+  note: Note,
+  entities: Entities,
+  paused: boolean,
+  hasQuestion: boolean,
+): Stage {
+  if (kind === 'unknown' || confidence < 0.4) return 'idle'
+
+  const ready = featureReady(note, entities)
+  const essential = essentialPending(kind, note, entities)
+  const filled = allSegmentsFilled(kind, note, entities)
+
+  if (ready && !essential && filled) return 'workspace'
+  if (ready) return 'emerge'
+  if (paused && hasQuestion) return 'prompt'
+  return 'classify'
+}
+
+export interface InferOptions {
+  paused: boolean
+}
+
+// When the LLM has recognized a real-world reference, fold it into the result:
+// override the kind, and for events inject a synthetic known-event so the event
+// flow (highlights, alert) triggers. We mark it synthetic so no fabricated dated
+// calendar entries are created from it.
+function applyEnrichment(
+  note: Note,
+  kind: NoteKind,
+  confidence: number,
+  entities: Entities,
+): { kind: NoteKind; confidence: number } {
+  const e = note.enrichment
+  if (!e || e.status !== 'done' || !e.recognized || !e.kind) {
+    return { kind, confidence }
+  }
+  if (e.kind === 'event' && !entities.knownEvent) {
+    entities.knownEvent = {
+      id: 'enriched',
+      name: e.name || e.candidate,
+      aliases: [],
+      startOffsetDays: 0,
+      durationDays: 0,
+      startTime: '',
+      endTime: '',
+      category: e.category || 'Event',
+      highlights: e.highlights || [],
+      synthetic: true,
+    }
+  }
+  return { kind: e.kind, confidence: Math.max(confidence, e.confidence ?? 0.85) }
+}
+
+export function infer(note: Note, opts: InferOptions): InferenceResult {
+  const rawEntities = extractEntities(note.text)
+  const base = classify(note.text, rawEntities)
+  const entities = mergeAnswers(rawEntities, note)
+  const { kind, confidence } = applyEnrichment(
+    note,
+    base.kind,
+    base.confidence,
+    entities,
+  )
+  const q =
+    kind === 'unknown' || confidence < 0.4
+      ? undefined
+      : nextQuestion(note, kind, entities)
+  const stage = computeStage(
+    kind,
+    confidence,
+    note,
+    entities,
+    opts.paused,
+    !!q,
+  )
+  return { kind, confidence, entities, nextQuestion: q, stage }
+}
