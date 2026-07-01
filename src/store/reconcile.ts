@@ -13,6 +13,7 @@ import {
   makeGoalPlan,
   makeMilestones,
   makeProjectTasks,
+  makePurchasePlan,
   makeStudySchedule,
   makeTopicChecklist,
   uid,
@@ -32,6 +33,8 @@ function desiredTypes(kind: NoteKind): SegmentType[] {
       return ['goal-tracker']
     case 'tasks':
       return ['checklist']
+    case 'purchase':
+      return ['purchase-planner']
     default:
       return []
   }
@@ -53,6 +56,8 @@ function titleFor(type: SegmentType): string {
       return 'Goal tracker'
     case 'event-alert':
       return 'Event'
+    case 'purchase-planner':
+      return 'Buying decision'
   }
 }
 
@@ -78,6 +83,8 @@ function signature(
       return `${a.cadence ?? ''}|${a.target ?? ''}`
     case 'event-alert':
       return `${entities.knownEvent?.id ?? ''}|${entities.knownEvent?.name ?? ''}|${entities.date?.iso ?? ''}|${a.attend ?? ''}|${a.briefing ?? ''}|${note.enrichment?.summary ?? ''}`
+    case 'purchase-planner':
+      return `${note.text.trim().split('\n')[0].slice(0, 60)}|${a.budget ?? ''}|${a.priorities ?? ''}|${a.timing ?? ''}|${entities.amounts?.join(',') ?? ''}`
   }
 }
 
@@ -116,6 +123,10 @@ function buildData(
     }
     case 'goal-tracker': {
       return { data: makeGoalPlan(note), filled: 'cadence' in note.answers }
+    }
+    case 'purchase-planner': {
+      // Usable the moment we know what's being bought — questions enrich it.
+      return { data: makePurchasePlan(note, entities), filled: true }
     }
     case 'event-alert': {
       const ev = entities.knownEvent

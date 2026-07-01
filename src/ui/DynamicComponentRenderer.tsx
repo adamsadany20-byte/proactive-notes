@@ -69,5 +69,12 @@ export function DynamicComponentRenderer({
     return <div className="gen-loading">Rendering…</div>
   }
 
-  return <Component data={data} onChange={onChange} />
+  // Wrap in a surface that sets the app's baseline typography/colour. Generated
+  // components use var(--…) tokens that resolve here; this is the safety net so
+  // even an under-styled component still reads as part of the app.
+  return (
+    <div className="gen-surface">
+      <Component data={data} onChange={onChange} />
+    </div>
+  )
 }

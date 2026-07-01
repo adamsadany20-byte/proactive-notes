@@ -27,6 +27,7 @@ const ESSENTIAL: Record<string, string[]> = {
   project: ['stack'],
   goal: ['cadence'],
   tasks: [],
+  purchase: [],
 }
 
 function fieldSatisfied(field: string, note: Note, entities: Entities): boolean {
@@ -76,6 +77,8 @@ function allSegmentsFilled(
       return 'cadence' in note.answers
     case 'tasks':
       return true
+    case 'purchase':
+      return true
     default:
       return featureReady(note, entities)
   }
@@ -91,7 +94,9 @@ function computeStage(
 ): Stage {
   if (kind === 'unknown' || confidence < 0.4) return 'idle'
 
-  const ready = featureReady(note, entities)
+  // A purchase is actionable the instant it's recognised — the product itself is
+  // the seed, so we don't gate it behind an extracted date/topic like other kinds.
+  const ready = kind === 'purchase' ? true : featureReady(note, entities)
   const essential = essentialPending(kind, note, entities)
   const filled = allSegmentsFilled(kind, note, entities)
 

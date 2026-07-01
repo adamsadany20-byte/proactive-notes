@@ -1,6 +1,6 @@
 import { useStore } from '../store/appStore'
 import { KIND_META } from '../ui/kindMeta'
-import type { AiBackend } from '../services/api'
+import { startCheckout, type AiBackend } from '../services/api'
 
 function preview(text: string): string {
   const first = text.trim().split('\n')[0]
@@ -9,36 +9,42 @@ function preview(text: string): string {
 
 const TIERS: { id: AiBackend; label: string; short: string }[] = [
   { id: 'local', label: 'Local ML', short: 'ML' },
-  { id: 'gemini', label: 'Gemini', short: 'G' },
-  { id: 'haiku', label: 'Claude', short: 'H' },
-  { id: 'groq', label: 'Groq', short: 'Gq' },
+  { id: 'haiku', label: 'Claude', short: 'C' },
 ]
 
 function AiTierSelector() {
   const { state, setBackend } = useStore()
   const active = state.settings.aiBackend
   const cfg = state.config
+  const billing = state.billing
+
+  // Claude is paywalled only when billing is switched on AND this client isn't
+  // subscribed. In free mode (the default) `locked` is always false, so the
+  // tier works normally and you can keep using everything.
+  const locked = !!billing?.billingEnabled && !billing?.subscribed
 
   // Per-tier availability + status line.
   const status = (id: AiBackend): string => {
     if (id === 'local') return 'Free — deterministic engine, no network'
-    if (id === 'gemini')
-      return cfg?.geminiConfigured === false
-        ? 'No GOOGLE_GEMINI_API_KEY on server'
-        : 'Google Gemini for suggestions & tools'
-    if (id === 'groq')
-      return cfg?.groqConfigured === false
-        ? 'No GROQ_API_KEY on server'
-        : 'Groq (Llama) for suggestions & tools'
+    if (locked) return 'Subscribe to unlock Claude tools'
     return cfg?.haikuConfigured === false
       ? 'No ANTHROPIC_API_KEY on server'
-      : 'Claude Haiku for suggestions & tools'
+      : 'Claude for suggestions & tools'
   }
 
   const unconfigured = (id: AiBackend): boolean =>
-    (id === 'gemini' && cfg?.geminiConfigured === false) ||
-    (id === 'haiku' && cfg?.haikuConfigured === false) ||
-    (id === 'groq' && cfg?.groqConfigured === false)
+    id === 'haiku' && cfg?.haikuConfigured === false
+
+  const onPick = async (id: AiBackend) => {
+    // A locked Claude tier sends the user to checkout rather than switching.
+    if (id === 'haiku' && locked) {
+      const { url, error } = await startCheckout()
+      if (url) window.location.href = url
+      else if (error) alert(error)
+      return
+    }
+    setBackend(id)
+  }
 
   return (
     <div className="ai-toggle">
@@ -51,9 +57,10 @@ function AiTierSelector() {
             role="radio"
             aria-checked={active === t.id}
             title={status(t.id)}
-            onClick={() => setBackend(t.id)}
+            onClick={() => onPick(t.id)}
           >
             {t.label}
+            {t.id === 'haiku' && locked && <span className="tier-lock"> 🔒</span>}
             {unconfigured(t.id) && <span className="tier-warn"> ·!</span>}
           </button>
         ))}
@@ -83,7 +90,7 @@ export function Sidebar() {
           <span className="dot" />
           <span className="brand-text">
             <span className="brand-name">Evolve</span>
-            <span className="brand-tag">Enhance your notes</span>
+            <span className="brand-tag">Notes that think ahead</span>
           </span>
         </div>
         <button className="icon-btn" title="New note" onClick={createNote}>
@@ -141,9 +148,8 @@ export function Sidebar() {
       <div className="side-foot">
         <AiTierSelector />
         <p style={{ marginTop: 12 }}>
-          Notes evolve as you type. The local engine handles everything; a cloud
-          tier (Gemini or Claude) is only consulted for richer suggestions and
-          tool generation.
+          Notes evolve as you type. The local engine handles everything; Claude
+          is only consulted for richer suggestions and tool generation.
         </p>
       </div>
     </div>

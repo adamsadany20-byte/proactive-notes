@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { generateCustomFeature } from '../engine/codeGenerator'
 import {
   suggestFeatures,
@@ -6,6 +6,7 @@ import {
 } from '../engine/featureSuggester'
 import { DynamicComponentRenderer } from './DynamicComponentRenderer'
 import { useStore } from '../store/appStore'
+import { startCheckout, recommendApi, type Recommendation } from '../services/api'
 import type { Note } from '../types'
 
 interface GeneratedFeature {
@@ -27,23 +28,20 @@ export function FeatureGenerator({ note }: Props) {
   const { state, setBackend } = useStore()
   const backend = state.settings.aiBackend
   const aiOn = backend !== 'local'
-  // Whether the *active* cloud tier has its key on the server.
+  // Paywalled only when billing is on and this client isn't subscribed. Free
+  // mode (default) leaves this false so the generator stays fully usable.
+  const locked = !!state.billing?.billingEnabled && !state.billing?.subscribed
+
+  const goToCheckout = async () => {
+    const { url, error } = await startCheckout()
+    if (url) window.location.href = url
+    else if (error) alert(error)
+  }
+  // Whether the Claude tier has its key on the server.
   const aiConfigured =
-    backend === 'gemini'
-      ? state.config?.geminiConfigured !== false
-      : backend === 'groq'
-        ? state.config?.groqConfigured !== false
-        : backend === 'haiku'
-          ? state.config?.haikuConfigured !== false
-          : true
-  const backendLabel =
-    backend === 'gemini' ? 'Gemini' : backend === 'groq' ? 'Groq' : 'Claude Haiku'
-  const backendKeyEnv =
-    backend === 'gemini'
-      ? 'GOOGLE_GEMINI_API_KEY'
-      : backend === 'groq'
-        ? 'GROQ_API_KEY'
-        : 'ANTHROPIC_API_KEY'
+    backend === 'haiku' ? state.config?.haikuConfigured !== false : true
+  const backendLabel = 'Claude'
+  const backendKeyEnv = 'ANTHROPIC_API_KEY'
 
   const [suggestions, setSuggestions] = useState<FeatureSuggestion[]>([])
   const [suggesting, setSuggesting] = useState(false)
@@ -51,25 +49,59 @@ export function FeatureGenerator({ note }: Props) {
   const [request, setRequest] = useState('')
   const [generated, setGenerated] = useState<GeneratedFeature[]>([])
 
-  const handleSuggest = async () => {
-    setSuggesting(true)
-    setSuggestError(null)
-    try {
-      const { suggestions, error } = await suggestFeatures(note.text, backend)
-      if (error) {
-        setSuggestError(`${backendLabel}: ${error}`)
-      } else if (suggestions.length === 0) {
-        setSuggestError(
-          `No suggestions came back from ${backendLabel}. Check the server has ${backendKeyEnv} set, or describe a tool below.`
-        )
+  // Seamless discovery: instead of a button, suggestions surface on their own a
+  // beat after you stop typing (on the Claude tier). Debounced, cached by text,
+  // and stale responses are ignored so it never flickers or races.
+  const reqId = useRef(0)
+  const lastText = useRef('')
+  useEffect(() => {
+    if (!aiOn || !aiConfigured || locked) return
+    const text = note.text.trim()
+    if (text.length < 8 || text === lastText.current) return
+    const handle = setTimeout(async () => {
+      const myId = ++reqId.current
+      lastText.current = text
+      setSuggesting(true)
+      setSuggestError(null)
+      try {
+        const { suggestions, error } = await suggestFeatures(text, backend)
+        if (myId !== reqId.current) return
+        if (error) setSuggestError(`${backendLabel}: ${error}`)
+        setSuggestions(suggestions)
+      } catch (err) {
+        if (myId === reqId.current) setSuggestError(String(err))
+      } finally {
+        if (myId === reqId.current) setSuggesting(false)
       }
-      setSuggestions(suggestions)
-    } catch (err) {
-      setSuggestError(String(err))
-    } finally {
-      setSuggesting(false)
-    }
-  }
+    }, 1200)
+    return () => clearTimeout(handle)
+  }, [note.text, aiOn, aiConfigured, locked, backend, backendLabel])
+
+  // Real-world recommendations — the AI reaching beyond the note to name actual
+  // products, places, books, tools worth knowing about. Same seamless pattern.
+  const [recs, setRecs] = useState<Recommendation[]>([])
+  const [recHeading, setRecHeading] = useState('')
+  const [recsOpen, setRecsOpen] = useState(true)
+  const recReqId = useRef(0)
+  const lastRecText = useRef('')
+  useEffect(() => {
+    if (!aiOn || !aiConfigured || locked) return
+    const text = note.text.trim()
+    if (text.length < 8 || text === lastRecText.current) return
+    const handle = setTimeout(async () => {
+      const myId = ++recReqId.current
+      lastRecText.current = text
+      try {
+        const { heading, recommendations } = await recommendApi(text, backend)
+        if (myId !== recReqId.current) return
+        setRecHeading(heading)
+        setRecs(recommendations)
+      } catch {
+        /* recommendations are a bonus; stay quiet on failure */
+      }
+    }, 1600)
+    return () => clearTimeout(handle)
+  }, [note.text, aiOn, aiConfigured, locked, backend])
 
   const buildFeature = async (
     label: string,
@@ -151,6 +183,31 @@ export function FeatureGenerator({ note }: Props) {
     )
   }
 
+  if (aiOn && locked) {
+    return (
+      <div className="gen">
+        <div className="gen-head">
+          <span className="gen-title">Evolve this note</span>
+        </div>
+        <div className="gen-locked">
+          <p>
+            <strong>Evolve Pro</strong> lets Claude suggest and build custom,
+            interactive tools tailored to each note. Your notes keep classifying
+            and building their workspace for free on the Local engine.
+          </p>
+          <div className="gen-tier-actions">
+            <button className="gen-build" onClick={goToCheckout}>
+              ✦ Subscribe to unlock
+            </button>
+            <button className="gen-suggest" onClick={() => setBackend('local')}>
+              Stay on Local
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   if (!aiOn) {
     return (
       <div className="gen">
@@ -161,27 +218,15 @@ export function FeatureGenerator({ note }: Props) {
           <p>
             You’re on the <strong>Local ML</strong> tier — the note still
             classifies, extracts dates and topics, and builds its workspace
-            offline. Pick a cloud tier to let Evolve suggest and build custom
+            offline. Switch to Claude to let Evolve suggest and build custom
             tools (flashcards, trackers, schedules) for this note.
           </p>
           <div className="gen-tier-actions">
             <button
               className="gen-suggest"
-              onClick={() => setBackend('gemini')}
-            >
-              ✦ Use Gemini
-            </button>
-            <button
-              className="gen-suggest"
               onClick={() => setBackend('haiku')}
             >
-              ✦ Use Claude Haiku
-            </button>
-            <button
-              className="gen-suggest"
-              onClick={() => setBackend('groq')}
-            >
-              ✦ Use Groq
+              ✦ Use Claude
             </button>
           </div>
         </div>
@@ -189,17 +234,17 @@ export function FeatureGenerator({ note }: Props) {
     )
   }
 
+  const showSkeleton = suggesting && suggestions.length === 0
+
   return (
     <div className="gen">
       <div className="gen-head">
         <span className="gen-title">Evolve this note</span>
-        <button
-          className="gen-suggest"
-          onClick={handleSuggest}
-          disabled={suggesting || !aiConfigured}
-        >
-          {suggesting ? 'Composing…' : '✦ Suggest tools'}
-        </button>
+        {suggesting && suggestions.length > 0 && (
+          <span className="gen-thinking">
+            <span className="gen-spinner" /> rethinking…
+          </span>
+        )}
       </div>
 
       {!aiConfigured && (
@@ -212,6 +257,21 @@ export function FeatureGenerator({ note }: Props) {
 
       {suggestError && <div className="gen-error">{suggestError}</div>}
 
+      {showSkeleton && (
+        <div className="gen-suggestions">
+          <div className="gen-sub">finding tools that fit…</div>
+          <div className="gen-chips">
+            {[132, 96, 150].map((w, i) => (
+              <span
+                key={i}
+                className="gen-chip-skel skel"
+                style={{ width: w, animationDelay: `${i * 0.12}s` }}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
       {suggestions.length > 0 && (
         <div className="gen-suggestions">
           <div className="gen-sub">Tailored to what you’re writing</div>
@@ -222,6 +282,7 @@ export function FeatureGenerator({ note }: Props) {
                 className="gen-chip"
                 onClick={() => buildFeature(s.label, s.icon, s.description)}
                 title={s.description}
+                style={{ animationDelay: `${i * 0.06}s` }}
               >
                 <span className="gen-chip-icon">{s.icon}</span>
                 {s.label}
@@ -231,13 +292,46 @@ export function FeatureGenerator({ note }: Props) {
         </div>
       )}
 
+      {recs.length > 0 && (
+        <div className="gen-recs">
+          <button
+            className="gen-recs-toggle"
+            onClick={() => setRecsOpen((o) => !o)}
+            aria-expanded={recsOpen}
+          >
+            <span className="gen-sub">{recHeading || 'Worth a look'}</span>
+            <span className="gen-recs-count">{recs.length}</span>
+            <span className={`gen-recs-chevron ${recsOpen ? 'open' : ''}`}>
+              ⌄
+            </span>
+          </button>
+          {recsOpen && (
+            <ul className="rec-list">
+              {recs.map((r, i) => (
+                <li
+                  className="rec-item"
+                  key={`${r.name}-${i}`}
+                  style={{ animationDelay: `${i * 0.06}s` }}
+                >
+                  <div className="rec-top">
+                    <span className="rec-name">{r.name}</span>
+                    <span className="rec-kind">{r.kind}</span>
+                  </div>
+                  <div className="rec-detail">{r.detail}</div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
       <div className="gen-ask">
         <input
           className="gen-input"
           value={request}
           onChange={(e) => setRequest(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && handleFreeText()}
-          placeholder="Or describe any tool you need…"
+          placeholder="Or tell me what to build…"
         />
         <button
           className="gen-build"

@@ -9,6 +9,7 @@ export type NoteKind =
   | 'project' // something to build / plan
   | 'goal' // a personal goal / habit
   | 'tasks' // a checklist / todo list
+  | 'purchase' // a product / thing the user is deciding to buy
   | 'general' // plain note, no special flow
 
 // The four evolution stages described in the spec.
@@ -96,6 +97,15 @@ export type SegmentType =
   | 'project-board'
   | 'goal-tracker'
   | 'event-alert'
+  | 'purchase-planner'
+
+// One candidate in a buying decision — the user fills price/notes in to compare.
+export interface PurchaseOption {
+  id: string
+  name: string
+  price: string
+  note: string
+}
 
 export interface Flashcard {
   id: string
@@ -109,6 +119,27 @@ export interface ChecklistItem {
   id: string
   text: string
   done: boolean
+  // Optional reminder — an ISO datetime the item is due. Surfaces a due/overdue
+  // badge and (while the app is open) a browser notification when it lands.
+  remindAt?: string
+}
+
+// ---- Mind map ("Map" mode) --------------------------------------------------
+
+export interface MindNode {
+  id: string
+  text: string
+  x: number // centre coordinates within the canvas
+  y: number
+}
+export interface MindEdge {
+  id: string
+  from: string
+  to: string
+}
+export interface MindMap {
+  nodes: MindNode[]
+  edges: MindEdge[]
 }
 
 export interface StudySession {
@@ -173,6 +204,8 @@ export interface Note {
   entities?: Entities
   // World-knowledge enrichment from the LLM, when the local engine escalated.
   enrichment?: Enrichment
+  // Ideas connected on the "Map" mode canvas. Independent of the written text.
+  mindmap?: MindMap
 }
 
 export interface InferenceResult {

@@ -4,6 +4,7 @@ import type {
   Milestone,
   Note,
   ProjectTask,
+  PurchaseOption,
   Segment,
   StudySession,
   ChecklistItem,
@@ -153,4 +154,74 @@ export function makeGoalPlan(note: Note): { cadence: string; target: string; str
 
 function pad(n: number): string {
   return String(n).padStart(2, '0')
+}
+
+// ---- Buying decision --------------------------------------------------------
+
+function headline(note: Note): string {
+  return note.text.trim().split('\n')[0].slice(0, 60) || 'this purchase'
+}
+
+function splitList(s: string): string[] {
+  return s
+    .split(/[,\n;+/]|\band\b/i)
+    .map((x) => x.trim())
+    .filter((x) => x.length > 1 && x.length < 40)
+    .map((x) => x.charAt(0).toUpperCase() + x.slice(1))
+}
+
+export interface PurchasePlan {
+  product: string
+  budget: string // target price / budget to beat
+  timing: string
+  options: PurchaseOption[]
+  places: ChecklistItem[] // where to look (finding the product)
+  considerations: ChecklistItem[]
+  steps: ChecklistItem[]
+}
+
+// A self-contained buying-decision workspace: a target price to beat, options to
+// price up and compare, where to look for it, what matters, and the homework.
+export function makePurchasePlan(note: Note, entities: Entities): PurchasePlan {
+  const product = headline(note)
+  const budget = note.answers['budget'] || entities.amounts?.[0] || ''
+  const timing = note.answers['timing'] || ''
+
+  const priorities = note.answers['priorities']
+  const considerations = (
+    priorities && splitList(priorities).length
+      ? splitList(priorities)
+      : ['Price', 'Reviews & ratings', 'Build quality', 'Warranty', 'Return policy']
+  ).map((text) => ({ id: uid('cons'), text, done: false }))
+
+  // Where to look — the "find the product" tool.
+  const places = [
+    'Amazon',
+    "The brand's own store",
+    'eBay (new & refurbished)',
+    'A price-comparison site',
+    'Local stores nearby',
+  ].map((text) => ({ id: uid('place'), text, done: false }))
+
+  const steps = [
+    'Read recent reviews',
+    'Check for a voucher or discount code',
+    'Confirm the return & warranty policy',
+    'Set a price-drop alert',
+  ].map((text) => ({ id: uid('step'), text, done: false }))
+
+  // Seed the comparison with the product from the note; the user adds rivals
+  // and fills in prices to track and compare.
+  const options: PurchaseOption[] = [
+    { id: uid('opt'), name: product, price: '', note: '' },
+  ]
+
+  return { product, budget, timing, options, places, considerations, steps }
+}
+
+// Pull a number out of a price string like "£799", "1,299.99", "$59" → 799 etc.
+export function parsePrice(s?: string): number | null {
+  if (!s) return null
+  const m = String(s).replace(/,/g, '').match(/\d+(?:\.\d+)?/)
+  return m ? parseFloat(m[0]) : null
 }

@@ -10,10 +10,16 @@ import type {
   CalendarEvent,
   Enrichment,
   InferenceResult,
+  MindMap,
   Note,
   Segment,
 } from '../types'
-import type { AiBackend, ExternalEvent, ServerConfig } from '../services/api'
+import type {
+  AiBackend,
+  BillingStatus,
+  ExternalEvent,
+  ServerConfig,
+} from '../services/api'
 import { infer } from '../engine/inference'
 import { uid } from '../engine/generate'
 import { seedCalendar } from './calendar'
@@ -33,6 +39,7 @@ interface State {
   selectedId: string | null
   settings: Settings
   config: ServerConfig | null
+  billing: BillingStatus | null
 }
 
 type Action =
@@ -44,8 +51,10 @@ type Action =
   | { type: 'ANSWER'; id: string; field: string; value: string }
   | { type: 'SKIP'; id: string; field: string }
   | { type: 'EDIT_SEGMENT'; id: string; segmentId: string; data: any }
+  | { type: 'SET_MINDMAP'; id: string; mindmap: MindMap }
   | { type: 'SET_BACKEND'; backend: AiBackend }
   | { type: 'SET_CONFIG'; config: ServerConfig }
+  | { type: 'SET_BILLING'; billing: BillingStatus }
   | { type: 'SET_ENRICHMENT'; id: string; enrichment: Enrichment }
   | { type: 'SET_EXTERNAL_EVENTS'; events: ExternalEvent[] }
 
@@ -74,6 +83,7 @@ function freshState(): State {
     selectedId: first.id,
     settings: { aiBackend: 'local', broaderAi: false },
     config: null,
+    billing: null,
   }
 }
 
@@ -86,14 +96,18 @@ function load(): State {
     // Re-seed the fixed calendar each load so relative demo dates stay current,
     // and keep note-owned events. Google events are refetched, not persisted.
     const owned = parsed.calendar.filter((e) => e.noteId)
-    // Migrate older saves: pre-tier state only had `broaderAi`.
-    const backend: AiBackend =
+    // Migrate older saves: pre-tier state only had `broaderAi`, and earlier
+    // versions persisted now-removed 'gemini'/'groq' tiers — collapse those to
+    // the Claude tier so the only valid values are 'local' and 'haiku'.
+    const saved =
       parsed.settings?.aiBackend ?? (parsed.settings?.broaderAi ? 'haiku' : 'local')
+    const backend: AiBackend = saved === 'local' ? 'local' : 'haiku'
     return {
       ...parsed,
       calendar: [...seedCalendar(), ...owned],
       settings: { aiBackend: backend, broaderAi: backend !== 'local' },
       config: null,
+      billing: null,
     }
   } catch {
     return freshState()
@@ -212,6 +226,14 @@ function reducer(state: State, action: Action): State {
       })
       return { ...state, notes }
     }
+    case 'SET_MINDMAP': {
+      const notes = state.notes.map((n) =>
+        n.id === action.id
+          ? { ...n, mindmap: action.mindmap, updatedAt: Date.now() }
+          : n,
+      )
+      return { ...state, notes }
+    }
     case 'SET_BACKEND':
       return {
         ...state,
@@ -223,6 +245,8 @@ function reducer(state: State, action: Action): State {
       }
     case 'SET_CONFIG':
       return { ...state, config: action.config }
+    case 'SET_BILLING':
+      return { ...state, billing: action.billing }
     case 'SET_EXTERNAL_EVENTS': {
       const calendar = [
         ...state.calendar.filter((e) => e.source !== 'google'),
@@ -257,8 +281,10 @@ interface StoreApi {
   answer: (id: string, field: string, value: string) => void
   skip: (id: string, field: string) => void
   editSegment: (id: string, segmentId: string, data: any) => void
+  setMindmap: (id: string, mindmap: MindMap) => void
   setBackend: (backend: AiBackend) => void
   setConfig: (config: ServerConfig) => void
+  setBilling: (billing: BillingStatus) => void
   setEnrichment: (id: string, enrichment: Enrichment) => void
   setExternalEvents: (events: ExternalEvent[]) => void
 }
@@ -289,8 +315,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       skip: (id, field) => dispatch({ type: 'SKIP', id, field }),
       editSegment: (id, segmentId, data) =>
         dispatch({ type: 'EDIT_SEGMENT', id, segmentId, data }),
+      setMindmap: (id, mindmap) => dispatch({ type: 'SET_MINDMAP', id, mindmap }),
       setBackend: (backend) => dispatch({ type: 'SET_BACKEND', backend }),
       setConfig: (config) => dispatch({ type: 'SET_CONFIG', config }),
+      setBilling: (billing) => dispatch({ type: 'SET_BILLING', billing }),
       setEnrichment: (id, enrichment) =>
         dispatch({ type: 'SET_ENRICHMENT', id, enrichment }),
       setExternalEvents: (events) =>

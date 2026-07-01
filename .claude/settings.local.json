@@ -18,7 +18,30 @@
       "Skill(run)",
       "Skill(run:*)",
       "Bash(npx tsc *)",
-      "Bash(node --check server/index.js)"
+      "Bash(node --check server/index.js)",
+      "Bash(git config *)",
+      "Bash(git remote *)",
+      "Bash(git push *)",
+      "Bash(npm run *)",
+      "Bash(npm install *)",
+      "Bash(npm run dev > /tmp/dev-server.log 2>&1 & *)",
+      "Bash(curl -s http://localhost:5173)",
+      "Bash(curl -s http://localhost:8787/health)",
+      "Bash(killall npm *)",
+      "Bash(tee /tmp/dev.log)",
+      "Bash(curl -s http://localhost:8787)",
+      "Bash(node --check index.js)",
+      "Bash(timeout 5 node server/index.js)",
+      "Bash(node server/index.js)",
+      "Bash(pkill -f \"node server\")",
+      "Bash(wait)",
+      "Bash(curl -s http://localhost:8787/)",
+      "Bash(netstat -tln)",
+      "Bash(node server/index.js > /tmp/server-run.log 2>&1 & *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5173)",
+      "Bash(lsof -iTCP:8787 -sTCP:LISTEN -n -P)",
+      "Bash(curl -s -m 5 http://localhost:8787/api/config)",
+      "Bash(npm start *)"
     ]
   }
 }

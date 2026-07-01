@@ -83,7 +83,7 @@ export function CalendarPanel() {
       <div className="cal-list">
         {days.length === 0 && (
           <div style={{ padding: 16, color: 'var(--ink-faint)', fontSize: 13 }}>
-            Nothing scheduled. Events the agent creates will appear here.
+            Your week’s clear. Anything I schedule for you lands here.
           </div>
         )}
         {days.map((iso) => {

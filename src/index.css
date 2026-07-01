@@ -1,44 +1,64 @@
 :root {
-  --bg: #f4f2f8;
-  --panel: #ffffff;
-  --panel-2: #faf9fd;
-  --ink: #1a1726;
-  --ink-soft: #5a566e;
-  --ink-faint: #9893ac;
-  --line: #e8e5f0;
-  --line-soft: #f1eff7;
+  /* ---- Earthy identity (single, baked-in) --------------------------------
+     Warm stone surfaces, espresso ink, a clay accent. No themes, no toggles —
+     one considered palette. */
+  --bg: #ece5d7;
+  --panel: #fbf9f3;
+  --panel-2: #f3ede1;
+  --ink: #2a2620;
+  --ink-soft: #6a6253;
+  --ink-faint: #a89d88;
+  --line: #e3dac7;
+  --line-soft: #ece4d4;
 
-  --accent: #5a3fb0;
-  --accent-soft: #ece7fb;
-  --accent-ink: #3c2980;
+  --accent: #b0563a; /* clay / terracotta */
+  --accent-soft: color-mix(in srgb, var(--accent) 13%, var(--panel));
+  --accent-ink: color-mix(in srgb, var(--accent) 64%, var(--ink));
 
-  /* regal gold — used sparingly for accents and flourishes */
-  --gold: #b08a2e;
-  --gold-soft: #f7efd8;
-  --gold-ink: #876314;
+  /* Warm inset top-edge highlight on raised surfaces. */
+  --card-highlight: rgba(255, 253, 246, 0.7);
 
-  --serif: 'Iowan Old Style', 'Palatino Linotype', Palatino, 'Book Antiqua',
-    Georgia, serif;
+  /* Modern sans for headings + brand — character comes from type, motion,
+     shape and the clay accent, not ornament. */
+  --display: 'Inter', var(--font);
 
-  /* per-kind tints */
-  --academic: #2e90fa;
-  --academic-soft: #e8f2ff;
-  --event: #f0883e;
-  --event-soft: #fdeede;
-  --project: #12b886;
-  --project-soft: #e3f8f0;
-  --goal: #e64980;
-  --goal-soft: #fde7f0;
-  --tasks: #845ef7;
-  --tasks-soft: #efeaff;
-  --general: #868e96;
-  --general-soft: #eef0f2;
+  /* per-kind tints — each -soft derives from its base against the panel so the
+     kind identity stays legible on the warm surface. */
+  --academic: #3a7ec0;
+  --academic-soft: color-mix(in srgb, var(--academic) 13%, var(--panel));
+  --event: #cd7a35;
+  --event-soft: color-mix(in srgb, var(--event) 13%, var(--panel));
+  --project: #4f8a5b;
+  --project-soft: color-mix(in srgb, var(--project) 13%, var(--panel));
+  --goal: #c0496a;
+  --goal-soft: color-mix(in srgb, var(--goal) 13%, var(--panel));
+  --tasks: #8268c4;
+  --tasks-soft: color-mix(in srgb, var(--tasks) 13%, var(--panel));
+  --general: #8a8170;
+  --general-soft: color-mix(in srgb, var(--general) 13%, var(--panel));
+  --purchase: #3a9aa0;
+  --purchase-soft: color-mix(in srgb, var(--purchase) 13%, var(--panel));
 
-  --radius: 14px;
-  --radius-sm: 9px;
-  --shadow: 0 1px 2px rgba(40, 28, 80, 0.05), 0 10px 30px rgba(40, 28, 80, 0.07);
-  --shadow-lg: 0 16px 50px rgba(40, 28, 80, 0.16);
-  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', Roboto,
+  /* Shape language — a signature asymmetric "leaf" corner: three soft corners
+     and one tucked-in. It reads as crafted and distinctive rather than the
+     default rounded rectangle everywhere. */
+  --radius: 17px;
+  --radius-sm: 11px;
+  /* Two notch orientations so cards aren't all the same silhouette: segments
+     tuck the bottom-left; the note card (the "head" of the page) tucks the
+     top-right, near its mode toggle. */
+  --radius-notch: 21px 21px 21px 6px;
+  --radius-notch-note: 22px 7px 22px 22px;
+  --radius-notch-sm: 13px 13px 13px 4px;
+
+  /* Warm, layered elevation. */
+  --shadow-sm: 0 1px 2px rgba(74, 56, 28, 0.06),
+    0 1px 3px rgba(74, 56, 28, 0.04);
+  --shadow: 0 1px 2px rgba(74, 56, 28, 0.05),
+    0 6px 16px rgba(74, 56, 28, 0.07), 0 16px 38px rgba(74, 56, 28, 0.07);
+  --shadow-lg: 0 2px 6px rgba(74, 56, 28, 0.1),
+    0 20px 56px rgba(74, 56, 28, 0.17);
+  --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
     Helvetica, Arial, sans-serif;
 }
 
@@ -55,11 +75,27 @@ body,
 
 body {
   font-family: var(--font);
-  background: var(--bg);
+  background-color: var(--bg);
+  /* A single, quiet accent wash high on the page — just enough depth behind the
+     flat panels to feel considered, and it re-tints with the chosen accent. */
+  background-image: radial-gradient(
+    1200px 680px at 88% -10%,
+    color-mix(in srgb, var(--accent) 7%, transparent),
+    transparent 60%
+  );
+  background-attachment: fixed;
   color: var(--ink);
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
   font-size: 15px;
-  line-height: 1.5;
+  line-height: 1.45;
+  letter-spacing: -0.005em;
+}
+
+/* Modern, consistent focus ring across all interactive elements. */
+:where(button, input, textarea, [role='button'], [tabindex]):focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: 2px;
 }
 
 button {
@@ -115,18 +151,23 @@ button {
   flex: none;
   width: 26px;
   height: 26px;
-  border-radius: 8px;
-  background: linear-gradient(150deg, #7a5cd6 0%, var(--accent) 55%, #2f1f6e 100%);
-  box-shadow: 0 3px 10px rgba(90, 63, 176, 0.45),
-    inset 0 1px 1px rgba(255, 255, 255, 0.4),
-    inset 0 0 0 1px rgba(184, 138, 46, 0.5);
+  border-radius: var(--radius-notch-sm);
+  /* Echoes the signature notch of the cards. */
+  background: linear-gradient(
+    150deg,
+    color-mix(in srgb, var(--accent) 72%, white) 0%,
+    var(--accent) 52%,
+    color-mix(in srgb, var(--accent) 78%, black) 100%
+  );
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--accent) 42%, transparent),
+    inset 0 1px 1px rgba(255, 255, 255, 0.45);
   position: relative;
 }
 .brand .dot::after {
   content: '';
   position: absolute;
   inset: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-notch-sm);
   background: radial-gradient(
     circle at 30% 25%,
     rgba(255, 255, 255, 0.55),
@@ -139,16 +180,16 @@ button {
   line-height: 1.05;
 }
 .brand-name {
-  font-family: var(--serif);
+  font-family: var(--display);
   font-size: 19px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
+  font-weight: 700;
+  letter-spacing: -0.02em;
   color: var(--ink);
 }
 .brand-tag {
-  font-size: 10.5px;
-  letter-spacing: 0.04em;
-  color: var(--gold-ink);
+  font-size: 11px;
+  letter-spacing: normal;
+  color: var(--ink-faint);
   font-weight: 500;
   margin-top: 2px;
 }
@@ -178,23 +219,30 @@ button {
 }
 .note-item {
   text-align: left;
-  border: none;
+  border: 1px solid transparent;
   background: transparent;
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   padding: 10px 11px;
   display: flex;
   flex-direction: column;
   gap: 3px;
   width: 100%;
-  transition: background 0.15s ease;
+  transition: background 0.15s ease, border-color 0.15s ease;
   position: relative;
 }
 .note-item:hover {
   background: var(--line-soft);
 }
+/* Selected note: a tucked-corner clay chip — selection wears the shape motif
+   rather than a generic white-card highlight. */
 .note-item.active {
-  background: var(--panel);
-  box-shadow: var(--shadow);
+  background: color-mix(in srgb, var(--accent) 9%, var(--panel));
+  border-color: color-mix(in srgb, var(--accent) 22%, var(--line));
+  border-radius: var(--radius-notch-sm);
+  box-shadow: var(--shadow-sm);
+}
+.note-item.active .ni-title {
+  color: var(--accent-ink);
 }
 .note-item .ni-title {
   font-weight: 550;
@@ -285,6 +333,10 @@ button {
 .tier-opt.on {
   background: var(--accent);
   color: #fff;
+}
+.tier-lock {
+  font-size: 9px;
+  opacity: 0.8;
 }
 .tier-warn {
   color: #d9822b;
@@ -397,21 +449,178 @@ button {
   background: #4285f4;
 }
 
+/* ---- Write / Map mode toggle --------------------------------------------- */
+
+.mode-seg {
+  display: flex;
+  gap: 3px;
+  margin-left: auto;
+  background: var(--line-soft);
+  border-radius: 9px;
+  padding: 3px;
+}
+.mode-opt {
+  border: none;
+  background: transparent;
+  border-radius: 7px;
+  padding: 4px 11px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-faint);
+  transition: background 0.15s ease, color 0.15s ease, transform 0.14s ease;
+}
+.mode-opt:hover {
+  color: var(--ink-soft);
+}
+.mode-opt.on {
+  background: var(--panel);
+  color: var(--accent-ink);
+  box-shadow: var(--shadow-sm);
+}
+
+/* ---- Mind map ------------------------------------------------------------- */
+
+.mindmap-wrap {
+  padding: 6px 14px 16px;
+}
+.mm-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.mm-btn {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 9px;
+  transition: all 0.14s ease;
+}
+.mm-btn:hover {
+  color: var(--accent-ink);
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.mm-btn.on {
+  background: var(--accent);
+  color: #fff;
+  border-color: transparent;
+}
+.mm-hint {
+  font-size: 11.5px;
+  color: var(--ink-faint);
+}
+.mindmap {
+  position: relative;
+  height: 440px;
+  border-radius: var(--radius-notch);
+  border: 1px solid var(--line);
+  background-color: var(--panel-2);
+  /* soft organic dot grid */
+  background-image: radial-gradient(
+    color-mix(in srgb, var(--ink-faint) 30%, transparent) 1px,
+    transparent 1px
+  );
+  background-size: 22px 22px;
+  overflow: hidden;
+  touch-action: none;
+}
+.mindmap.linking {
+  cursor: crosshair;
+}
+.mm-edges {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.mm-edge {
+  stroke: color-mix(in srgb, var(--accent) 55%, transparent);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+}
+.mm-node {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--panel);
+  border: 1.5px solid color-mix(in srgb, var(--accent) 28%, var(--line));
+  border-radius: 999px;
+  padding: 6px 8px 6px 13px;
+  box-shadow: var(--shadow);
+  cursor: grab;
+  max-width: 200px;
+}
+.mm-node:active {
+  cursor: grabbing;
+}
+.mm-node.picked {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow);
+}
+.mm-node-input {
+  border: none;
+  background: transparent;
+  outline: none;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--ink);
+  width: 100%;
+  min-width: 40px;
+  max-width: 150px;
+}
+.mm-node-del {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--ink-faint);
+  font-size: 10px;
+  display: grid;
+  place-items: center;
+  opacity: 0;
+  transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
+}
+.mm-node:hover .mm-node-del {
+  opacity: 1;
+}
+.mm-node-del:hover {
+  background: var(--goal-soft);
+  color: var(--goal);
+}
+
 /* ---- Note editor --------------------------------------------------------- */
 
 .note-card {
   width: 100%;
   max-width: 720px;
   background: var(--panel);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  border-radius: var(--radius-notch-note);
+  box-shadow: var(--shadow), inset 0 1px 0 var(--card-highlight);
   border: 1px solid var(--line);
-  border-left: 3px solid transparent;
-  transition: border-left-color 0.5s ease, box-shadow 0.3s ease;
+  transition: border-color 0.45s ease, box-shadow 0.4s ease, background 0.45s ease;
   position: relative;
 }
+/* Recognised note: no edge sliver. The whole card warms to the kind — a tinted
+   hairline border and a soft wash that pools out of the tucked corner, plus a
+   faint tint halo. Distinctive and calm, not a generic accent stripe. */
 .note-card.tinted {
-  border-left-color: var(--tint);
+  border-color: color-mix(in srgb, var(--tint) 38%, var(--line));
+  background: radial-gradient(
+      120% 90% at 100% 0%,
+      color-mix(in srgb, var(--tint) 9%, var(--panel)),
+      var(--panel) 60%
+    );
+  box-shadow: var(--shadow), inset 0 1px 0 var(--card-highlight),
+    0 0 0 4px color-mix(in srgb, var(--tint) 8%, transparent);
 }
 
 .editor-top {
@@ -572,10 +781,14 @@ button {
 .segment {
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  border-radius: var(--radius-notch);
+  box-shadow: var(--shadow), inset 0 1px 0 var(--card-highlight);
   overflow: hidden;
+  transition: box-shadow 0.25s ease, transform 0.25s ease;
   animation: slideUp 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.segment:hover {
+  box-shadow: var(--shadow-lg), inset 0 1px 0 var(--card-highlight);
 }
 .seg-head {
   display: flex;
@@ -587,7 +800,7 @@ button {
 .seg-head .seg-ico {
   width: 26px;
   height: 26px;
-  border-radius: 8px;
+  border-radius: var(--radius-notch-sm);
   display: grid;
   place-items: center;
   font-size: 14px;
@@ -682,6 +895,114 @@ button {
   font-size: 13.5px;
 }
 
+/* task reminders */
+.rem {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+.rem-add {
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  opacity: 0.35;
+  padding: 2px 4px;
+  border-radius: 7px;
+  transition: opacity 0.13s ease, background 0.13s ease;
+}
+.check-item:hover .rem-add {
+  opacity: 0.7;
+}
+.rem-add:hover {
+  opacity: 1;
+  background: var(--accent-soft);
+}
+.rem-pill {
+  border: none;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 9px;
+  border-radius: 20px;
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  white-space: nowrap;
+}
+.rem-pill.soon {
+  background: color-mix(in srgb, var(--event) 18%, var(--panel));
+  color: color-mix(in srgb, var(--event) 70%, var(--ink));
+}
+.rem-pill.overdue {
+  background: color-mix(in srgb, var(--goal) 18%, var(--panel));
+  color: color-mix(in srgb, var(--goal) 72%, var(--ink));
+}
+.rem-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.rem-edit input {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 8px;
+  padding: 4px 7px;
+  font-size: 11.5px;
+  font-family: inherit;
+  color: var(--ink);
+  color-scheme: light dark;
+}
+.rem-clear {
+  border: none;
+  background: transparent;
+  color: var(--ink-faint);
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 3px 6px;
+  border-radius: 7px;
+}
+.rem-clear:hover {
+  color: var(--goal);
+  background: var(--goal-soft);
+}
+
+/* reminder toast */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 26px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-lg);
+  border-radius: 14px;
+  padding: 12px 14px 12px 15px;
+  max-width: 440px;
+  z-index: 50;
+  animation: slideUp 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.toast-ico {
+  font-size: 17px;
+}
+.toast-text {
+  font-size: 13.5px;
+  font-weight: 550;
+  color: var(--ink);
+}
+.toast-x {
+  margin-left: 6px;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 9px;
+}
+
 /* flashcards */
 .deck {
   display: grid;
@@ -725,8 +1046,7 @@ button {
 .fc-topic {
   font-size: 10px;
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: normal;
   color: var(--tint-ink);
   opacity: 0.85;
 }
@@ -809,8 +1129,7 @@ button {
 .board-col h4 {
   margin: 2px 2px 9px;
   font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: normal;
   color: var(--ink-faint);
 }
 .board-card {
@@ -835,8 +1154,7 @@ button {
 .milestones h4 {
   margin: 0 0 8px;
   font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: normal;
   color: var(--ink-faint);
 }
 .ms-row {
@@ -863,6 +1181,150 @@ button {
   border-radius: 20px;
   padding: 3px 10px;
   font-weight: 550;
+}
+
+/* buying decision */
+.opt-head {
+  font-size: 12.5px;
+  font-weight: 650;
+  letter-spacing: normal;
+  color: var(--ink-soft);
+  margin: 2px 2px 9px;
+}
+/* price tracking summary */
+.price-track {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  padding: 10px 13px;
+  margin-bottom: 14px;
+  border-radius: var(--radius-notch-sm);
+  background: var(--tint-soft);
+  border: 1px solid color-mix(in srgb, var(--tint) 22%, transparent);
+}
+.pt-label {
+  font-size: 11.5px;
+  color: var(--tint-ink);
+  font-weight: 600;
+}
+.pt-value {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+.pt-where {
+  font-size: 12px;
+  color: var(--ink-soft);
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pt-delta {
+  margin-left: auto;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--project);
+}
+.price-track.over .pt-delta {
+  color: var(--goal);
+}
+.opt-row.best .opt-price {
+  border-color: color-mix(in srgb, var(--project) 55%, transparent);
+  color: color-mix(in srgb, var(--project) 70%, var(--ink));
+  font-weight: 650;
+}
+.opt-head span {
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.opt-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.opt-row {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+}
+.opt-name,
+.opt-price {
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  border-radius: var(--radius-sm);
+  padding: 8px 11px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--ink);
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.opt-name {
+  flex: 1;
+  min-width: 0;
+}
+.opt-price {
+  width: 84px;
+  flex: none;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.opt-name:focus,
+.opt-price:focus {
+  border-color: color-mix(in srgb, var(--tint) 50%, transparent);
+  box-shadow: 0 0 0 3px var(--tint-soft);
+}
+.opt-remove {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--ink-faint);
+  font-size: 12px;
+  display: grid;
+  place-items: center;
+  transition: background 0.13s ease, color 0.13s ease;
+}
+.opt-remove:hover {
+  background: var(--goal-soft);
+  color: var(--goal);
+}
+.opt-add {
+  margin-top: 9px;
+  border: 1px dashed var(--line);
+  background: transparent;
+  color: var(--tint-ink);
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 7px 12px;
+  border-radius: var(--radius-sm);
+  width: 100%;
+  transition: background 0.14s ease, border-color 0.14s ease;
+}
+.opt-add:hover {
+  background: var(--tint-soft);
+  border-color: color-mix(in srgb, var(--tint) 35%, transparent);
+}
+.purchase-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+  margin-top: 16px;
+}
+@media (max-width: 620px) {
+  .purchase-cols {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
 }
 
 /* event alert */
@@ -959,8 +1421,7 @@ button {
 }
 .cal-date .m {
   font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: normal;
   margin-top: 3px;
 }
 .cal-info .ci-title {
@@ -1000,8 +1461,7 @@ button {
 .cal-dayhead {
   font-size: 11px;
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: normal;
   color: var(--ink-faint);
   padding: 6px 4px;
   position: sticky;
@@ -1036,11 +1496,10 @@ button {
   animation: popIn 0.5s cubic-bezier(0.2, 0.9, 0.3, 1) both;
 }
 .ce-tag {
-  font-size: 9.5px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  padding: 1px 6px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: normal;
+  padding: 1px 8px;
   border-radius: 20px;
   margin-left: auto;
   align-self: center;
@@ -1195,11 +1654,11 @@ button {
   margin-bottom: 14px;
 }
 .gen-title {
-  font-family: var(--serif);
+  font-family: var(--display);
   font-size: 16px;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--ink);
-  letter-spacing: 0.01em;
+  letter-spacing: -0.02em;
 }
 .gen-suggest {
   border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
@@ -1222,13 +1681,15 @@ button {
 }
 
 .gen-sub {
-  font-size: 11.5px;
-  color: var(--gold-ink);
-  letter-spacing: 0.03em;
+  font-size: 12px;
+  color: var(--ink-soft);
+  letter-spacing: normal;
+  font-weight: 500;
   margin-bottom: 9px;
 }
 .gen-suggestions {
   margin-bottom: 16px;
+  animation: fadeIn 0.4s ease both;
 }
 .gen-chips {
   display: flex;
@@ -1245,17 +1706,134 @@ button {
   font-size: 13px;
   font-weight: 500;
   padding: 8px 14px;
-  border-radius: 22px;
-  transition: all 0.15s ease;
-  box-shadow: var(--shadow);
+  border-radius: 999px;
+  transition: transform 0.16s cubic-bezier(0.2, 0.8, 0.2, 1),
+    border-color 0.16s ease, color 0.16s ease, box-shadow 0.16s ease;
+  box-shadow: var(--shadow-sm);
+  /* staggered entrance; per-chip delay set inline */
+  animation: chip-rise 0.42s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 .gen-chip:hover {
-  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
   color: var(--accent-ink);
-  transform: translateY(-1px);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow);
 }
 .gen-chip-icon {
   font-size: 15px;
+}
+@keyframes chip-rise {
+  from {
+    opacity: 0;
+    transform: translateY(7px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+/* skeleton chips while suggestions are being found */
+.gen-chip-skel {
+  display: inline-block;
+  height: 36px;
+  border-radius: 999px;
+}
+.gen-thinking {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-faint);
+}
+
+/* Real-world recommendations */
+.gen-recs {
+  margin-bottom: 18px;
+  animation: fadeIn 0.4s ease both;
+}
+/* Collapsible header — the whole row toggles the list open/closed. */
+.gen-recs-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 0 0 9px;
+  margin: 0;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+}
+.gen-recs-toggle .gen-sub {
+  margin-bottom: 0;
+}
+.gen-recs-count {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  background: var(--line-soft);
+  padding: 1px 8px;
+  border-radius: 999px;
+  line-height: 1.6;
+}
+.gen-recs-chevron {
+  margin-left: auto;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--ink-faint);
+  transform: rotate(-90deg);
+  transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1), color 0.15s ease;
+}
+.gen-recs-chevron.open {
+  transform: rotate(0deg);
+}
+.gen-recs-toggle:hover .gen-recs-chevron {
+  color: var(--accent);
+}
+.rec-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.rec-item {
+  padding: 11px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-notch-sm);
+  background: var(--panel);
+  box-shadow: var(--shadow-sm);
+  animation: chip-rise 0.42s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.rec-top {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+}
+.rec-name {
+  font-weight: 650;
+  font-size: 13.5px;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+}
+.rec-kind {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+  padding: 1px 9px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.rec-detail {
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  margin-top: 3px;
+  line-height: 1.45;
 }
 
 .gen-ask {
@@ -1312,9 +1890,10 @@ button {
 .gen-card {
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  border-radius: var(--radius-notch);
+  box-shadow: var(--shadow), inset 0 1px 0 var(--card-highlight);
   overflow: hidden;
+  animation: slideUp 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 .gen-card-head {
   display: flex;
@@ -1328,9 +1907,10 @@ button {
   display: flex;
   align-items: center;
   gap: 9px;
-  font-family: var(--serif);
-  font-weight: 600;
+  font-family: var(--display);
+  font-weight: 700;
   font-size: 14.5px;
+  letter-spacing: -0.015em;
   color: var(--ink);
 }
 .gen-card-icon {
@@ -1395,7 +1975,7 @@ button {
 }
 .gen-locked {
   border: 1px dashed var(--line);
-  border-radius: var(--radius);
+  border-radius: var(--radius-notch);
   padding: 20px;
   background: var(--panel-2);
   text-align: center;
@@ -1406,7 +1986,173 @@ button {
   color: var(--ink-soft);
   line-height: 1.5;
 }
+.gen-locked .gen-tier-actions {
+  justify-content: center;
+}
+.gen-locked .gen-build {
+  padding: 9px 18px;
+}
 .gen-suggestions + .gen-ask .gen-error,
 .gen > .gen-error {
   margin: 0 0 14px;
+}
+
+/* Baseline for AI-generated tools so they read as native even if the model
+   under-styles. :where() keeps specificity at 0, so any inline style the
+   generated component sets always wins over these defaults. */
+.gen-surface {
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--ink);
+  padding: 4px;
+}
+.gen-surface :where(h1, h2, h3, h4, h5) {
+  font-family: var(--display);
+  font-weight: 600;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+  margin: 0 0 8px;
+}
+.gen-surface :where(p) {
+  margin: 0 0 8px;
+  color: var(--ink-soft);
+}
+.gen-surface :where(label) {
+  color: var(--ink-soft);
+}
+.gen-surface :where(button) {
+  font-family: inherit;
+  cursor: pointer;
+}
+.gen-surface :where(input, textarea, select) {
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--ink);
+}
+.gen-surface :where(input, textarea, select):focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  outline-offset: 1px;
+}
+.gen-surface :where(table) {
+  border-collapse: collapse;
+  width: 100%;
+}
+.gen-surface :where(th, td) {
+  text-align: left;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.gen-surface :where(th) {
+  font-size: 11px;
+  letter-spacing: normal;
+  color: var(--ink-faint);
+}
+
+/* ---- Character & motion ---------------------------------------------------
+   The small, deliberate details that make the app feel like a crafted
+   companion rather than a form: on-brand selection, tactile feedback, a brand
+   mark that quietly breathes, and motion that respects the user's settings. */
+
+/* Text selection + caret carry the accent, so even highlighting feels on-brand. */
+::selection {
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+}
+textarea,
+input {
+  caret-color: var(--accent);
+}
+
+/* One unified, satisfying "press" across every control — a tiny give on click. */
+.gen-suggest:active:not(:disabled),
+.gen-build:active:not(:disabled),
+.gen-chip:active,
+.chip:active,
+.seed-btn:active,
+.cal-conn:active,
+.icon-btn:active,
+.tier-opt:active,
+.note-delete:active,
+.gen-act:active,
+.prompt-input button:active,
+.prompt-skip:active {
+  transform: translateY(0.5px) scale(0.97);
+}
+/* Keep transitions snappy and consistent for the press. */
+.gen-chip,
+.chip,
+.seed-btn,
+.cal-conn,
+.icon-btn,
+.tier-opt {
+  transition: transform 0.14s cubic-bezier(0.2, 0.8, 0.2, 1),
+    background 0.15s ease, color 0.15s ease, border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+/* The brand mark gently breathes, so the companion feels awake but never busy. */
+@keyframes brand-breathe {
+  0%,
+  100% {
+    box-shadow: 0 4px 12px color-mix(in srgb, var(--accent) 38%, transparent),
+      inset 0 1px 1px rgba(255, 255, 255, 0.45);
+  }
+  50% {
+    box-shadow: 0 6px 18px color-mix(in srgb, var(--accent) 58%, transparent),
+      inset 0 1px 1px rgba(255, 255, 255, 0.55);
+  }
+}
+.brand .dot {
+  animation: brand-breathe 6s ease-in-out infinite;
+}
+.brand:hover .dot {
+  transform: rotate(-5deg) scale(1.07);
+  transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* The agent's sparkle pulses softly while it's thinking. */
+.ambient.world .pulse,
+.prompt-q .ai {
+  animation: ai-glow 1.8s ease-in-out infinite;
+}
+@keyframes ai-glow {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+/* Quiet, on-theme scrollbars — present when needed, never shouting. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--ink-faint) 45%, transparent)
+    transparent;
+}
+*::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+}
+*::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--ink-faint) 42%, transparent);
+  border-radius: 10px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--ink-faint) 64%, transparent);
+  background-clip: padding-box;
+}
+
+/* Accessibility — honour reduced-motion: keep the meaning, drop the movement. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }

@@ -10,19 +10,70 @@ const API_BASE =
   ((import.meta as any).env?.VITE_API_BASE as string | undefined) ??
   'http://localhost:8787'
 
-// Which AI tier the user has selected. 'local' never touches the network.
-export type AiBackend = 'local' | 'gemini' | 'haiku' | 'groq'
+// Which AI tier the user has selected. 'local' never touches the network;
+// 'haiku' routes to Claude on the backend.
+export type AiBackend = 'local' | 'haiku'
 
 export interface ServerConfig {
-  aiConfigured: boolean // legacy: true if ANY cloud tier has a key
+  aiConfigured: boolean // true if the Claude tier has a key
   haikuConfigured: boolean
-  geminiConfigured: boolean
-  groqConfigured: boolean
   calendarConfigured: boolean
   calendarConnected: boolean
   enrichModel?: string
-  geminiModel?: string
-  groqModel?: string
+  billingEnabled?: boolean
+  billingConfigured?: boolean
+}
+
+// A stable, anonymous per-browser id. It ties Stripe subscriptions to this
+// client without requiring a login. Persisted in localStorage; created lazily.
+const CLIENT_ID_KEY = 'evolve.clientId'
+export function getClientId(): string {
+  try {
+    let id = localStorage.getItem(CLIENT_ID_KEY)
+    if (!id) {
+      id =
+        (typeof crypto !== 'undefined' && crypto.randomUUID?.()) ||
+        `c_${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`
+      localStorage.setItem(CLIENT_ID_KEY, id)
+    }
+    return id
+  } catch {
+    return 'anon'
+  }
+}
+
+export interface BillingStatus {
+  billingEnabled: boolean
+  billingConfigured: boolean
+  freeMode: boolean
+  // True whenever the client may use paid features — always true in free mode.
+  subscribed: boolean
+}
+
+export function fetchBillingStatus() {
+  return safeJson<BillingStatus>(
+    API_BASE +
+      '/api/billing/status?clientId=' +
+      encodeURIComponent(getClientId()),
+  )
+}
+
+// Begin checkout. Returns a Stripe URL to redirect to, or an error/freeMode hint.
+export async function startCheckout(): Promise<{
+  url?: string
+  freeMode?: boolean
+  error?: string
+}> {
+  const r = await safeJson<{ url?: string; freeMode?: boolean; error?: string }>(
+    API_BASE + '/api/billing/checkout',
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ clientId: getClientId() }),
+    },
+  )
+  if (!r) return { error: 'Could not reach the server.' }
+  return r
 }
 
 export interface EnrichResult {
@@ -73,7 +124,7 @@ export function enrich(text: string, candidate: string, backend?: AiBackend) {
   return safeJson<EnrichResult>(API_BASE + '/api/enrich', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ text, candidate, backend }),
+    body: JSON.stringify({ text, candidate, backend, clientId: getClientId() }),
   })
 }
 
@@ -94,7 +145,7 @@ export async function suggestFeaturesApi(
   }>(API_BASE + '/api/suggest', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ text, backend }),
+    body: JSON.stringify({ text, backend, clientId: getClientId() }),
   })
   if (!r) {
     return {
@@ -111,6 +162,34 @@ export async function suggestFeaturesApi(
   return { suggestions: r.suggestions ?? [], error: r.error }
 }
 
+export interface Recommendation {
+  name: string
+  kind: string
+  detail: string
+}
+
+export async function recommendApi(
+  text: string,
+  backend?: AiBackend,
+): Promise<{ heading: string; recommendations: Recommendation[]; error?: string }> {
+  const r = await safeJson<{
+    configured: boolean
+    heading?: string
+    recommendations?: Recommendation[]
+    error?: string
+  }>(API_BASE + '/api/recommend', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ text, backend, clientId: getClientId() }),
+  })
+  if (!r || r.configured === false) return { heading: '', recommendations: [] }
+  return {
+    heading: r.heading ?? 'Worth a look',
+    recommendations: (r.recommendations ?? []).filter((x) => x?.name && x?.detail),
+    error: r.error,
+  }
+}
+
 export async function generateFeatureApi(
   label: string,
   description: string,
@@ -122,7 +201,13 @@ export async function generateFeatureApi(
     {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ label, description, text, backend }),
+      body: JSON.stringify({
+        label,
+        description,
+        text,
+        backend,
+        clientId: getClientId(),
+      }),
     },
   )
 }

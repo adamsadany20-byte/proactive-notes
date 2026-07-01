@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Note } from '../types'
 import { useStore } from '../store/appStore'
 import { useInference } from '../ui/useInference'
@@ -8,12 +8,14 @@ import { ContextualPrompt } from './ContextualPrompt'
 import { SegmentView } from './Segments'
 import { eventConflicts } from '../store/reconcile'
 import { FeatureGenerator } from '../ui/FeatureGenerator'
+import { MindMap } from './MindMap'
 
 export function NoteEditor({ note }: { note: Note }) {
   const { state, setText, answer, skip } = useStore()
   const result = useInference(note)
   useWorldKnowledge(note, result)
   const taRef = useRef<HTMLTextAreaElement>(null)
+  const [mode, setMode] = useState<'write' | 'map'>('write')
 
   // Auto-grow the textarea without ever moving the caret.
   useEffect(() => {
@@ -46,31 +48,48 @@ export function NoteEditor({ note }: { note: Note }) {
         style={tintVars(result.kind)}
       >
         <div className="editor-top">
-          {recognised && meta.label && (
+          {mode === 'write' && recognised && meta.label && (
             <span className="ambient">
               <span className="pulse" />
               {meta.icon} {meta.label}
               <span className="conf">{Math.round(result.confidence * 100)}%</span>
             </span>
           )}
-          {note.enrichment?.status === 'pending' && (
+          {mode === 'write' && note.enrichment?.status === 'pending' && (
             <span className="ambient world">
-              <span className="pulse" />✦ consulting world knowledge…
+              <span className="pulse" />✦ looking into that…
             </span>
           )}
+          <div className="mode-seg" role="tablist" aria-label="Note mode">
+            {(['write', 'map'] as const).map((m) => (
+              <button
+                key={m}
+                role="tab"
+                aria-selected={mode === m}
+                className={`mode-opt ${mode === m ? 'on' : ''}`}
+                onClick={() => setMode(m)}
+              >
+                {m === 'write' ? '✎ Write' : '✦ Map'}
+              </button>
+            ))}
+          </div>
         </div>
 
-        <textarea
-          ref={taRef}
-          className="note-text"
-          value={note.text}
-          placeholder="Start writing… try “maths test”, “WWDC”, or “budgeting app”"
-          spellCheck={false}
-          autoFocus
-          onChange={(e) => setText(note.id, e.target.value)}
-        />
+        {mode === 'write' ? (
+          <textarea
+            ref={taRef}
+            className="note-text"
+            value={note.text}
+            placeholder="Start with a few words — “maths test”, “WWDC”, a trip you’re planning… I’ll shape the rest around it."
+            spellCheck={false}
+            autoFocus
+            onChange={(e) => setText(note.id, e.target.value)}
+          />
+        ) : (
+          <MindMap note={note} />
+        )}
 
-        {showPrompt && result.nextQuestion && (
+        {mode === 'write' && showPrompt && result.nextQuestion && (
           <ContextualPrompt
             question={result.nextQuestion}
             onAnswer={(field, value) => answer(note.id, field, value)}
@@ -79,7 +98,7 @@ export function NoteEditor({ note }: { note: Note }) {
         )}
       </div>
 
-      {showWorkspace && (
+      {mode === 'write' && showWorkspace && (
         <div className="workspace" style={tintVars(result.kind)}>
           {note.segments.map((seg) => (
             <SegmentView
@@ -92,7 +111,7 @@ export function NoteEditor({ note }: { note: Note }) {
         </div>
       )}
 
-      {note.text.trim().length >= 3 && (
+      {mode === 'write' && note.text.trim().length >= 3 && (
         <div className="workspace" style={tintVars(result.kind)}>
           <FeatureGenerator note={note} />
         </div>

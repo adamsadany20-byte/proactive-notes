@@ -27,13 +27,11 @@ npm run dev:server   # backend only
 All keys live in `server/.env` (copy `server/.env.example` to `server/.env`):
 
 ```
-ANTHROPIC_API_KEY=sk-ant-...     # Claude Haiku tier
-GOOGLE_GEMINI_API_KEY=AIza...    # Gemini tier
-GROQ_API_KEY=gsk_...             # Groq tier
+ANTHROPIC_API_KEY=sk-ant-...     # Claude tier
 ```
 
-Leave any blank — that tier shows "not configured" and the app keeps working on
-the others (and on the always-free Local ML tier).
+Leave it blank — the Claude tier shows "not configured" and the app keeps
+working on the always-free Local ML tier.
 
 ---
 
@@ -60,9 +58,8 @@ Open http://localhost:8787 — the whole app runs from the one server.
 3. Settings:
    - **Build command:** `VITE_API_BASE="" npm install && npm run build`
    - **Start command:** `npm start`
-   - **Environment variables:** add `ANTHROPIC_API_KEY`, `GOOGLE_GEMINI_API_KEY`,
-     `GROQ_API_KEY` (and `AI_MODEL`, `GEMINI_MODEL`, `GROQ_MODEL` if you want to
-     override the defaults). Render sets `PORT` automatically.
+   - **Environment variables:** add `ANTHROPIC_API_KEY` (and `AI_MODEL` if you
+     want to override the default). Render sets `PORT` automatically.
 4. Deploy. Render gives you a public URL like `https://your-app.onrender.com`.
 
 Railway and Fly.io work the same way (same build/start commands + env vars).
@@ -75,54 +72,85 @@ Only if you want the frontend on a CDN:
 
 ---
 
+## Enabling Google Calendar in production
+
+The Calendar integration is optional and off until you add credentials. To turn
+it on for a live deployment:
+
+1. In the [Google Cloud Console](https://console.cloud.google.com/): create an
+   OAuth 2.0 Client (type **Web application**) and **enable the Google Calendar API**.
+2. Under the client's **Authorized redirect URIs**, add your production callback —
+   it must match `GOOGLE_REDIRECT_URI` **exactly**:
+   `https://your-app.onrender.com/auth/google/callback`
+3. Set these env vars on the backend:
+   - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
+   - `GOOGLE_REDIRECT_URI=https://your-app.onrender.com/auth/google/callback`
+   - `APP_ORIGIN=https://your-app.onrender.com` (where the browser lands after OAuth)
+4. Redeploy. The Calendar panel will show **Connect Google** once configured.
+
+Notes:
+- The redirect URI and the Google Console entry must be **byte-for-byte identical**
+  (scheme, host, path) or Google returns `redirect_uri_mismatch`.
+- If a user revokes access (or the refresh token expires), the next Calendar call
+  detects the dead grant, clears the stored token, and the UI falls back to
+  **Connect Google** so they can reconnect — no restart needed.
+- Token storage (`server/.google-tokens.json`) is single-user/dev-grade. For a
+  real multi-user launch, move to per-user tokens in your accounts database
+  (see the accounts step on the roadmap).
+
+---
+
 ## Adding subscriptions (Stripe)
 
-The app already has the tier system the paywall will gate on:
-`settings.aiBackend` = `local | gemini | haiku | groq`. Local ML is the free
-tier; the cloud tiers are what you charge for.
+**The subscription infrastructure is already built and wired up.** It gates the
+Claude AI tools (`/api/suggest`, `/api/generate-feature`, `/api/enrich`) behind
+an active Stripe subscription — but only when you turn it on. While
+`BILLING_ENABLED=false` (the default) everything is free and nothing is gated,
+so you can keep building and testing without paying.
 
-### The pieces you'll add
+### What's implemented
+- **Master switch:** `BILLING_ENABLED` env var. `false` = free mode (default);
+  `true` = enforce the paywall.
+- **Client identity (no login yet):** the browser generates a stable anonymous
+  `clientId` (localStorage `evolve.clientId`) and sends it with every request.
+  Subscriptions are keyed by it in `server/.subscriptions.json` (dev-grade flat
+  file — see `server/entitlementStore.js`). Swap this store for a real DB +
+  accounts when you add login; the record shape already maps onto a users table.
+- **Endpoints** (`server/index.js`):
+  - `GET /api/billing/status?clientId=…` → `{ billingEnabled, freeMode, subscribed }`.
+  - `POST /api/billing/checkout` → creates a Stripe Checkout Session, returns its URL.
+  - `POST /api/billing/webhook` → source of truth; handles
+    `checkout.session.completed`, `customer.subscription.updated`, and
+    `customer.subscription.deleted` (raw-body signature verification).
+- **Backend gate (the real one):** the three AI routes return **402** unless
+  `hasAccess(clientId)` — never trusts the frontend.
+- **Frontend:** when billing is on and the client isn't subscribed, the Claude
+  tier shows a 🔒 and routes to checkout, and the "Evolve this note" panel shows
+  a Subscribe CTA. In free mode none of this appears.
+
+### Turning it on
 1. **Stripe account** → create a Product with a recurring Price (e.g. £5/mo).
-   Copy the Price ID (`price_...`) and your secret key (`sk_live_...` / `sk_test_...`).
-2. **Backend: checkout endpoint** — `POST /api/checkout` creates a Stripe Checkout
-   Session and returns its URL; the frontend redirects the user there.
-   ```js
-   // server/index.js (sketch)
-   import Stripe from 'stripe'
-   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY)
-   app.post('/api/checkout', async (req, res) => {
-     const session = await stripe.checkout.sessions.create({
-       mode: 'subscription',
-       line_items: [{ price: process.env.STRIPE_PRICE_ID, quantity: 1 }],
-       success_url: `${process.env.APP_ORIGIN}/?paid=1`,
-       cancel_url: `${process.env.APP_ORIGIN}/`,
-     })
-     res.json({ url: session.url })
-   })
-   ```
-3. **Backend: webhook** — `POST /api/stripe/webhook` listens for
-   `checkout.session.completed` and `customer.subscription.deleted` to mark a
-   user as subscribed / unsubscribed. Store that status (needs a small database
-   once you have real users — e.g. Postgres on Render, or Supabase).
-4. **Gate the tiers** — before allowing a cloud tier, check subscription status.
-   Two layers:
-   - **Frontend:** if not subscribed, the Gemini/Claude/Groq toggles show
-     "Upgrade" and call `/api/checkout` instead of switching.
-   - **Backend (the real gate):** `/api/suggest`, `/api/generate-feature`,
-     `/api/enrich` verify the user is subscribed before calling a paid model.
-     Never trust the frontend alone for paywalls.
+   Copy the Price ID (`price_…`) and secret key (`sk_test_…` / `sk_live_…`).
+2. Set in `server/.env`: `BILLING_ENABLED=true`, `STRIPE_SECRET_KEY`,
+   `STRIPE_PRICE_ID`, and `STRIPE_WEBHOOK_SECRET`.
+3. **Webhook:** in the Stripe dashboard (or `stripe listen --forward-to
+   localhost:8787/api/billing/webhook` for local) point it at
+   `/api/billing/webhook` and subscribe to the three events above.
+4. Restart the server. The startup log prints the billing state.
 
-### Prerequisite: user accounts
-Subscriptions need to know *who* is subscribed, which means login. Easiest path
-for a solo dev: **Supabase Auth** or **Clerk** (hosted, free tier) — they give
-you login + a user ID you attach the Stripe customer to. This is the one larger
-piece to add before charging money.
+### Before charging real money: accounts
+The `clientId` approach is per-browser, not per-person — fine for wiring up and
+testing, but for production you want real login so a subscription follows the
+user across devices. Easiest path for a solo dev: **Supabase Auth** or **Clerk**
+(hosted, free tier). Replace `clientId` with the authenticated user id and point
+`entitlementStore` at a real database (e.g. Postgres on Render, or Supabase).
 
 ---
 
 ## Recommended order
-1. ✅ Get all tiers working locally (current step).
-2. Deploy the single service to Render with a test build — confirm it runs publicly.
-3. Add accounts (Supabase/Clerk).
-4. Add Stripe checkout + webhook + backend gating.
-5. Keep improving the local ML and the UI.
+1. ✅ Get all tiers working locally.
+2. ✅ Subscription infrastructure (free mode by default).
+3. Deploy the single service to Render with a test build — confirm it runs publicly.
+4. Add accounts (Supabase/Clerk) and swap `clientId` → user id + a real DB.
+5. Flip `BILLING_ENABLED=true` with live Stripe keys.
+6. Keep improving the local ML and the UI.

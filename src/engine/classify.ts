@@ -5,6 +5,28 @@ interface Scored {
   score: number
 }
 
+// Each kind's signals are ordered strongest-first. The first regex is the
+// "primary" intent signal (weighted highest); later ones are supporting cues.
+// Scoring counts how MANY distinct keywords hit (density), not just whether one
+// did — so a note packed with academic language outscores one with a single
+// incidental match, which makes the classifier markedly more discriminating.
+const PRIMARY_WEIGHT = 1.0
+const SUPPORT_WEIGHT = 0.65
+
+// Count non-overlapping matches of a (possibly non-global) pattern.
+function countMatches(re: RegExp, text: string): number {
+  const g = re.global ? re : new RegExp(re.source, re.flags + 'g')
+  const m = text.match(g)
+  return m ? m.length : 0
+}
+
+// Diminishing-returns contribution: 1 hit = weight, more hits add less each.
+// Caps so a keyword-stuffed note can't run away with the score.
+function signalScore(hits: number, weight: number): number {
+  if (hits <= 0) return 0
+  return weight * (1 + Math.min(2, hits - 1) * 0.4)
+}
+
 // Keyword signals per kind. Each hit adds weight. Short, natural notes are
 // expected — so even a single strong keyword can classify.
 const SIGNALS: Record<Exclude<NoteKind, 'unknown' | 'general'>, RegExp[]> = {
@@ -29,6 +51,13 @@ const SIGNALS: Record<Exclude<NoteKind, 'unknown' | 'general'>, RegExp[]> = {
     /\b(todo|to-?do|to do|task|tasks|checklist|list|shopping( list)?|grocery|groceries|buy|purchase|order|pack|packing|errands?|chores?|prep|prepare|organi[sz]e|tidy|clean|sort out|pick up|drop off|return|renew|book|schedule|email|send|call|phone|reply|respond|text|message|follow up|submit|file|pay|cancel|fix|finish|complete|wrap up|remember to|don'?t forget|need to|have to|must)\b/,
     /(^|\n)\s*(?:[-*•]|\[[ x]?\]|\d+[.)]|\bstep \d+)\s+/i, // bullet / checkbox / numbered lines
   ],
+  // A deliberate buying decision about a SPECIFIC product — distinct from a quick
+  // shopping list (those stay `tasks`). The primary signals are considered-purchase
+  // phrases or "buy/get a <thing>", not a bare "buy milk".
+  purchase: [
+    /\b(thinking of (buying|getting)|looking to buy|want to buy|wanna buy|need to buy|planning to buy|in the market for|shopping for|should i (buy|get)|deciding (between|on)|upgrade (my|to)|treat myself to|splurge on|invest in a|buy(ing)? (a|an|the|some|new|myself)|get(ting)? (a|an|the|a new|myself a)|new (phone|laptop|car|tv|headphones|camera|console|watch|bike|mattress|desk|chair|monitor|tablet|fridge|sofa|gpu|pc))\b/,
+    /\b(budget|price|prices|pricing|cost|deal|deals|discount|on sale|review|reviews|rating|ratings|warranty|brand|model|specs?|compare|comparison|refurbished|second-?hand|cheaper|worth it|value for money|vs)\b/,
+  ],
 }
 
 export function classify(
@@ -38,12 +67,14 @@ export function classify(
   const trimmed = text.trim()
   if (!trimmed) return { kind: 'unknown', confidence: 0 }
 
+  const lower = text.toLowerCase()
   const scores: Scored[] = []
   for (const kind of Object.keys(SIGNALS) as Array<keyof typeof SIGNALS>) {
     let score = 0
-    for (const re of SIGNALS[kind]) {
-      if (re.test(text.toLowerCase())) score += 1
-    }
+    SIGNALS[kind].forEach((re, i) => {
+      const hits = countMatches(re, lower)
+      score += signalScore(hits, i === 0 ? PRIMARY_WEIGHT : SUPPORT_WEIGHT)
+    })
     if (score > 0) scores.push({ kind, score })
   }
 
@@ -57,9 +88,11 @@ export function classify(
   // People / locations lean towards something happening (an event/meeting).
   if (entities.people?.length && hasSignal(scores, 'event')) bump(scores, 'event', 0.5)
   if (entities.locations?.length && hasSignal(scores, 'event')) bump(scores, 'event', 0.5)
-  // Money cues lean towards tasks (pay/buy) or goals (budget/save).
+  // Money cues lean towards a purchase decision, then goals (budget/save), then
+  // tasks (pay/buy). A price next to buying language is a strong purchase signal.
   if (entities.amounts?.length) {
-    if (hasSignal(scores, 'goal')) bump(scores, 'goal', 0.5)
+    if (hasSignal(scores, 'purchase')) bump(scores, 'purchase', 1)
+    else if (hasSignal(scores, 'goal')) bump(scores, 'goal', 0.5)
     else bump(scores, 'tasks', 0.5)
   }
   // Recurrence cues reinforce a habit/goal reading.
@@ -83,15 +116,20 @@ export function classify(
   const top = scores[0]
   const runnerUp = scores[1]?.score ?? 0
 
-  // Confidence blends signal strength, lead over runner-up, and note length.
+  // Confidence blends absolute signal strength, the lead over the runner-up
+  // (how decisive the win is), and note length. The margin term means an
+  // ambiguous note scoring evenly across kinds reads as lower confidence even
+  // when each kind matched something — a more honest, better-calibrated number.
   const words = trimmed.split(/\s+/).length
   const lengthFactor = Math.min(1, words / 12)
   const lead = top.score - runnerUp
+  const margin = top.score > 0 ? lead / top.score : 0 // 0 = tie, 1 = uncontested
   let confidence =
-    0.45 + // a matched signal already means decent confidence on short input
-    Math.min(0.25, top.score * 0.08) +
-    Math.min(0.15, lead * 0.08) +
-    lengthFactor * 0.15
+    0.42 + // a matched signal already means decent confidence on short input
+    Math.min(0.26, top.score * 0.07) +
+    Math.min(0.16, lead * 0.07) +
+    margin * 0.08 +
+    lengthFactor * 0.12
   confidence = Math.min(0.98, confidence)
 
   return { kind: top.kind, confidence }

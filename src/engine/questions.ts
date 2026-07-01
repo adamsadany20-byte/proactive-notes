@@ -151,6 +151,36 @@ export function nextQuestion(
       return undefined
     }
 
+    case 'purchase': {
+      if (!entities.amounts?.length && !has('budget')) {
+        return {
+          id: 'q-budget',
+          field: 'budget',
+          text: "What's your budget?",
+          chips: ['Under £50', '£50–150', '£150–500', 'Flexible'],
+          placeholder: 'e.g. around £200',
+        }
+      }
+      if (!has('priorities')) {
+        return {
+          id: 'q-priorities',
+          field: 'priorities',
+          text: 'What matters most to you here?',
+          chips: ['Price', 'Quality', 'Reviews', 'Warranty'],
+          placeholder: 'e.g. price, battery life, reviews',
+        }
+      }
+      if (!has('timing')) {
+        return {
+          id: 'q-timing',
+          field: 'timing',
+          text: 'When do you need it by?',
+          chips: ['ASAP', 'This month', 'No rush'],
+        }
+      }
+      return undefined
+    }
+
     default:
       return undefined
   }
