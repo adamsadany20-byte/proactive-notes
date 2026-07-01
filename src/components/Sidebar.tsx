@@ -48,7 +48,7 @@ function AiTierSelector() {
 
   return (
     <div className="ai-toggle">
-      <strong style={{ display: 'block', marginBottom: 6 }}>AI tier</strong>
+      <strong className="ai-tier-label">AI tier</strong>
       <div className="tier-seg" role="radiogroup" aria-label="AI tier">
         {TIERS.map((t) => (
           <button
@@ -65,9 +65,7 @@ function AiTierSelector() {
           </button>
         ))}
       </div>
-      <span className="ai-toggle-text" style={{ display: 'block', marginTop: 6 }}>
-        {status(active)}
-      </span>
+      <span className="ai-toggle-text">{status(active)}</span>
     </div>
   )
 }
@@ -128,7 +126,7 @@ export function Sidebar() {
                     {meta.label}
                   </span>
                 ) : (
-                  <span style={{ opacity: 0.6 }}>Draft</span>
+                  <span className="ni-draft">Draft</span>
                 )}
                 {n.segments.length > 0 && <span>· {n.segments.length} blocks</span>}
               </span>
@@ -147,7 +145,7 @@ export function Sidebar() {
 
       <div className="side-foot">
         <AiTierSelector />
-        <p style={{ marginTop: 12 }}>
+        <p>
           Notes evolve as you type. The local engine handles everything; Claude
           is only consulted for richer suggestions and tool generation.
         </p>

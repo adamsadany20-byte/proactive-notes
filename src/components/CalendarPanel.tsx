@@ -76,13 +76,13 @@ export function CalendarPanel() {
     <div className="col col-cal">
       <div className="cal-head">
         📆 Calendar
-        <span style={{ marginLeft: 'auto' }}>
+        <span className="cal-conn-slot">
           <CalendarConnect />
         </span>
       </div>
       <div className="cal-list">
         {days.length === 0 && (
-          <div style={{ padding: 16, color: 'var(--ink-faint)', fontSize: 13 }}>
+          <div className="cal-empty">
             Your week’s clear. Anything I schedule for you lands here.
           </div>
         )}
@@ -102,7 +102,7 @@ export function CalendarPanel() {
                     className="ce-bar"
                     style={{ background: KIND_COLOR[e.kind] }}
                   />
-                  <div style={{ minWidth: 0, flex: 1 }}>
+                  <div className="ce-main">
                     <div className="ce-title">{e.title}</div>
                     {e.start && (
                       <div className="ce-time">
@@ -114,10 +114,7 @@ export function CalendarPanel() {
                   {KIND_LABEL[e.kind] && (
                     <span
                       className="ce-tag"
-                      style={{
-                        background: 'var(--line-soft)',
-                        color: KIND_COLOR[e.kind],
-                      }}
+                      style={{ color: KIND_COLOR[e.kind] }}
                     >
                       {KIND_LABEL[e.kind]}
                     </span>

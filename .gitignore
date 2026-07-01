@@ -10,3 +10,4 @@ dist
 server/.env
 server/.google-tokens.json
 server/.subscriptions.json
+.DS_Store

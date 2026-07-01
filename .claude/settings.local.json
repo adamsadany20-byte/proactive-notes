@@ -41,7 +41,9 @@
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5173)",
       "Bash(lsof -iTCP:8787 -sTCP:LISTEN -n -P)",
       "Bash(curl -s -m 5 http://localhost:8787/api/config)",
-      "Bash(npm start *)"
+      "Bash(npm start *)",
+      "Bash(git add *)",
+      "Bash(git commit -m 'Professional polish pass: design consistency & code quality *)"
     ]
   }
 }

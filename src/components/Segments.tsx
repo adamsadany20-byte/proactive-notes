@@ -204,7 +204,6 @@ function ChecklistSeg({ note, seg }: { note: Note; seg: Segment }) {
           key={i.id}
           className={`check-item ${i.done ? 'done' : ''}`}
           onClick={() => toggle(i.id)}
-          style={{ cursor: 'pointer' }}
         >
           <span className={`check-box ${i.done ? 'on' : ''}`}>{i.done ? '✓' : ''}</span>
           <span className="ci-text">{i.text}</span>
@@ -259,7 +258,7 @@ function FlashcardSeg({ note, seg }: { note: Note; seg: Segment }) {
       <SegShell seg={seg}>
         <div className="deck">
           {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="skel" style={{ height: 110 }} />
+            <div key={i} className="skel skel-card" />
           ))}
         </div>
       </SegShell>
@@ -383,17 +382,10 @@ function ProjectSeg({ note, seg }: { note: Note; seg: Segment }) {
               <span
                 className={`check-box ${m.done ? 'on' : ''}`}
                 onClick={() => toggleMs(m.id)}
-                style={{ cursor: 'pointer' }}
               >
                 {m.done ? '✓' : ''}
               </span>
-              <span
-                style={{
-                  fontSize: 13,
-                  textDecoration: m.done ? 'line-through' : 'none',
-                  color: m.done ? 'var(--ink-faint)' : 'var(--ink)',
-                }}
-              >
+              <span className={`ms-title ${m.done ? 'done' : ''}`}>
                 {m.title}
               </span>
               {m.due && <span className="ms-due">{relativeDay(m.due)}</span>}
@@ -475,7 +467,7 @@ function EventSeg({
         </div>
       )}
       {d.briefing === 'Yes please' && (
-        <div className="alert" style={{ background: 'var(--project-soft)', borderColor: 'var(--project)' }}>
+        <div className="alert briefing">
           <span className="a-ico">📝</span>
           <div className="a-body">
             A highlights briefing is scheduled for after {d.eventName}.
@@ -595,15 +587,12 @@ function PurchaseSeg({ note, seg }: { note: Note; seg: Segment }) {
         + Add an option
       </button>
 
-      <div className="opt-head" style={{ marginTop: 16 }}>
-        Where to look
-      </div>
+      <div className="opt-head spaced">Where to look</div>
       {places.map((p) => (
         <div
           key={p.id}
           className={`check-item ${p.done ? 'done' : ''}`}
           onClick={() => toggle('places', p.id)}
-          style={{ cursor: 'pointer' }}
         >
           <span className={`check-box ${p.done ? 'on' : ''}`}>{p.done ? '✓' : ''}</span>
           <span className="ci-text">{p.text}</span>
@@ -620,7 +609,6 @@ function PurchaseSeg({ note, seg }: { note: Note; seg: Segment }) {
               key={c.id}
               className={`check-item ${c.done ? 'done' : ''}`}
               onClick={() => toggle('considerations', c.id)}
-              style={{ cursor: 'pointer' }}
             >
               <span className={`check-box ${c.done ? 'on' : ''}`}>{c.done ? '✓' : ''}</span>
               <span className="ci-text">{c.text}</span>
@@ -634,7 +622,6 @@ function PurchaseSeg({ note, seg }: { note: Note; seg: Segment }) {
               key={s.id}
               className={`check-item ${s.done ? 'done' : ''}`}
               onClick={() => toggle('steps', s.id)}
-              style={{ cursor: 'pointer' }}
             >
               <span className={`check-box ${s.done ? 'on' : ''}`}>{s.done ? '✓' : ''}</span>
               <span className="ci-text">{s.text}</span>
