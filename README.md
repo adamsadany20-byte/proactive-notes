@@ -145,3 +145,4 @@ Replace `classify` / `extractEntities` / `nextQuestion` with calls to the
 Anthropic API (e.g. a `claude-opus-4-8` tool-use call returning the same shape)
 and the rest of the app — staging, reconciliation, calendar sync — is unchanged.
 Keep the call on the debounce and cache by note text to stay responsive.
+# proactive-notes
