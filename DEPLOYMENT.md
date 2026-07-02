@@ -53,16 +53,29 @@ npm start                           # serves app + API on http://localhost:8787
 Open http://localhost:8787 — the whole app runs from the one server.
 
 ### Deploy to Render (free tier, beginner-friendly)
+
+Easiest path — the repo includes a blueprint (`render.yaml`):
+
 1. Push this project to a GitHub repo.
-2. On https://render.com → **New → Web Service** → connect the repo.
-3. Settings:
-   - **Build command:** `VITE_API_BASE="" npm install && npm run build`
-   - **Start command:** `npm start`
-   - **Environment variables:** add `ANTHROPIC_API_KEY` (and `AI_MODEL` if you
-     want to override the default). Render sets `PORT` automatically.
+2. On https://render.com → **New → Blueprint** → connect the repo. Render reads
+   `render.yaml` and pre-fills everything.
+3. Paste your `ANTHROPIC_API_KEY` when prompted; leave `APP_ORIGIN` blank for now.
 4. Deploy. Render gives you a public URL like `https://your-app.onrender.com`.
+5. Set `APP_ORIGIN` to that URL (used for Stripe/OAuth redirects) and redeploy.
+
+Manual alternative (**New → Web Service**): build command
+`VITE_API_BASE="" npm install && npm run build`, start command `npm start`,
+env var `ANTHROPIC_API_KEY`. Render sets `PORT` automatically.
 
 Railway and Fly.io work the same way (same build/start commands + env vars).
+
+**Deploying stays free to test.** `BILLING_ENABLED` defaults to `false`, so the
+deployed app is exactly as free as local dev — nothing is gated, no Stripe
+account needed. You can keep editing locally and pushing; Render redeploys on
+every push to the connected branch. (Note: on Render's free tier the service
+sleeps after idle and the first request takes ~30s to wake; also the flat-file
+stores under `server/` reset on redeploy — fine for testing, another reason
+real accounts + a DB come before charging money.)
 
 ### Two-service alternative (Vercel frontend + separate backend)
 Only if you want the frontend on a CDN:
@@ -100,42 +113,59 @@ Notes:
 
 ---
 
-## Adding subscriptions (Stripe)
+## Billing (Stripe — credit model)
 
-**The subscription infrastructure is already built and wired up.** It gates the
-Claude AI tools (`/api/suggest`, `/api/generate-feature`, `/api/enrich`) behind
-an active Stripe subscription — but only when you turn it on. While
-`BILLING_ENABLED=false` (the default) everything is free and nothing is gated,
-so you can keep building and testing without paying.
+**The billing infrastructure is already built and wired up.** It gates the
+Claude AI tools (`/api/suggest`, `/api/recommend`, `/api/generate-feature`,
+`/api/enrich`) — but only when you turn it on. While `BILLING_ENABLED=false`
+(the default) everything is free and nothing is gated, so you can keep building
+and testing without paying.
+
+### The commercial model
+- **£10 one-time activation** unlocks the Claude tools and includes **£1 of AI
+  token credit** (real token value).
+- Every Claude call meters its **actual Anthropic cost** (tokens + web
+  searches, converted to GBP pence) and deducts it from the credit balance.
+- When credit runs out, more is bought at **£2 per £1 of tokens** (default
+  top-up: £4 → £2 of credit). All knobs are env vars — see `server/.env.example`.
 
 ### What's implemented
 - **Master switch:** `BILLING_ENABLED` env var. `false` = free mode (default);
   `true` = enforce the paywall.
 - **Client identity (no login yet):** the browser generates a stable anonymous
   `clientId` (localStorage `evolve.clientId`) and sends it with every request.
-  Subscriptions are keyed by it in `server/.subscriptions.json` (dev-grade flat
+  Balances are keyed by it in `server/.subscriptions.json` (dev-grade flat
   file — see `server/entitlementStore.js`). Swap this store for a real DB +
   accounts when you add login; the record shape already maps onto a users table.
+- **Owner bypass:** `FREE_CLIENT_IDS` — a comma-separated list of clientIds that
+  are never billed. Put your own browser's id there so you can test a deployed
+  app for free even with billing on.
 - **Endpoints** (`server/index.js`):
-  - `GET /api/billing/status?clientId=…` → `{ billingEnabled, freeMode, subscribed }`.
-  - `POST /api/billing/checkout` → creates a Stripe Checkout Session, returns its URL.
-  - `POST /api/billing/webhook` → source of truth; handles
-    `checkout.session.completed`, `customer.subscription.updated`, and
-    `customer.subscription.deleted` (raw-body signature verification).
-- **Backend gate (the real one):** the three AI routes return **402** unless
-  `hasAccess(clientId)` — never trusts the frontend.
-- **Frontend:** when billing is on and the client isn't subscribed, the Claude
-  tier shows a 🔒 and routes to checkout, and the "Evolve this note" panel shows
-  a Subscribe CTA. In free mode none of this appears.
+  - `GET /api/billing/status?clientId=…` → `{ billingEnabled, freeMode,
+    subscribed, active, creditPence, usedPence, pricing }`.
+  - `POST /api/billing/checkout` `{ clientId, kind: 'activate' | 'topup' }` →
+    Stripe Checkout URL (inline `price_data`, no Price objects needed).
+  - `POST /api/billing/webhook` → source of truth; on
+    `checkout.session.completed` it activates the account (+£1 credit) or adds
+    top-up credit (raw-body signature verification).
+- **Backend gate (the real one):** the AI routes return **402** unless
+  `hasAccess(clientId)` — active AND credit remaining — with a `reason`
+  (`not_activated` / `no_credit`) so the UI shows the right CTA.
+- **Metering:** every call's real cost (model tokens at Anthropic's USD prices
+  × `USD_TO_GBP`, plus $0.01/web search) is deducted server-side. Usage is
+  recorded even in free mode, so `usedPence` shows what users would cost you.
+- **Frontend:** when billing is on, the Claude tier shows 🔒 → activation
+  checkout (or a top-up when credit is spent), and the sidebar shows the live
+  credit balance. In free mode none of this appears.
 
 ### Turning it on
-1. **Stripe account** → create a Product with a recurring Price (e.g. £5/mo).
-   Copy the Price ID (`price_…`) and secret key (`sk_test_…` / `sk_live_…`).
+1. **Stripe account** → copy the secret key (`sk_test_…` / `sk_live_…`).
+   No Products/Prices to create — Checkout uses inline `price_data`.
 2. Set in `server/.env`: `BILLING_ENABLED=true`, `STRIPE_SECRET_KEY`,
-   `STRIPE_PRICE_ID`, and `STRIPE_WEBHOOK_SECRET`.
+   `STRIPE_WEBHOOK_SECRET`.
 3. **Webhook:** in the Stripe dashboard (or `stripe listen --forward-to
    localhost:8787/api/billing/webhook` for local) point it at
-   `/api/billing/webhook` and subscribe to the three events above.
+   `/api/billing/webhook` and subscribe to `checkout.session.completed`.
 4. Restart the server. The startup log prints the billing state.
 
 ### Before charging real money: accounts
@@ -147,10 +177,217 @@ user across devices. Easiest path for a solo dev: **Supabase Auth** or **Clerk**
 
 ---
 
+---
+
+## Accounts & Cross-Device Sync (Supabase)
+
+**Notes are currently per-browser** (stored in localStorage). To enable multi-device sync and per-user accounts:
+
+### Step 1: Create Supabase project
+1. Go to https://supabase.com → **New Project**.
+2. Enter a project name, password, and region (pick one closest to you).
+3. Wait for it to spin up (~1 min). You'll land on the dashboard.
+
+### Step 2: Create database tables (SQL)
+In the Supabase dashboard:
+1. Click **SQL Editor** (left sidebar).
+2. Click **New Query** and paste this SQL:
+
+```sql
+create table notes (
+  id text primary key,
+  user_id uuid not null references auth.users on delete cascade,
+  data jsonb not null,
+  updated_at timestamptz not null default now()
+);
+alter table notes enable row level security;
+create policy "own notes" on notes
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+create table reminders (
+  id text primary key,
+  user_id uuid not null references auth.users on delete cascade,
+  data jsonb not null,
+  updated_at timestamptz not null default now()
+);
+alter table reminders enable row level security;
+create policy "own reminders" on reminders
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+```
+
+3. Click **Run**. The tables appear in the left sidebar under your database.
+
+### Step 3: Get your Supabase credentials
+1. Go to **Settings → API** (left sidebar).
+2. Copy:
+   - **Project URL** (the https://xxxxx.supabase.co address)
+   - **anon public** key (the long string under the anon key)
+3. Add these to `server/.env`:
+```
+VITE_SUPABASE_URL=https://xxxxx.supabase.co
+VITE_SUPABASE_ANON_KEY=eyJhbGc...
+```
+
+4. Restart the server: `npm run dev`
+
+### Step 4: Test locally
+- The app now shows a sign-in screen when you load http://localhost:5173.
+- Click **Send Magic Link** and sign in with any email (no real account needed — Supabase sends you a magic link in the **Console → Logs** tab during dev).
+- Create a note. It syncs to Supabase's `notes` table.
+- Open the app on a different browser/incognito window → sign in with the **same email** → your notes appear (pulled from Supabase).
+
+### Step 5: Deploy to production
+When you deploy to Render:
+1. In the Render dashboard, add env vars:
+   - `VITE_SUPABASE_URL=https://xxxxx.supabase.co`
+   - `VITE_SUPABASE_ANON_KEY=eyJhbGc...`
+2. Configure Supabase for your live origin:
+   - In **Authentication → URL Configuration** (Supabase dashboard), add your Render URL under **Redirect URLs**: `https://your-app.onrender.com`
+3. Redeploy. Magic links now work on the live app.
+
+### Notes
+- Without Supabase env vars, the app falls back to localStorage (local-only, no login).
+- Supabase Auth is free tier up to 50,000 users (MAU); same for Postgres storage.
+- Email authentication (magic link) is free. Google/Apple OAuth also works (just enable it in Supabase → Authentication → Providers).
+- Row-level security prevents users from seeing each other's notes — enforced at the database level.
+
+---
+
+## Stripe Billing Setup
+
+**Billing is built and ready — just disabled by default.** To turn it on and start charging:
+
+### Step 1: Create a Stripe account
+1. Go to https://stripe.com → **Start now**.
+2. Sign up. You'll land in **Test mode** (charges don't go through; fine for testing).
+3. Go to **Settings → API keys**. Copy the **Secret key** (starts with `sk_test_`).
+
+### Step 2: Set up the webhook
+Stripe needs to tell your server when a payment succeeds. Two options:
+
+**Local testing (easier first time):**
+```bash
+npm install -g stripe          # install Stripe CLI
+stripe login                   # authenticates you
+stripe listen --forward-to localhost:8787/api/billing/webhook
+```
+This prints a signing secret (`whsec_...`). Copy it.
+
+**Production (after you deploy):**
+1. In the Stripe dashboard, go to **Developers → Webhooks** → **Add endpoint**.
+2. Endpoint URL: `https://your-app.onrender.com/api/billing/webhook`
+3. Select events: `checkout.session.completed`
+4. Reveal the signing secret and copy it.
+
+### Step 3: Configure the server
+Add to `server/.env`:
+```
+BILLING_ENABLED=true
+STRIPE_SECRET_KEY=sk_test_...       # from Step 1
+STRIPE_WEBHOOK_SECRET=whsec_...      # from Step 2
+```
+
+Optionally tweak the business model (all in `server/.env`):
+```
+ACTIVATION_PRICE_PENCE=1000          # £10 (default)
+ACTIVATION_CREDIT_PENCE=100          # £1 included
+TOPUP_PRICE_PENCE=400               # £4 top-up (buys £2 of credit at 2× markup)
+TOKEN_MARKUP=2                       # multiply token cost by this
+```
+
+### Step 4: Test end-to-end
+1. Restart: `npm run dev`
+2. Open the app and switch to Claude tier (AI tab).
+3. Try to enrich/recommend → you'll hit the 402 paywall.
+4. Click **Unlock for £10** → Stripe Checkout loads with test card `4242 4242 4242 4242`, any future date, any CVC.
+5. Complete checkout. The webhook fires, your account activates, and credit is added.
+6. The app now lets you use Claude without hitting the paywall again (until credit runs out).
+
+### Step 5: Switch to live keys
+When you're ready to charge real money:
+1. In Stripe, toggle to **Live mode** (top-left toggle).
+2. Copy your **Live secret key** (`sk_live_…`).
+3. Update `server/.env` and redeploy.
+4. ⚠️ **Add your own clientId to `FREE_CLIENT_IDS`** so your own usage stays free even with billing on:
+   ```
+   FREE_CLIENT_IDS=your-browser-clientid
+   ```
+   (Find your id in browser DevTools → Application → localStorage → `evolve.clientId`)
+
+### Stripe best practices
+- **Test mode is free.** Keep testing before flipping to live.
+- **Webhook secret matters.** Without it, Stripe can't prove the message is real, and the webhook is ignored (fine for local `stripe listen`, but on production you MUST set it).
+- **Stripe Dashboard → Customers** shows who's activated/topped up and their spending.
+- **Chargeback/refund?** Manually clear their credit in `server/.subscriptions.json` (or your DB once you add one). Stripe handles the money; you handle the access.
+
+---
+
+## Complete End-to-End Deployment Flow
+
+### Timeline
+
+**Phase 1: Local Development (today)**
+```bash
+npm install
+npm run dev
+```
+- App runs with localStorage + local ML engine.
+- No Claude tier, no billing, no login.
+
+**Phase 2: Add Supabase (accounts + sync) [optional]**
+1. Create Supabase project + tables (see above).
+2. Copy credentials to `server/.env`.
+3. Restart → app shows login screen.
+4. Notes now sync across your browsers.
+
+**Phase 3: Deploy to Render (public URL)**
+```bash
+# Push to GitHub first
+git add .
+git commit -m "pre-deploy"
+git push
+```
+1. On Render → **New → Blueprint** → connect your repo.
+2. Paste `ANTHROPIC_API_KEY` (Claude tier).
+3. If you added Supabase: also fill in `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`.
+4. Deploy. You get a public URL like `https://your-app.onrender.com`.
+5. Update Supabase if needed (Settings → URL Configuration → Redirect URLs → add your Render URL).
+6. Test: visit the live app, create a note, verify it works.
+
+**Phase 4: Add Stripe billing (monetize) [optional]**
+1. Create Stripe account + get secret key.
+2. Set up webhook → copy signing secret.
+3. Add to `server/.env` (or Render env vars):
+   - `BILLING_ENABLED=true`
+   - `STRIPE_SECRET_KEY=sk_test_…`
+   - `STRIPE_WEBHOOK_SECRET=whsec_…`
+4. Add your browser's `evolve.clientId` to `FREE_CLIENT_IDS` so your testing is free.
+5. Push & redeploy: `git add . && git commit && git push`
+6. Test: hit the paywall, complete a test payment, confirm you get credit.
+
+**Phase 5: Go live (real money)**
+1. In Stripe, toggle to **Live mode**.
+2. Copy **Live secret key** (`sk_live_…`).
+3. Update `STRIPE_SECRET_KEY` in `server/.env` (or Render) to the live key.
+4. **Ensure your `FREE_CLIENT_IDS` is set** (so you don't charge yourself).
+5. Redeploy.
+6. **First real payment:** use a real card (Stripe charges it; you own the money). Verify Stripe Customers shows the charge and your server's `/api/billing/status` shows activation.
+
+### Checklist: Ready to Deploy?
+- [ ] `npm install` + `npm run build` works locally
+- [ ] `npm start` serves the app on http://localhost:8787
+- [ ] GitHub repo exists and is up-to-date
+- [ ] `ANTHROPIC_API_KEY` is set in `server/.env` (or ready to paste into Render)
+- [ ] (Optional) Supabase project created + credentials in `.env`
+- [ ] (Optional) Stripe account created + webhook ready (webhook secret not needed for `stripe listen` during dev)
+- [ ] `.gitignore` includes `server/.env` and `server/.subscriptions.json` (don't commit secrets or local test data)
+
+---
+
 ## Recommended order
 1. ✅ Get all tiers working locally.
-2. ✅ Subscription infrastructure (free mode by default).
+2. ✅ Billing infrastructure (credit model: £10 activation + £1 credit, £2 per £1 of tokens after — free mode by default).
 3. Deploy the single service to Render with a test build — confirm it runs publicly.
-4. Add accounts (Supabase/Clerk) and swap `clientId` → user id + a real DB.
-5. Flip `BILLING_ENABLED=true` with live Stripe keys.
+4. (Optional) Add accounts (Supabase) and swap localStorage → real DB.
+5. (Optional) Flip `BILLING_ENABLED=true` with live Stripe keys (add your own clientId to `FREE_CLIENT_IDS` so your own testing stays free).
 6. Keep improving the local ML and the UI.

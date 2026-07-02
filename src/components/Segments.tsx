@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type {
   ChecklistItem,
   Flashcard,
@@ -12,7 +12,24 @@ import type {
 import { SEGMENT_ICON } from '../ui/kindMeta'
 import { useStore } from '../store/appStore'
 import { relativeDay } from '../store/calendar'
+import {
+  cadenceLabel,
+  candidateOccurrenceCount,
+  computeStreak,
+  nextOccurrence,
+  trailItems,
+  WEEKDAY_FULL,
+  WEEKDAY_LABELS,
+} from '../store/streak'
 import { uid, parsePrice } from '../engine/generate'
+
+// Segment types that need the full workspace width; everything else sits in a
+// two-column grid so the whole workspace is visible with far less scrolling.
+const WIDE_SEGMENTS = new Set<Segment['type']>([
+  'flashcards',
+  'project-board',
+  'purchase-planner',
+])
 
 function SegShell({
   seg,
@@ -23,9 +40,18 @@ function SegShell({
   meta?: string
   children: React.ReactNode
 }) {
+  // Collapsible: the header always shows the gist (title + meta), so a
+  // collapsed segment still tells you what's inside at a glance.
+  const [open, setOpen] = useState(true)
+  const wide = WIDE_SEGMENTS.has(seg.type)
   return (
-    <section className="segment">
-      <div className="seg-head">
+    <section className={`segment ${wide ? 'wide' : ''} ${open ? '' : 'closed'}`}>
+      <button
+        className="seg-head"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        title={open ? 'Collapse' : 'Expand'}
+      >
         <span className="seg-ico">{SEGMENT_ICON[seg.type]}</span>
         <span className="seg-title">{seg.title}</span>
         {!seg.filled ? (
@@ -35,8 +61,15 @@ function SegShell({
         ) : meta ? (
           <span className="seg-meta">{meta}</span>
         ) : null}
+        <span className={`seg-chevron ${open ? 'open' : ''}`} aria-hidden>
+          ⌄
+        </span>
+      </button>
+      <div className="seg-collapse">
+        <div className="seg-collapse-inner">
+          <div className="seg-body">{children}</div>
+        </div>
       </div>
-      <div className="seg-body">{children}</div>
     </section>
   )
 }
@@ -397,38 +430,288 @@ function ProjectSeg({ note, seg }: { note: Note; seg: Segment }) {
   )
 }
 
-// ---- Goal tracker -----------------------------------------------------------
+// ---- Streak tracker ---------------------------------------------------------
 
-const DAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S']
-
-function GoalSeg({ note, seg }: { note: Note; seg: Segment }) {
-  const { editSegment } = useStore()
-  const days: boolean[] = seg.data.days ?? Array(7).fill(false)
-  const toggle = (i: number) => {
-    const next = days.map((d, idx) => (idx === i ? !d : d))
-    editSegment(note.id, seg.id, {
-      ...seg.data,
-      days: next,
-      streak: next.filter(Boolean).length,
-    })
-  }
+// A ring of radiating sparks played when a streak is kept alive.
+function StreakBurst() {
+  const sparks = Array.from({ length: 12 })
   return (
-    <SegShell seg={seg} meta={`${days.filter(Boolean).length} this week`}>
-      <div className="meta-pills">
-        <span className="meta-pill">{seg.data.cadence}</span>
-        {seg.data.target && <span className="meta-pill">Target: {seg.data.target}</span>}
+    <div className="streak-burst" aria-hidden>
+      {sparks.map((_, i) => (
+        <span
+          key={i}
+          className="spark"
+          style={{ ['--a' as any]: `${(360 / sparks.length) * i}deg` }}
+        />
+      ))}
+      <span className="ring-pulse" />
+    </div>
+  )
+}
+
+// Shown before a streak exists: when a note has more than one recurrence
+// laddering up to a wider goal (habit check-ins, or study sessions before a
+// test), invite the user to start tracking a streak.
+function StreakInvite({ note, seg }: { note: Note; seg: Segment }) {
+  const { startStreak, declineStreak } = useStore()
+  const sessions = note.kind === 'academic'
+  const count = candidateOccurrenceCount(note)
+  const meta = sessions
+    ? `${count} sessions`
+    : cadenceLabel(
+        /* recompute label from a candidate schedule */ (() => {
+          const c = (note.answers.cadence ?? '').toLowerCase()
+          if (c.includes('week') && (c.includes('3') || c.includes('×') || c.includes('x')))
+            return [1, 3, 5]
+          if (c.includes('weekday')) return [1, 2, 3, 4, 5]
+          if (c.includes('weekly')) return [new Date().getDay()]
+          return [0, 1, 2, 3, 4, 5, 6]
+        })(),
+      )
+
+  // Only offer once it would add more than one occurrence. Otherwise (or once
+  // declined) fall back to a quiet opt-in link.
+  const worthy = count > 1 && !note.streakDeclined
+
+  if (!worthy) {
+    return (
+      <SegShell seg={seg} meta={meta}>
+        <button className="streak-start-link" onClick={() => startStreak(note.id)}>
+          🔥 Start a streak
+        </button>
+      </SegShell>
+    )
+  }
+
+  return (
+    <SegShell seg={seg} meta={meta}>
+      <div className="streak-invite">
+        <div className="si-ring" aria-hidden>
+          🔥
+        </div>
+        <div className="si-body">
+          <div className="si-head">
+            {sessions ? 'Track your prep as a streak?' : 'Turn this into a streak?'}
+          </div>
+          <div className="si-sub">
+            {sessions ? (
+              <>
+                You’ve got <b>{count}</b> study sessions before this — check each
+                one off and keep the streak going to stay on plan.
+              </>
+            ) : (
+              <>
+                This goal repeats — I’ll add <b>{count}</b> check-ins to your
+                calendar over the next two weeks. Track a streak to stay
+                consistent.
+              </>
+            )}
+          </div>
+          <div className="si-actions">
+            <button className="si-go" onClick={() => startStreak(note.id)}>
+              Start a streak
+            </button>
+            <button className="si-no" onClick={() => declineStreak(note.id)}>
+              Not now
+            </button>
+          </div>
+        </div>
       </div>
-      <div className="goal-week">
-        {DAYS.map((d, i) => (
+    </SegShell>
+  )
+}
+
+function StreakSeg({ note, seg }: { note: Note; seg: Segment }) {
+  const { state, toggleOccurrence, updateReminder } = useStore()
+  const reminder = state.reminders.find((r) => r.noteId === note.id)
+
+  const [editing, setEditing] = useState(false)
+  const [celebrate, setCelebrate] = useState(false)
+  const clearTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const streak = reminder ? computeStreak(reminder, note) : null
+
+  // Clean up the celebration timer on unmount.
+  useEffect(
+    () => () => {
+      if (clearTimer.current) clearTimeout(clearTimer.current)
+    },
+    [],
+  )
+
+  const fireCelebration = () => {
+    setCelebrate(true)
+    if (clearTimer.current) clearTimeout(clearTimer.current)
+    clearTimer.current = setTimeout(() => setCelebrate(false), 1700)
+  }
+
+  if (!reminder || !streak) {
+    // No streak yet — offer to start one (the "start a streak?" prompt lives
+    // here, gated on the note having more than one recurrence).
+    return <StreakInvite note={note} seg={seg} />
+  }
+
+  const sessions = reminder.mode === 'sessions'
+  const trail = trailItems(reminder, note, streak)
+  const next = sessions ? streak.actionableDate : nextOccurrence(reminder)
+  const alive = streak.current > 0
+  const unit = sessions
+    ? streak.current === 1
+      ? 'session'
+      : 'sessions'
+    : streak.current === 1
+      ? 'day'
+      : 'days'
+
+  // Complete the next actionable occurrence (celebrating a fresh completion).
+  const doAction = () => {
+    if (!streak.actionableDate) return
+    const willComplete = !reminder.completions.includes(streak.actionableDate)
+    if (willComplete) fireCelebration()
+    toggleOccurrence(reminder.id, streak.actionableDate)
+  }
+
+  const actionLabel = !streak.actionableDate
+    ? null
+    : sessions
+      ? `Complete session · ${relativeDay(streak.actionableDate).toLowerCase()}`
+      : 'Mark today done'
+
+  return (
+    <SegShell seg={seg} meta={sessions ? 'Study plan' : cadenceLabel(reminder.weekdays)}>
+      <div
+        className={`streak ${alive ? 'alive' : ''} ${streak.atRisk ? 'at-risk' : ''} ${
+          celebrate ? 'celebrate' : ''
+        }`}
+      >
+        <div className="streak-ring">
+          {celebrate && <StreakBurst />}
+          <span className="streak-flame">{alive ? '🔥' : '🌱'}</span>
+          <span key={streak.current} className="streak-count">
+            {streak.current}
+          </span>
+          <span className="streak-unit">{unit}</span>
+        </div>
+
+        <div className="streak-side">
+          <div className="streak-head">
+            {alive ? (streak.atRisk ? 'Keep it alive' : 'On a roll') : "Let's begin"}
+          </div>
+          <div className="streak-sub">
+            {streak.atRisk
+              ? sessions
+                ? "A session's due — check it off to keep your streak."
+                : "Today's not done yet — check in to extend your streak."
+              : streak.todayDone
+                ? 'Done for today. Beautifully consistent.'
+                : alive
+                  ? sessions
+                    ? next
+                      ? `Best ever: ${streak.best} · next ${relativeDay(next).toLowerCase()}`
+                      : `All ${streak.current} sessions done — nicely paced.`
+                    : `Best ever: ${streak.best} · next ${
+                        next ? relativeDay(next).toLowerCase() : 'soon'
+                      }`
+                  : sessions
+                    ? 'Complete your first session to light the flame.'
+                    : 'Mark your first day to light the flame.'}
+          </div>
+          {streak.best > 0 && (
+            <div className="streak-best">
+              <span className="sb-ico">🏆</span> Best streak {streak.best}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="streak-trail" aria-label="Recent occurrences">
+        {trail.map((o) => (
           <div
-            key={i}
-            className={`goal-day ${days[i] ? 'on' : ''}`}
-            onClick={() => toggle(i)}
+            key={o.iso}
+            className={`trail-dot ${o.done ? 'on' : ''} ${
+              o.marker ? o.marker : ''
+            }`}
+            title={`${relativeDay(o.iso)}${o.done ? ' · done' : ''}`}
+            onClick={() => {
+              const willComplete = !o.done
+              if (willComplete) fireCelebration()
+              toggleOccurrence(reminder.id, o.iso)
+            }}
           >
-            {d}
+            <span className="td-mark">{o.done ? '✓' : ''}</span>
+            <span className="td-label">{o.label}</span>
           </div>
         ))}
       </div>
+
+      {streak.actionableDate ? (
+        <button className="streak-btn go" onClick={doAction}>
+          {actionLabel}
+        </button>
+      ) : streak.todayDone && !sessions ? (
+        <button
+          className="streak-btn done"
+          onClick={() => toggleOccurrence(reminder.id, streak.actionableDate ?? new Date().toISOString().slice(0, 10))}
+        >
+          ✓ Completed today · tap a day to adjust
+        </button>
+      ) : (
+        <div className="streak-rest">
+          {sessions
+            ? '🎉 Every session done — you’re fully prepped.'
+            : `Rest day · next check-in ${
+                next ? relativeDay(next).toLowerCase() : 'soon'
+              }`}
+        </div>
+      )}
+
+      {!sessions && (
+        <>
+          <button className="streak-editlink" onClick={() => setEditing((e) => !e)}>
+            {editing ? 'Done' : '⚙ Schedule & reminder'}
+          </button>
+          {editing && (
+            <div className="streak-editor">
+              <div className="se-label">Repeats on</div>
+              <div className="se-days">
+                {WEEKDAY_LABELS.map((d, i) => (
+                  <button
+                    key={i}
+                    className={`se-day ${reminder.weekdays.includes(i) ? 'on' : ''}`}
+                    title={WEEKDAY_FULL[i]}
+                    onClick={() => {
+                      const set = new Set(reminder.weekdays)
+                      if (set.has(i)) set.delete(i)
+                      else set.add(i)
+                      updateReminder(reminder.id, { weekdays: [...set].sort() })
+                    }}
+                  >
+                    {d}
+                  </button>
+                ))}
+              </div>
+              <div className="se-time-row">
+                <span className="se-label">Remind at</span>
+                <input
+                  className="se-time"
+                  type="time"
+                  value={reminder.time}
+                  onChange={(e) =>
+                    updateReminder(reminder.id, { time: e.target.value || '09:00' })
+                  }
+                />
+              </div>
+              {reminder.target && (
+                <div className="se-target">Target: {reminder.target}</div>
+              )}
+            </div>
+          )}
+        </>
+      )}
+
+      {sessions && reminder.target && (
+        <div className="streak-plan-target">🎯 {reminder.target}</div>
+      )}
     </SegShell>
   )
 }
@@ -655,8 +938,8 @@ export function SegmentView({
       return <ScheduleSeg seg={seg} />
     case 'project-board':
       return <ProjectSeg note={note} seg={seg} />
-    case 'goal-tracker':
-      return <GoalSeg note={note} seg={seg} />
+    case 'streak-tracker':
+      return <StreakSeg note={note} seg={seg} />
     case 'event-alert':
       return <EventSeg seg={seg} conflicts={conflicts} />
     case 'purchase-planner':

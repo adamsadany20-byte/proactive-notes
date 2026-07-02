@@ -89,7 +89,7 @@ export const SEGMENT_ICON: Record<SegmentType, string> = {
   flashcards: '🃏',
   schedule: '🗓️',
   'project-board': '📋',
-  'goal-tracker': '🎯',
+  'streak-tracker': '🔥',
   'event-alert': '✨',
   'purchase-planner': '🛒',
 }

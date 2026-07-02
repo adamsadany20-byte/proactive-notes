@@ -10,7 +10,6 @@ import type {
 } from '../types'
 import {
   makeFlashcards,
-  makeGoalPlan,
   makeMilestones,
   makeProjectTasks,
   makePurchasePlan,
@@ -20,17 +19,22 @@ import {
 } from '../engine/generate'
 import { findConflicts } from './calendar'
 
-// Which segment types a kind wants, given current data.
-function desiredTypes(kind: NoteKind): SegmentType[] {
+// Which segment types a kind wants, given current data. The streak tracker
+// attaches wherever a note has multiple recurrences laddering up to a wider
+// goal: recurring habits (goal) and study plans with 2+ sessions (academic).
+function desiredTypes(kind: NoteKind, entities: Entities): SegmentType[] {
   switch (kind) {
-    case 'academic':
-      return ['calendar', 'checklist', 'flashcards', 'schedule']
+    case 'academic': {
+      const base: SegmentType[] = ['calendar', 'checklist', 'flashcards', 'schedule']
+      if (makeStudySchedule(entities).length >= 2) base.push('streak-tracker')
+      return base
+    }
     case 'event':
       return ['event-alert']
     case 'project':
       return ['project-board']
     case 'goal':
-      return ['goal-tracker']
+      return ['streak-tracker']
     case 'tasks':
       return ['checklist']
     case 'purchase':
@@ -52,8 +56,8 @@ function titleFor(type: SegmentType): string {
       return 'Study schedule'
     case 'project-board':
       return 'Project workspace'
-    case 'goal-tracker':
-      return 'Goal tracker'
+    case 'streak-tracker':
+      return 'Streak'
     case 'event-alert':
       return 'Event'
     case 'purchase-planner':
@@ -79,8 +83,8 @@ function signature(
       return (entities.date?.iso ?? '') + '::' + (entities.time ?? '')
     case 'project-board':
       return `${a.stack ?? ''}|${a.timeline ?? ''}|${a.team ?? ''}|${a.goal ?? ''}`
-    case 'goal-tracker':
-      return `${a.cadence ?? ''}|${a.target ?? ''}`
+    case 'streak-tracker':
+      return `${a.cadence ?? ''}|${a.target ?? ''}|${entities.date?.iso ?? ''}|${entities.topics.join('|')}`
     case 'event-alert':
       return `${entities.knownEvent?.id ?? ''}|${entities.knownEvent?.name ?? ''}|${entities.date?.iso ?? ''}|${a.attend ?? ''}|${a.briefing ?? ''}|${note.enrichment?.summary ?? ''}`
     case 'purchase-planner':
@@ -121,8 +125,12 @@ function buildData(
         filled: 'stack' in note.answers,
       }
     }
-    case 'goal-tracker': {
-      return { data: makeGoalPlan(note), filled: 'cadence' in note.answers }
+    case 'streak-tracker': {
+      // The streak's state lives on its Reminder, not the segment. This segment
+      // just decides whether to show the tracker/offer at all.
+      const worthy =
+        'cadence' in note.answers || makeStudySchedule(entities).length >= 2
+      return { data: {}, filled: worthy }
     }
     case 'purchase-planner': {
       // Usable the moment we know what's being bought — questions enrich it.
@@ -158,7 +166,7 @@ export function reconcileSegments(
   calendar: CalendarEvent[],
 ): Segment[] {
   const { kind, entities } = result
-  const want = desiredTypes(kind)
+  const want = desiredTypes(kind, entities)
   const next: Segment[] = []
 
   for (const type of want) {

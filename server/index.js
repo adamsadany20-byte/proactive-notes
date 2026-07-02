@@ -6,9 +6,12 @@ import fs from 'fs'
 import { fileURLToPath } from 'url'
 import { saveTokens, loadTokens, clearTokens } from './tokenStore.js'
 import {
-  isSubscribed,
-  setEntitlement,
-  setStatusByCustomer,
+  getEntitlement,
+  isActive,
+  hasCredit,
+  activate,
+  addCredit,
+  recordUsage,
 } from './entitlementStore.js'
 
 // Load server/.env explicitly relative to THIS file, so the keys load no matter
@@ -21,9 +24,40 @@ dotenv.config({ path: path.join(__dirname, '.env') })
 
 const PORT = process.env.PORT || 8787
 const APP_ORIGIN = process.env.APP_ORIGIN || 'http://localhost:5173'
-// One model powers all AI features (enrichment, tool suggestions, tool
-// generation) when "Broader AI" is on. Haiku is fast + cheap; override per env.
-const AI_MODEL = process.env.AI_MODEL || 'claude-haiku-4-5'
+// Two models split the work by what each is best at per pound:
+//   • CODE (tool suggestions + tool generation) — Haiku: fast, cheap, and
+//     plenty for emitting well-specified JSON and React components.
+//   • KNOWLEDGE (enrichment + recommendations) — Sonnet: strong world
+//     knowledge, and these routes also do live web search.
+// AI_MODEL (if set) overrides BOTH — handy for testing one model everywhere.
+const AI_MODEL_CODE =
+  process.env.AI_MODEL || process.env.AI_MODEL_CODE || 'claude-haiku-4-5'
+const AI_MODEL_KNOWLEDGE =
+  process.env.AI_MODEL || process.env.AI_MODEL_KNOWLEDGE || 'claude-sonnet-5'
+
+// Live web search for the world-knowledge routes (/api/enrich, /api/recommend).
+// This is the biggest single lever on knowledge quality: the model can verify
+// current products, events, and prices instead of relying on training data.
+// Set WEB_SEARCH=false to disable (calls become cheaper but knowledge-only).
+const WEB_SEARCH =
+  String(process.env.WEB_SEARCH ?? 'true').toLowerCase() !== 'false'
+
+// Hard ceiling on searches per call, enforced by the API (max_uses). Search
+// result tokens dominate the cost of a knowledge call, so this — not the model
+// choice — is the main cost lever. The prompts also tell the model to search
+// only for the specific fact it's missing and stop, so it usually stays well
+// under the cap; this just guarantees a call can't run away. Each route passes
+// its own default (enrich needs one lookup; recommend may need a couple).
+const MAX_SEARCHES = Number(process.env.MAX_SEARCHES || 2)
+
+// The dynamic-filtering web search variant needs Opus 4.6+/Sonnet 4.6+; older
+// or smaller models fall back to the basic variant.
+function webSearchToolType(model) {
+  const m = String(model).toLowerCase()
+  const modern =
+    /opus-4-[678]|opus-4\b|sonnet-5|sonnet-4-6|fable/.test(m)
+  return modern ? 'web_search_20260209' : 'web_search_20250305'
+}
 
 // A dated context line prepended to world-knowledge prompts. Grounding the model
 // in "today" is the single biggest lever on the quality of its world knowledge:
@@ -42,22 +76,100 @@ function todayContext() {
 }
 
 // ---------------------------------------------------------------------------
-// Billing. The whole app stays usable for free until BILLING_ENABLED=true, so
-// you can keep building and testing without paying. When it's on, the paid AI
-// routes require an active Stripe subscription. Everything is lazy/optional:
-// with no Stripe keys the billing endpoints simply report "not configured".
+// Billing — credit model. The whole app stays usable for free until
+// BILLING_ENABLED=true, so you can keep building and testing without paying.
+//
+// When it's on:
+//   • £10 one-time activation unlocks the Claude tools and includes £1 of AI
+//     token credit (credit is measured in real token value).
+//   • Every Claude call meters its actual Anthropic cost and deducts it.
+//   • More usage is bought at £2 per £1 of tokens (a £4 top-up = £2 of credit).
+//
+// Everything is lazy/optional: with no Stripe key the billing endpoints simply
+// report "not configured". No Stripe Price objects are needed — Checkout uses
+// inline price_data.
 // ---------------------------------------------------------------------------
 const BILLING_ENABLED =
   String(process.env.BILLING_ENABLED || 'false').toLowerCase() === 'true'
-const STRIPE_PRICE_ID = process.env.STRIPE_PRICE_ID
-const billingConfigured = () =>
-  !!(process.env.STRIPE_SECRET_KEY && STRIPE_PRICE_ID)
+const billingConfigured = () => !!process.env.STRIPE_SECRET_KEY
+
+// The commercial knobs, all overridable per env (values in pence).
+const ACTIVATION_PRICE_PENCE = Number(process.env.ACTIVATION_PRICE_PENCE || 1000) // £10 flat fee
+const ACTIVATION_CREDIT_PENCE = Number(process.env.ACTIVATION_CREDIT_PENCE || 100) // includes £1 of tokens
+const TOKEN_MARKUP = Number(process.env.TOKEN_MARKUP || 2) // £2 paid per £1 of tokens
+const TOPUP_PRICE_PENCE = Number(process.env.TOPUP_PRICE_PENCE || 400) // default top-up: £4 → £2 of tokens
+// Anthropic bills in USD; credit is in GBP pence. Fixed conversion, env-tunable.
+const USD_TO_GBP = Number(process.env.USD_TO_GBP || 0.78)
+
+// Comma-separated clientIds that are never billed — put your own browser's
+// `evolve.clientId` (localStorage) here so YOU can keep testing a deployed app
+// for free even with billing enabled for everyone else.
+const FREE_CLIENT_IDS = new Set(
+  String(process.env.FREE_CLIENT_IDS || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean),
+)
 
 // Free mode (billing off) → always allowed, so editing/trying never gets gated.
-// With billing on, a client needs an active subscription tied to its clientId.
+// With billing on, a client needs an activated account with credit remaining.
 function hasAccess(clientId) {
   if (!BILLING_ENABLED) return true
-  return isSubscribed(clientId)
+  if (clientId && FREE_CLIENT_IDS.has(clientId)) return true
+  return isActive(clientId) && hasCredit(clientId)
+}
+
+// 402 payload that tells the frontend WHY (buy activation vs top up credit).
+function paywallBody(clientId, extra = {}) {
+  const active = isActive(clientId)
+  return {
+    configured: true,
+    subscribed: false,
+    reason: active ? 'no_credit' : 'not_activated',
+    error: active
+      ? 'AI credit used up — top up to continue.'
+      : 'Unlock the AI tools with a one-time £10 activation.',
+    ...extra,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Usage metering — real Anthropic cost per call, converted to GBP pence.
+// Prices are USD per million tokens (input, output). Web search requests are
+// billed by Anthropic at $10 per 1,000 searches on top of tokens.
+// ---------------------------------------------------------------------------
+const MODEL_PRICES_USD = [
+  { match: /fable/, in: 10, out: 50 },
+  { match: /opus/, in: 5, out: 25 },
+  { match: /sonnet/, in: 3, out: 15 },
+  { match: /haiku/, in: 1, out: 5 },
+]
+function priceForModel(model) {
+  const m = String(model).toLowerCase()
+  return MODEL_PRICES_USD.find((p) => p.match.test(m)) || { in: 5, out: 25 }
+}
+function usageCostPence(usage, model) {
+  if (!usage) return 0
+  const p = priceForModel(model)
+  const inTok =
+    (usage.input_tokens || 0) +
+    (usage.cache_creation_input_tokens || 0) * 1.25 +
+    (usage.cache_read_input_tokens || 0) * 0.1
+  const usd =
+    (inTok * p.in + (usage.output_tokens || 0) * p.out) / 1_000_000 +
+    (usage.server_tool_use?.web_search_requests || 0) * 0.01
+  return usd * USD_TO_GBP * 100
+}
+
+// Deduct a call's cost from the client's credit. Metered even in free mode so
+// `usedPence` shows what your users would have cost you.
+function meterUsage(clientId, costPence) {
+  if (!clientId || !(costPence > 0)) return
+  try {
+    recordUsage(clientId, costPence)
+  } catch (err) {
+    console.error('metering error:', err?.message || err)
+  }
 }
 
 const app = express()
@@ -70,6 +182,30 @@ app.use(cors({ origin: true, credentials: true }))
 app.use((req, res, next) => {
   if (req.originalUrl === '/api/billing/webhook') return next()
   express.json({ limit: '256kb' })(req, res, next)
+})
+
+// Auth middleware: extract Supabase JWT and fall back to clientId
+app.use(async (req, res, next) => {
+  const authHeader = req.headers.authorization
+  if (authHeader?.startsWith('Bearer ')) {
+    const token = authHeader.slice(7)
+    try {
+      // Verify JWT with Supabase (naive: just check it's a valid JWT structure).
+      // In production, verify the signature against Supabase's public key.
+      const parts = token.split('.')
+      if (parts.length === 3) {
+        const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString())
+        req.userId = payload.sub // Supabase uses 'sub' for the user UUID
+      }
+    } catch {
+      // Invalid token; fall back to clientId
+    }
+  }
+  // If no valid auth token, use clientId (for backwards compatibility)
+  if (!req.userId) {
+    req.clientId = req.query.clientId || (req.body?.clientId ?? null)
+  }
+  next()
 })
 
 // ---------------------------------------------------------------------------
@@ -90,7 +226,8 @@ app.get('/api/config', (_req, res) => {
     haikuConfigured: haikuConfigured(),
     calendarConfigured: calendarConfigured(),
     calendarConnected: !!loadTokens(),
-    enrichModel: AI_MODEL,
+    enrichModel: AI_MODEL_KNOWLEDGE,
+    codeModel: AI_MODEL_CODE,
     billingEnabled: BILLING_ENABLED,
     billingConfigured: billingConfigured(),
   })
@@ -109,34 +246,71 @@ async function getStripe() {
   return _stripe
 }
 
-// What the frontend needs to decide whether to show a paywall. In free mode
-// `subscribed` is true for everyone so nothing is ever locked.
+// What the frontend needs to decide whether to show a paywall, and — once
+// billing is on — the live credit balance. In free mode `subscribed` is true
+// for everyone so nothing is ever locked.
 app.get('/api/billing/status', (req, res) => {
-  const clientId = req.query.clientId
+  // Prefer userId (from Supabase JWT); fall back to clientId (legacy, for local-only)
+  const key = req.userId || req.clientId
+  const e = getEntitlement(key)
   res.json({
     billingEnabled: BILLING_ENABLED,
     billingConfigured: billingConfigured(),
     freeMode: !BILLING_ENABLED,
-    subscribed: hasAccess(clientId),
+    subscribed: hasAccess(key),
+    active: isActive(key) || (key && FREE_CLIENT_IDS.has(key)),
+    creditPence: e ? Math.max(0, Math.round(e.creditPence * 100) / 100) : 0,
+    usedPence: e ? Math.round(e.usedPence * 100) / 100 : 0,
+    pricing: {
+      activationPence: ACTIVATION_PRICE_PENCE,
+      includedCreditPence: ACTIVATION_CREDIT_PENCE,
+      topupPence: TOPUP_PRICE_PENCE,
+      tokenMarkup: TOKEN_MARKUP, // £ paid per £1 of tokens after the included credit
+    },
   })
 })
 
 // Start a Stripe Checkout session for this client and return its URL.
+// kind: 'activate' (£10 one-time, includes £1 of AI credit) or
+//       'topup'    (buys credit at £{TOKEN_MARKUP} per £1 of tokens).
 app.post('/api/billing/checkout', async (req, res) => {
   if (!BILLING_ENABLED) return res.json({ freeMode: true })
   if (!billingConfigured())
     return res.status(400).json({ error: 'Billing is not configured on the server.' })
-  const { clientId } = req.body || {}
-  if (!clientId) return res.status(400).json({ error: 'Missing clientId' })
+  // Prefer userId (from JWT); fall back to clientId from body (legacy)
+  const key = req.userId || req.body?.clientId
+  const { kind = 'activate' } = req.body || {}
+  if (!key) return res.status(400).json({ error: 'Missing auth or clientId' })
+
+  const isTopup = kind === 'topup'
+  const amount = isTopup ? TOPUP_PRICE_PENCE : ACTIVATION_PRICE_PENCE
+  const creditPence = isTopup
+    ? Math.floor(TOPUP_PRICE_PENCE / TOKEN_MARKUP)
+    : ACTIVATION_CREDIT_PENCE
+  const name = isTopup
+    ? `Evolve AI credit top-up (£${(creditPence / 100).toFixed(2)} of AI usage)`
+    : `Evolve AI — one-time activation (includes £${(
+        ACTIVATION_CREDIT_PENCE / 100
+      ).toFixed(2)} of AI usage)`
+
   try {
     const stripe = await getStripe()
     const session = await stripe.checkout.sessions.create({
-      mode: 'subscription',
-      line_items: [{ price: STRIPE_PRICE_ID, quantity: 1 }],
-      // client_reference_id ties the resulting subscription back to this client
-      // in the webhook; metadata is a belt-and-braces copy.
-      client_reference_id: clientId,
-      metadata: { clientId },
+      mode: 'payment',
+      line_items: [
+        {
+          price_data: {
+            currency: 'gbp',
+            product_data: { name },
+            unit_amount: amount,
+          },
+          quantity: 1,
+        },
+      ],
+      // client_reference_id ties the payment back to this client in the
+      // webhook; metadata is a belt-and-braces copy plus the purchase kind.
+      client_reference_id: key,
+      metadata: { key, kind: isTopup ? 'topup' : 'activate' },
       success_url: `${APP_ORIGIN}/?billing=success`,
       cancel_url: `${APP_ORIGIN}/?billing=cancel`,
     })
@@ -178,19 +352,18 @@ app.post(
         case 'checkout.session.completed': {
           const s = event.data.object
           const clientId = s.client_reference_id || s.metadata?.clientId
-          setEntitlement(clientId, {
-            status: 'active',
-            customerId: s.customer,
-            subscriptionId: s.subscription,
-          })
-          break
-        }
-        case 'customer.subscription.updated':
-        case 'customer.subscription.deleted': {
-          const sub = event.data.object
-          const status =
-            event.type === 'customer.subscription.deleted' ? 'canceled' : sub.status
-          setStatusByCustomer(sub.customer, status)
+          if (!clientId) break
+          if (s.metadata?.kind === 'topup') {
+            // Paid amount converts to token credit at the markup ratio.
+            const credit = Math.floor((s.amount_total ?? 0) / TOKEN_MARKUP)
+            addCredit(clientId, credit, s.amount_total ?? 0)
+          } else {
+            activate(clientId, {
+              customerId: s.customer,
+              creditPence: ACTIVATION_CREDIT_PENCE,
+              paidPence: s.amount_total ?? ACTIVATION_PRICE_PENCE,
+            })
+          }
           break
         }
         default:
@@ -253,31 +426,78 @@ function parseJSON(text) {
   }
 }
 
-// Claude via the official SDK. We use forced tool use to get structured JSON —
-// the most widely-supported method across models and SDK versions (more robust
-// than output_config.format, which depends on newer API/SDK support).
-async function callClaude({ system, user, schema, maxTokens }) {
+// Claude via the official SDK. We use a `respond` tool to get structured JSON —
+// the most widely-supported method across models and SDK versions.
+//
+// When `webSearch` is set (world-knowledge routes), the Anthropic-hosted web
+// search tool is added so the model can check live, current information before
+// answering. Search runs server-side inside the same request; we loop on
+// pause_turn in case the search loop needs continuing. tool_choice must be
+// 'auto' in that case (a forced tool would prevent searching), so we also
+// fall back to parsing JSON out of plain text.
+//
+// Every call meters its real cost against the client's credit.
+async function callClaude({
+  model,
+  system,
+  user,
+  schema,
+  maxTokens,
+  webSearch,
+  maxSearches,
+  clientId,
+}) {
   const anthropic = await getAnthropic()
-  const msg = await anthropic.messages.create({
-    model: AI_MODEL,
-    max_tokens: maxTokens,
-    system,
-    tools: [
-      {
-        name: 'respond',
-        description: 'Return the structured result for the request.',
-        input_schema: schema || { type: 'object' },
-      },
-    ],
-    tool_choice: { type: 'tool', name: 'respond' },
-    messages: [{ role: 'user', content: user }],
-  })
-  const block = msg.content.find((b) => b.type === 'tool_use')
-  if (!block) {
-    const text = msg.content.find((b) => b.type === 'text')
-    return text ? parseJSON(text.text) : {}
+  const useSearch = !!webSearch && WEB_SEARCH
+  const tools = [
+    {
+      name: 'respond',
+      description:
+        'Return the final structured result for the request. Always finish by calling this exactly once.',
+      input_schema: schema || { type: 'object' },
+    },
+  ]
+  if (useSearch) {
+    // Cap searches per call. Route asks for what it needs; MAX_SEARCHES is the
+    // absolute ceiling so no call can run away. min() keeps it honest.
+    const cap = Math.max(1, Math.min(maxSearches ?? MAX_SEARCHES, MAX_SEARCHES))
+    tools.push({ type: webSearchToolType(model), name: 'web_search', max_uses: cap })
   }
-  return block.input || {}
+
+  let messages = [{ role: 'user', content: user }]
+  let costPence = 0
+  try {
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const msg = await anthropic.messages.create({
+        model,
+        max_tokens: maxTokens,
+        system,
+        tools,
+        tool_choice: useSearch ? { type: 'auto' } : { type: 'tool', name: 'respond' },
+        messages,
+      })
+      costPence += usageCostPence(msg.usage, model)
+
+      // Server-side tool loop hit its iteration cap — resume where it left off.
+      if (msg.stop_reason === 'pause_turn') {
+        messages = [...messages, { role: 'assistant', content: msg.content }]
+        continue
+      }
+
+      const block = msg.content.find(
+        (b) => b.type === 'tool_use' && b.name === 'respond',
+      )
+      if (block) return block.input || {}
+      const text = msg.content
+        .filter((b) => b.type === 'text')
+        .map((b) => b.text)
+        .join('\n')
+      return parseJSON(text)
+    }
+    throw new Error('model did not finish after several continuations')
+  } finally {
+    meterUsage(clientId, costPence)
+  }
 }
 
 // Run a structured-JSON generation on an already-resolved backend. Claude is the
@@ -313,9 +533,15 @@ general world knowledge can identify.
 Reason carefully before answering:
 - Use the surrounding note text as disambiguating context (e.g. "tickets for X" implies an event;
   "should I buy the X" implies a product). The same word can mean different things — let the note decide.
+- Search discipline: if you already know exactly what the candidate is and nothing about it is
+  time-sensitive, DON'T search — just answer. Only search when you're missing a specific fact you
+  need (a current date, this year's edition, whether it still exists). When you do search, run ONE
+  targeted query for exactly that fact, read the result, and stop — do not explore, cross-check, or
+  look up tangential details. Never search more than once.
 - Only set recognized=true when you can confidently tie the candidate to ONE specific, real entity.
   If it's ambiguous, a common personal name, or something you can't place, set recognized=false.
-- Do not fabricate. Never invent dates, prices, or specifics you're unsure of.
+- Do not fabricate. Never invent dates, prices, or specifics you're unsure of — but DO include
+  concrete dates/facts you verified via search.
 
 Return JSON only:
 - recognized: true only if you can confidently identify the candidate as a specific real-world entity.
@@ -328,21 +554,24 @@ Return JSON only:
 If the candidate is just a personal name or something not in world knowledge, set recognized=false and kind="general".`
 
 app.post('/api/enrich', async (req, res) => {
-  const { text = '', candidate = '', backend, clientId } = req.body || {}
-  if (!hasAccess(clientId))
-    return res
-      .status(402)
-      .json({ configured: true, subscribed: false, error: 'Subscription required' })
+  const { text = '', candidate = '', backend } = req.body || {}
+  const key = req.userId || req.body?.clientId
+  if (!hasAccess(key)) return res.status(402).json(paywallBody(key))
   const resolved = resolveBackend(backend)
   if (!resolved) return res.json({ configured: false })
   if (!candidate.trim()) return res.json({ configured: true, recognized: false })
 
   try {
     const data = await generateJSON(resolved, {
+      model: AI_MODEL_KNOWLEDGE,
       system: ENRICH_SYSTEM,
       user: `${todayContext()}\n\nNote: "${text}"\nCandidate term: "${candidate}"`,
       schema: ENRICH_SCHEMA,
-      maxTokens: 1024,
+      maxTokens: 2048,
+      webSearch: true,
+      // Identifying one entity is a single-lookup job.
+      maxSearches: 1,
+      clientId: key,
     })
     res.json({ configured: true, ...data })
   } catch (err) {
@@ -406,11 +635,10 @@ Each suggestion: a short label (2-3 words, Title Case), a single fitting emoji
 icon, and a one-line description of what it does for this note.`
 
 app.post('/api/suggest', async (req, res) => {
-  const { text = '', backend, clientId } = req.body || {}
-  if (!hasAccess(clientId))
-    return res
-      .status(402)
-      .json({ configured: true, subscribed: false, error: 'Subscription required', suggestions: [] })
+  const { text = '', backend } = req.body || {}
+  const key = req.userId || req.body?.clientId
+  if (!hasAccess(key))
+    return res.status(402).json(paywallBody(key, { suggestions: [] }))
   const resolved = resolveBackend(backend)
   if (!resolved) return res.json({ configured: false, suggestions: [] })
   if (!text.trim()) return res.json({ configured: true, suggestions: [] })
@@ -418,10 +646,12 @@ app.post('/api/suggest', async (req, res) => {
   console.log(`/api/suggest via ${resolved}`)
   try {
     const data = await generateJSON(resolved, {
+      model: AI_MODEL_CODE,
       system: SUGGEST_SYSTEM,
       user: `Note:\n"""\n${text}\n"""`,
       schema: SUGGEST_SCHEMA,
       maxTokens: 1024,
+      clientId: key,
     })
     res.json({ configured: true, suggestions: data.suggestions ?? [] })
   } catch (err) {
@@ -460,24 +690,31 @@ const RECOMMEND_SCHEMA = {
 }
 
 const RECOMMEND_SYSTEM = `You recommend concrete, real-world things based on a personal note. You have broad world
-knowledge — draw on it fully. Read the note, infer the person's intent, budget signals, skill
-level, and context, then name SPECIFIC real things: exact product models, brands, places,
-books, apps, tools, services, or people to follow.
+knowledge AND (when available) a web_search tool — use both fully. Read the note, infer the
+person's intent, budget signals, skill level, and context, then name SPECIFIC real things:
+exact product models, brands, places, books, apps, tools, services, or people to follow.
 
 Rules:
+- Search discipline — search ONLY for exactly what you need and nothing more:
+  • If your existing knowledge already answers the note well (timeless picks — classic books,
+    established places, core techniques, well-known tools), DON'T search at all. Just answer.
+  • Only search when currency genuinely matters (this year's models, recent releases, an upcoming
+    event's details). When you do, run ONE broad query that covers the whole set of picks at once
+    (e.g. "best flagship phones 2026 UK price"), read it, and write your answer. Do NOT do a
+    separate search per recommendation, and do NOT verify each price or spec individually.
+  • Only run a second search if the note clearly spans two unrelated things to look up. Never more.
 - Return 3-5 recommendations, best-first (the single most useful pick is #1). Each must be a
-  real, identifiable thing — a precise model name ("iPhone 15 Pro", not "a good phone"), a real
+  real, identifiable thing — a precise model name ("iPhone 17 Pro", not "a good phone"), a real
   place, a real title — never a generic category.
-- Lean on your world knowledge to be CURRENT and PRECISE: name the actual current-generation
-  model, the well-known author's actual book, the real neighbourhood. Distinguish tiers (budget
-  vs flagship, beginner vs advanced) and pick to match the note's cues.
+- Be CURRENT and PRECISE: name the actual current-generation model, the well-known author's
+  actual book, the real neighbourhood. Distinguish tiers (budget vs flagship, beginner vs
+  advanced) and pick to match the note's cues.
 - "detail" is one tight, information-dense line on why THIS pick fits THIS note — mention the
-  concrete tradeoff or standout trait (e.g. "titanium build, best camera, priced highest"). No
-  marketing fluff, no filler.
+  concrete tradeoff or standout trait (e.g. "titanium build, best camera, priced highest"). An
+  approximate price is welcome ONLY if you just verified it via search; otherwise stay qualitative.
 - "kind" is a short noun label: Product, Place, Book, App, Tool, Brand, Resource, Dish, Person, etc.
-- Knowledge-based only: NEVER invent live prices, links, ratings, or stock. If unsure of an exact
-  spec or figure, stay qualitative rather than guessing a number. Prefer well-established, verifiable
-  options over obscure ones you're unsure exist.
+- NEVER invent prices, links, ratings, or stock you didn't verify. Prefer well-established,
+  verifiable options over obscure ones you're unsure exist.
 - "heading" is a short, friendly title tailored to the note
   (e.g. "iPhones to consider", "Spots to check out in Lisbon", "Reads on habit-building").
 Examples:
@@ -486,11 +723,10 @@ Examples:
 - "learning to cook Thai food" -> heading "Where to start"; real dishes, a classic named cookbook, key pantry ingredients.`
 
 app.post('/api/recommend', async (req, res) => {
-  const { text = '', backend, clientId } = req.body || {}
-  if (!hasAccess(clientId))
-    return res
-      .status(402)
-      .json({ configured: true, subscribed: false, error: 'Subscription required', recommendations: [] })
+  const { text = '', backend } = req.body || {}
+  const key = req.userId || req.body?.clientId
+  if (!hasAccess(key))
+    return res.status(402).json(paywallBody(key, { recommendations: [] }))
   const resolved = resolveBackend(backend)
   if (!resolved) return res.json({ configured: false, recommendations: [] })
   if (text.trim().length < 8)
@@ -499,10 +735,16 @@ app.post('/api/recommend', async (req, res) => {
   console.log(`/api/recommend via ${resolved}`)
   try {
     const data = await generateJSON(resolved, {
+      model: AI_MODEL_KNOWLEDGE,
       system: RECOMMEND_SYSTEM,
       user: `${todayContext()}\n\nNote:\n"""\n${text}\n"""`,
       schema: RECOMMEND_SCHEMA,
-      maxTokens: 1024,
+      maxTokens: 2048,
+      webSearch: true,
+      // One broad search usually covers a set of picks; allow a second only
+      // when a note spans two distinct things to look up.
+      maxSearches: 2,
+      clientId: key,
     })
     res.json({
       configured: true,
@@ -567,21 +809,21 @@ Styling rules so it blends in seamlessly:
 - Calm and refined — match a premium, minimal aesthetic. Avoid loud colors, emoji walls, or harsh borders.`
 
 app.post('/api/generate-feature', async (req, res) => {
-  const { label = '', description = '', text = '', backend, clientId } = req.body || {}
-  if (!hasAccess(clientId))
-    return res
-      .status(402)
-      .json({ configured: true, subscribed: false, error: 'Subscription required' })
+  const { label = '', description = '', text = '', backend } = req.body || {}
+  const key = req.userId || req.body?.clientId
+  if (!hasAccess(key)) return res.status(402).json(paywallBody(key))
   const resolved = resolveBackend(backend)
   if (!resolved) return res.json({ configured: false })
   if (!label.trim()) return res.json({ configured: true, code: '' })
 
   try {
     const data = await generateJSON(resolved, {
+      model: AI_MODEL_CODE,
       system: GENERATE_SYSTEM,
       user: `Build a component that is: "${label}" — ${description}\n\nTailored to this note:\n"""\n${text}\n"""`,
       schema: GENERATE_SCHEMA,
-      maxTokens: 4096,
+      maxTokens: 8192,
+      clientId: key,
     })
     res.json({ configured: true, code: data.code ?? '' })
   } catch (err) {
@@ -806,14 +1048,24 @@ if (fs.existsSync(DIST_DIR)) {
 
 app.listen(PORT, () => {
   console.log(`Proactive Notes server on http://localhost:${PORT}`)
-  console.log(`  Claude tier: ${haikuConfigured() ? `configured (${AI_MODEL})` : 'not configured'}`)
+  console.log(
+    `  Claude tier: ${
+      haikuConfigured()
+        ? `configured (code: ${AI_MODEL_CODE} · knowledge: ${AI_MODEL_KNOWLEDGE}, web search ${
+            WEB_SEARCH ? 'on' : 'off'
+          })`
+        : 'not configured'
+    }`,
+  )
   console.log(`  Calendar: ${calendarConfigured() ? 'configured' : 'not configured'}`)
   console.log(
     `  Billing: ${
       BILLING_ENABLED
         ? billingConfigured()
-          ? 'ENABLED + Stripe configured'
-          : 'ENABLED but Stripe NOT configured (set STRIPE_SECRET_KEY + STRIPE_PRICE_ID)'
+          ? `ENABLED — £${(ACTIVATION_PRICE_PENCE / 100).toFixed(0)} activation incl. £${(
+              ACTIVATION_CREDIT_PENCE / 100
+            ).toFixed(2)} credit, £${TOKEN_MARKUP} per £1 of tokens after`
+          : 'ENABLED but Stripe NOT configured (set STRIPE_SECRET_KEY)'
         : 'free mode (BILLING_ENABLED=false) — nothing gated'
     }`,
   )

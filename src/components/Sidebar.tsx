@@ -18,17 +18,21 @@ function AiTierSelector() {
   const cfg = state.config
   const billing = state.billing
 
-  // Claude is paywalled only when billing is switched on AND this client isn't
-  // subscribed. In free mode (the default) `locked` is always false, so the
-  // tier works normally and you can keep using everything.
+  // Claude is paywalled only when billing is switched on AND this client can't
+  // use it (not activated, or credit used up). In free mode (the default)
+  // `locked` is always false, so the tier works normally.
   const locked = !!billing?.billingEnabled && !billing?.subscribed
+  const outOfCredit = locked && !!billing?.active
+  const credit = ((billing?.creditPence ?? 0) / 100).toFixed(2)
 
   // Per-tier availability + status line.
   const status = (id: AiBackend): string => {
     if (id === 'local') return 'Free — deterministic engine, no network'
-    if (locked) return 'Subscribe to unlock Claude tools'
-    return cfg?.haikuConfigured === false
-      ? 'No ANTHROPIC_API_KEY on server'
+    if (outOfCredit) return 'AI credit used up — top up to continue'
+    if (locked) return 'Unlock for £10 — includes £1 of AI credit'
+    if (cfg?.haikuConfigured === false) return 'No ANTHROPIC_API_KEY on server'
+    return billing?.billingEnabled && billing?.active
+      ? `Claude tools · £${credit} credit left`
       : 'Claude for suggestions & tools'
   }
 
@@ -38,7 +42,7 @@ function AiTierSelector() {
   const onPick = async (id: AiBackend) => {
     // A locked Claude tier sends the user to checkout rather than switching.
     if (id === 'haiku' && locked) {
-      const { url, error } = await startCheckout()
+      const { url, error } = await startCheckout(outOfCredit ? 'topup' : 'activate')
       if (url) window.location.href = url
       else if (error) alert(error)
       return

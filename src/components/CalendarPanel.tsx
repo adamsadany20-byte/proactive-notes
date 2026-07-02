@@ -1,6 +1,7 @@
 import { useStore } from '../store/appStore'
 import type { CalendarEvent } from '../types'
 import { relativeDay } from '../store/calendar'
+import { reminderCalendarEvents } from '../store/streak'
 import { connectCalendar, disconnectCalendar } from '../services/api'
 
 const KIND_COLOR: Record<CalendarEvent['kind'], string> = {
@@ -9,6 +10,7 @@ const KIND_COLOR: Record<CalendarEvent['kind'], string> = {
   study: '#7cb8ff',
   event: 'var(--event)',
   briefing: 'var(--project)',
+  reminder: 'var(--goal)',
 }
 
 const KIND_LABEL: Partial<Record<CalendarEvent['kind'], string>> = {
@@ -16,6 +18,7 @@ const KIND_LABEL: Partial<Record<CalendarEvent['kind'], string>> = {
   study: 'Study',
   event: 'Event',
   briefing: 'Briefing',
+  reminder: 'Streak',
 }
 
 function byTime(a: CalendarEvent, b: CalendarEvent): number {
@@ -63,8 +66,24 @@ export function CalendarPanel() {
   const horizon = new Date(today)
   horizon.setDate(horizon.getDate() + 14)
 
+  // Fold in projected recurring-reminder occurrences (derived, not persisted),
+  // and overlay session-streak completion onto the note's study events.
+  const doneStudy = new Set<string>()
+  for (const r of state.reminders) {
+    if (r.mode !== 'sessions') continue
+    for (const iso of r.completions) doneStudy.add(`${r.noteId}@${iso}`)
+  }
+  const allEvents = [
+    ...state.calendar.map((e) =>
+      e.kind === 'study' && doneStudy.has(`${e.noteId}@${e.date}`)
+        ? { ...e, done: true }
+        : e,
+    ),
+    ...reminderCalendarEvents(state.reminders),
+  ]
+
   const groups = new Map<string, CalendarEvent[]>()
-  for (const e of state.calendar) {
+  for (const e of allEvents) {
     const d = new Date(e.date + 'T00:00:00')
     if (d < today || d > horizon) continue
     if (!groups.has(e.date)) groups.set(e.date, [])
@@ -96,6 +115,8 @@ export function CalendarPanel() {
                   key={e.id}
                   className={`cal-event ${e.noteId ? 'is-new' : ''} ${
                     e.source === 'google' ? 'is-google' : ''
+                  } ${e.kind === 'reminder' ? 'is-reminder' : ''} ${
+                    e.done ? 'is-done' : ''
                   }`}
                 >
                   <span
@@ -103,7 +124,14 @@ export function CalendarPanel() {
                     style={{ background: KIND_COLOR[e.kind] }}
                   />
                   <div className="ce-main">
-                    <div className="ce-title">{e.title}</div>
+                    <div className="ce-title">
+                      {(e.kind === 'reminder' || e.kind === 'study') && (
+                        <span className="ce-streak-ico">
+                          {e.done ? '✓' : e.kind === 'reminder' ? '🔥' : ''}
+                        </span>
+                      )}
+                      {e.title}
+                    </div>
                     {e.start && (
                       <div className="ce-time">
                         {e.start}

@@ -32,8 +32,8 @@ export function FeatureGenerator({ note }: Props) {
   // mode (default) leaves this false so the generator stays fully usable.
   const locked = !!state.billing?.billingEnabled && !state.billing?.subscribed
 
-  const goToCheckout = async () => {
-    const { url, error } = await startCheckout()
+  const goToCheckout = async (kind: 'activate' | 'topup' = 'activate') => {
+    const { url, error } = await startCheckout(kind)
     if (url) window.location.href = url
     else if (error) alert(error)
   }
@@ -184,20 +184,42 @@ export function FeatureGenerator({ note }: Props) {
   }
 
   if (aiOn && locked) {
+    const outOfCredit = !!state.billing?.active
+    const pricing = state.billing?.pricing
+    const activation = ((pricing?.activationPence ?? 1000) / 100).toFixed(0)
+    const included = ((pricing?.includedCreditPence ?? 100) / 100).toFixed(2)
+    const topupPrice = ((pricing?.topupPence ?? 400) / 100).toFixed(2)
+    const topupCredit = (
+      (pricing?.topupPence ?? 400) / (pricing?.tokenMarkup ?? 2) / 100
+    ).toFixed(2)
     return (
       <div className="gen">
         <div className="gen-head">
           <span className="gen-title">Evolve this note</span>
         </div>
         <div className="gen-locked">
-          <p>
-            <strong>Evolve Pro</strong> lets Claude suggest and build custom,
-            interactive tools tailored to each note. Your notes keep classifying
-            and building their workspace for free on the Local engine.
-          </p>
+          {outOfCredit ? (
+            <p>
+              <strong>You’ve used your AI credit.</strong> Top up £{topupPrice}{' '}
+              for £{topupCredit} more of Claude usage (£
+              {pricing?.tokenMarkup ?? 2} per £1 of tokens). Your notes keep
+              working for free on the Local engine.
+            </p>
+          ) : (
+            <p>
+              <strong>Unlock Claude tools — £{activation} one-time.</strong>{' '}
+              Includes £{included} of AI usage; after that, more credit costs £
+              {pricing?.tokenMarkup ?? 2} per £1 of tokens. Your notes keep
+              classifying and building their workspace for free on the Local
+              engine.
+            </p>
+          )}
           <div className="gen-tier-actions">
-            <button className="gen-build" onClick={goToCheckout}>
-              ✦ Subscribe to unlock
+            <button
+              className="gen-build"
+              onClick={() => goToCheckout(outOfCredit ? 'topup' : 'activate')}
+            >
+              {outOfCredit ? `↻ Top up £${topupPrice}` : `✦ Unlock for £${activation}`}
             </button>
             <button className="gen-suggest" onClick={() => setBackend('local')}>
               Stay on Local

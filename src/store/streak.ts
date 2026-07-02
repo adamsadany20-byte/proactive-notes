@@ -1,0 +1,304 @@
+import type { CalendarEvent, Note, Reminder, StreakInfo } from '../types'
+import { uid } from '../engine/generate'
+
+// ---------------------------------------------------------------------------
+// Recurring-reminder scheduling + streak maths.
+//
+// A reminder recurs on a set of weekdays. The "streak" is the number of
+// consecutive *expected* occurrences the user has completed, ending at the most
+// recent expected day. Today is given grace: if today is expected but not yet
+// done, the streak isn't broken — it's "at risk" until the day passes.
+// ---------------------------------------------------------------------------
+
+export const WEEKDAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'] as const
+export const WEEKDAY_FULL = [
+  'Sunday',
+  'Monday',
+  'Tuesday',
+  'Wednesday',
+  'Thursday',
+  'Friday',
+  'Saturday',
+] as const
+
+// Horizon (days ahead) over which recurring occurrences are projected onto the
+// calendar. Matches the CalendarPanel's own two-week window.
+const HORIZON_DAYS = 14
+
+export function isoOf(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
+    d.getDate(),
+  ).padStart(2, '0')}`
+}
+
+export function todayIso(): string {
+  return isoOf(new Date())
+}
+
+function dateOf(iso: string): Date {
+  return new Date(iso + 'T00:00:00')
+}
+
+// Does this reminder expect an occurrence on the given day?
+export function isExpectedOn(reminder: Reminder, iso: string): boolean {
+  if (!reminder.weekdays.length) return false
+  return reminder.weekdays.includes(dateOf(iso).getDay())
+}
+
+// Human label for a weekday set: Daily / Weekdays / Weekly on … / a day list.
+export function cadenceLabel(weekdays: number[]): string {
+  const set = [...new Set(weekdays)].sort()
+  if (set.length === 0) return 'No days set'
+  if (set.length === 7) return 'Daily'
+  if (set.length === 5 && [1, 2, 3, 4, 5].every((d) => set.includes(d)))
+    return 'Weekdays'
+  if (set.length === 2 && set.includes(0) && set.includes(6)) return 'Weekends'
+  if (set.length === 1) return `Weekly · ${WEEKDAY_FULL[set[0]]}`
+  return `${set.length}× a week`
+}
+
+// Map an answer chip ("Daily", "3× a week", "Weekly") to a weekday set. Weekly
+// anchors to the day the note was created so it feels personal.
+export function weekdaysFromCadence(cadence: string | undefined, anchor: Date): number[] {
+  const c = (cadence ?? '').toLowerCase()
+  if (c.includes('week') && (c.includes('3') || c.includes('×') || c.includes('x')))
+    return [1, 3, 5]
+  if (c.includes('weekday')) return [1, 2, 3, 4, 5]
+  if (c.includes('weekly') || c === 'weekly') return [anchor.getDay()]
+  // Default (Daily / unknown) → every day.
+  return [0, 1, 2, 3, 4, 5, 6]
+}
+
+function headline(note: Note): string {
+  return note.text.trim().split('\n')[0].slice(0, 48) || 'Daily goal'
+}
+
+function cap(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1)
+}
+
+// The ordered, de-duplicated set of scheduled session dates for a note (from its
+// study-schedule segment). These are the "individual recurrences" of a wider
+// goal — e.g. every study session before a test.
+export function sessionDates(note: Note): string[] {
+  const seg = note.segments.find((s) => s.type === 'schedule')
+  const sessions = (seg?.data?.sessions ?? []) as { date: string }[]
+  return [...new Set(sessions.map((s) => s.date))].sort()
+}
+
+// How many occurrences a weekday schedule would land on the calendar over the
+// projection horizon. Used to decide whether a goal recurs enough to be worth
+// offering a streak ("more than one event for the same goal").
+export function occurrenceCount(weekdays: number[], days = HORIZON_DAYS): number {
+  if (!weekdays.length) return 0
+  let n = 0
+  const cursor = new Date()
+  cursor.setHours(0, 0, 0, 0)
+  for (let i = 0; i <= days; i++) {
+    if (weekdays.includes(cursor.getDay())) n++
+    cursor.setDate(cursor.getDate() + 1)
+  }
+  return n
+}
+
+// How many streak-worthy occurrences a note would have, for the "start a streak?"
+// offer. Sessions notes count their scheduled sessions; everything else counts
+// its recurring schedule.
+export function candidateOccurrenceCount(note: Note): number {
+  if (note.kind === 'academic') return sessionDates(note).length
+  const weekdays = weekdaysFromCadence(note.answers.cadence, new Date())
+  return occurrenceCount(weekdays)
+}
+
+// A fresh reminder seeded from a note. Academic notes track their study sessions
+// (a finite plan toward the test); everything else is an open-ended habit.
+export function reminderFromNote(note: Note): Reminder {
+  const created = new Date()
+  const base = {
+    id: uid('rem'),
+    noteId: note.id,
+    createdAt: created.getTime(),
+    completions: [] as string[],
+    bestStreak: 0,
+  }
+  if (note.kind === 'academic') {
+    const subject = note.entities?.subject
+    return {
+      ...base,
+      mode: 'sessions',
+      title: note.answers.goal || headline(note),
+      target:
+        note.answers.target || (subject ? `${cap(subject)} test` : undefined),
+      weekdays: [],
+      time: '17:00',
+    }
+  }
+  return {
+    ...base,
+    mode: 'recurring',
+    title: note.answers.goal || headline(note),
+    target: note.answers.target || undefined,
+    weekdays: weekdaysFromCadence(note.answers.cadence, created),
+    time: '09:00',
+  }
+}
+
+// ---- Streak computation -----------------------------------------------------
+
+// Recurring habit: the trailing run of completed expected-days, ending at the
+// most recent one. Today gets grace — an unfinished today doesn't break it.
+function recurringStreak(reminder: Reminder): StreakInfo {
+  const done = new Set(reminder.completions)
+  const today = todayIso()
+  const todayExpected = isExpectedOn(reminder, today)
+  const todayDone = done.has(today)
+
+  let current = 0
+  const cursor = new Date()
+  cursor.setHours(0, 0, 0, 0)
+  let first = true
+  for (let guard = 0; guard < 3650; guard++) {
+    const iso = isoOf(cursor)
+    if (isExpectedOn(reminder, iso)) {
+      if (done.has(iso)) current++
+      else if (first && iso === today) {
+        // grace for today
+      } else break
+      first = false
+    }
+    cursor.setDate(cursor.getDate() - 1)
+    if (cursor.getTime() < reminder.createdAt - 86400000) break
+  }
+
+  return {
+    current,
+    best: Math.max(reminder.bestStreak, current),
+    todayExpected,
+    todayDone,
+    atRisk: todayExpected && !todayDone && current > 0,
+    actionableDate: todayExpected && !todayDone ? today : null,
+  }
+}
+
+// Finite plan (e.g. study sessions): how many sessions you've completed in order
+// without a gap. The next incomplete session is what to do next; an unfinished
+// session whose date has arrived means you're falling behind.
+function sessionStreak(reminder: Reminder, note: Note): StreakInfo {
+  const occ = sessionDates(note)
+  const done = new Set(reminder.completions)
+  const today = todayIso()
+
+  let current = 0
+  for (const d of occ) {
+    if (done.has(d)) current++
+    else break
+  }
+  const actionableDate = occ[current] ?? null // first incomplete session
+  const behind = occ.some((d) => d <= today && !done.has(d))
+
+  return {
+    current,
+    best: Math.max(reminder.bestStreak, current),
+    todayExpected: occ.includes(today),
+    todayDone: done.has(today),
+    atRisk: behind && current > 0,
+    actionableDate,
+  }
+}
+
+export function computeStreak(reminder: Reminder, note?: Note): StreakInfo {
+  if (reminder.mode === 'sessions' && note) return sessionStreak(reminder, note)
+  return recurringStreak(reminder)
+}
+
+// ---- Trail (the row of dots the UI renders) ---------------------------------
+
+export interface TrailItem {
+  iso: string
+  done: boolean
+  marker: 'today' | 'next' | null
+  label: string
+}
+
+export function trailItems(
+  reminder: Reminder,
+  note: Note,
+  info: StreakInfo,
+  count = 7,
+): TrailItem[] {
+  const done = new Set(reminder.completions)
+  const today = todayIso()
+
+  if (reminder.mode === 'sessions') {
+    const occ = sessionDates(note)
+    // Window the plan around current progress so it stays compact.
+    const win = Math.max(count, 7)
+    const start = Math.max(0, Math.min(info.current - 2, occ.length - win))
+    return occ.slice(Math.max(0, start), Math.max(0, start) + win).map((iso) => ({
+      iso,
+      done: done.has(iso),
+      marker: iso === info.actionableDate ? 'next' : null,
+      label: String(dateOf(iso).getDate()),
+    }))
+  }
+
+  // Recurring: the last `count` expected days, most recent last.
+  const out: TrailItem[] = []
+  const cursor = new Date()
+  cursor.setHours(0, 0, 0, 0)
+  for (let guard = 0; guard < 3650 && out.length < count; guard++) {
+    const iso = isoOf(cursor)
+    if (isExpectedOn(reminder, iso)) {
+      out.unshift({
+        iso,
+        done: done.has(iso),
+        marker: iso === today ? 'today' : null,
+        label: WEEKDAY_LABELS[dateOf(iso).getDay()],
+      })
+    }
+    cursor.setDate(cursor.getDate() - 1)
+  }
+  return out
+}
+
+// Next recurring occurrence strictly after today (for "next: Tomorrow" hints).
+export function nextOccurrence(reminder: Reminder): string | null {
+  const cursor = new Date()
+  cursor.setHours(0, 0, 0, 0)
+  cursor.setDate(cursor.getDate() + 1)
+  for (let i = 0; i < 366; i++) {
+    const iso = isoOf(cursor)
+    if (isExpectedOn(reminder, iso)) return iso
+    cursor.setDate(cursor.getDate() + 1)
+  }
+  return null
+}
+
+// Project every reminder's upcoming occurrences onto calendar events. Derived at
+// render time (never persisted) so the dates stay relative to "today".
+export function reminderCalendarEvents(reminders: Reminder[]): CalendarEvent[] {
+  const events: CalendarEvent[] = []
+  const start = new Date()
+  start.setHours(0, 0, 0, 0)
+  for (const r of reminders) {
+    if (!r.weekdays.length) continue
+    const done = new Set(r.completions)
+    const cursor = new Date(start)
+    for (let i = 0; i <= HORIZON_DAYS; i++) {
+      const iso = isoOf(cursor)
+      if (isExpectedOn(r, iso)) {
+        events.push({
+          id: `rem-${r.id}-${iso}`,
+          title: r.title,
+          date: iso,
+          start: r.time,
+          kind: 'reminder',
+          reminderId: r.id,
+          done: done.has(iso),
+        })
+      }
+      cursor.setDate(cursor.getDate() + 1)
+    }
+  }
+  return events
+}

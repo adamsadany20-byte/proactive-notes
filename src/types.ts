@@ -95,7 +95,7 @@ export type SegmentType =
   | 'checklist'
   | 'schedule'
   | 'project-board'
-  | 'goal-tracker'
+  | 'streak-tracker'
   | 'event-alert'
   | 'purchase-planner'
 
@@ -180,10 +180,52 @@ export interface CalendarEvent {
   date: string // YYYY-MM-DD
   start?: string // HH:MM
   end?: string // HH:MM
-  kind: 'fixed' | 'study' | 'event' | 'briefing' | 'test'
+  kind: 'fixed' | 'study' | 'event' | 'briefing' | 'test' | 'reminder'
   noteId?: string // back-link to the note that created it
   topics?: string[]
   source?: 'google' // present when synced from the user's real calendar
+  // Set on projected recurring-reminder occurrences (see store/streak.ts).
+  reminderId?: string
+  done?: boolean // whether this occurrence has been completed
+}
+
+// ---- Recurring reminders & streaks ------------------------------------------
+
+// A streak-tracked commitment attached to a note that ladders up to a wider
+// objective. Two modes:
+//   'recurring' — an open-ended habit (a goal). Occurrences come from `weekdays`
+//                 (0 = Sunday … 6 = Saturday); the streak is the trailing run of
+//                 completed days, with today given grace.
+//   'sessions'  — a finite ordered plan toward an end (e.g. study sessions before
+//                 a test). Occurrences come from the note's scheduled sessions;
+//                 the streak is how many you've completed in order without a gap.
+// `completions` is the log of ISO days marked done — the streak is derived from
+// it, never stored redundantly.
+export type StreakMode = 'recurring' | 'sessions'
+
+export interface Reminder {
+  id: string
+  noteId: string // the note this belongs to
+  title: string
+  target?: string // the wider goal, e.g. "run 5k" / "Maths test"
+  mode: StreakMode
+  weekdays: number[] // 0..6 — used when mode === 'recurring'
+  time: string // "HH:MM" — when the nudge fires / event lands
+  createdAt: number
+  completions: string[] // ISO days (YYYY-MM-DD) completed
+  bestStreak: number // longest run ever achieved, in occurrences
+}
+
+// Derived streak state for a reminder, computed on demand.
+export interface StreakInfo {
+  current: number // consecutive occurrences completed
+  best: number
+  todayExpected: boolean
+  todayDone: boolean
+  atRisk: boolean // streak alive but an occurrence is due and still pending
+  // The occurrence the primary action should complete next (to extend the
+  // streak), or null when there's nothing due right now.
+  actionableDate: string | null
 }
 
 // ---- Notes ------------------------------------------------------------------
@@ -206,6 +248,9 @@ export interface Note {
   enrichment?: Enrichment
   // Ideas connected on the "Map" mode canvas. Independent of the written text.
   mindmap?: MindMap
+  // True once the user has declined the "start a streak?" offer for this goal,
+  // so we stop asking (they can still opt in from the tracker later).
+  streakDeclined?: boolean
 }
 
 export interface InferenceResult {

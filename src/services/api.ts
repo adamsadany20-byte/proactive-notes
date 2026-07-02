@@ -48,6 +48,17 @@ export interface BillingStatus {
   freeMode: boolean
   // True whenever the client may use paid features — always true in free mode.
   subscribed: boolean
+  // Credit model: £10 one-time activation includes £1 of AI token credit;
+  // further usage is bought at £{tokenMarkup} per £1 of tokens.
+  active?: boolean
+  creditPence?: number
+  usedPence?: number
+  pricing?: {
+    activationPence: number
+    includedCreditPence: number
+    topupPence: number
+    tokenMarkup: number
+  }
 }
 
 export function fetchBillingStatus() {
@@ -58,8 +69,12 @@ export function fetchBillingStatus() {
   )
 }
 
-// Begin checkout. Returns a Stripe URL to redirect to, or an error/freeMode hint.
-export async function startCheckout(): Promise<{
+// Begin checkout. `kind` picks the product: 'activate' (£10 one-time, includes
+// £1 of AI credit) or 'topup' (more credit at the markup rate). Returns a
+// Stripe URL to redirect to, or an error/freeMode hint.
+export async function startCheckout(
+  kind: 'activate' | 'topup' = 'activate',
+): Promise<{
   url?: string
   freeMode?: boolean
   error?: string
@@ -69,7 +84,7 @@ export async function startCheckout(): Promise<{
     {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ clientId: getClientId() }),
+      body: JSON.stringify({ clientId: getClientId(), kind }),
     },
   )
   if (!r) return { error: 'Could not reach the server.' }
@@ -103,10 +118,21 @@ async function safeJson<T>(
   timeoutMs = 30000,
 ): Promise<T | null> {
   try {
+    // Add auth token to headers if available
+    const { getAuthToken } = await import('./supabase')
+    const token = await getAuthToken()
+    const headers = new Headers(init?.headers || {})
+    if (token) {
+      headers.set('Authorization', `Bearer ${token}`)
+    }
+
     const timeoutPromise = new Promise<T>((_, reject) =>
       setTimeout(() => reject(new Error('timeout')), timeoutMs)
     )
-    const r = await Promise.race([fetch(url, init), timeoutPromise])
+    const r = await Promise.race([
+      fetch(url, { ...init, headers }),
+      timeoutPromise,
+    ])
     if (r instanceof Response) {
       return (await r.json()) as T
     }

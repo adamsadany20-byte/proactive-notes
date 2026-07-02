@@ -1,0 +1,35 @@
+# Render blueprint — deploys the whole app (API + built frontend) as ONE free
+# web service. On https://render.com: New → Blueprint → point at this repo.
+# Only ANTHROPIC_API_KEY needs filling in; everything else has safe defaults.
+services:
+  - type: web
+    name: proactive-notes
+    runtime: node
+    plan: free
+    # VITE_API_BASE="" makes the frontend call the API on its own origin.
+    buildCommand: VITE_API_BASE="" npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false # paste your key in the Render dashboard
+      # Haiku builds tools (cheap/fast); Sonnet answers world-knowledge lookups.
+      - key: AI_MODEL_CODE
+        value: claude-haiku-4-5
+      - key: AI_MODEL_KNOWLEDGE
+        value: claude-sonnet-5
+      - key: WEB_SEARCH
+        value: "true"
+      # Supabase (optional: accounts + sync). Get from Supabase → Settings → API.
+      # Leave blank for local-only mode (no login, no cross-device sync).
+      - key: VITE_SUPABASE_URL
+        sync: false
+      - key: VITE_SUPABASE_ANON_KEY
+        sync: false
+      # Free mode: nothing is gated, no Stripe needed. Flip to "true" (and add
+      # STRIPE_SECRET_KEY + STRIPE_WEBHOOK_SECRET) only when you want to charge.
+      - key: BILLING_ENABLED
+        value: "false"
+      # After the first deploy, set this to your public URL, e.g.
+      # https://proactive-notes.onrender.com (used for Stripe/OAuth redirects).
+      - key: APP_ORIGIN
+        sync: false
