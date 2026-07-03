@@ -25,10 +25,20 @@ services:
         sync: false
       - key: VITE_SUPABASE_ANON_KEY
         sync: false
-      # Free mode: nothing is gated, no Stripe needed. Flip to "true" (and add
-      # STRIPE_SECRET_KEY + STRIPE_WEBHOOK_SECRET) only when you want to charge.
+      # Billing is ON: the credit model gates the Claude tools (£10 activation
+      # incl. £1 credit; top-ups after). Requires STRIPE_SECRET_KEY below, or
+      # checkout returns "billing not configured". Set BILLING_ENABLED back to
+      # "false" to make the whole app free again (nothing gated, no Stripe).
       - key: BILLING_ENABLED
-        value: "false"
+        value: "true"
+      # Stripe secret key (sk_test_… / sk_live_…). No Price IDs needed —
+      # Checkout uses inline price_data. Paste it in the Render dashboard.
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      # Webhook signing secret (whsec_…) for /api/billing/webhook. Add the
+      # endpoint in the Stripe dashboard, then paste its secret here.
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
       # After the first deploy, set this to your public URL, e.g.
       # https://proactive-notes.onrender.com (used for Stripe/OAuth redirects).
       - key: APP_ORIGIN

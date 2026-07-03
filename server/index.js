@@ -14,13 +14,28 @@ import {
   recordUsage,
 } from './entitlementStore.js'
 
-// Load server/.env explicitly relative to THIS file, so the keys load no matter
-// where the process is launched from (project root via `npm start`, or the
-// server dir via `npm run dev:server`). The default `dotenv/config` only checks
-// the current working directory, which silently dropped the keys when started
-// from the repo root.
+// Load env explicitly relative to THIS file, so the keys load no matter where
+// the process is launched from (project root via `npm start`, or the server
+// dir via `npm run dev:server`). The default `dotenv/config` only checks the
+// current working directory, which silently dropped the keys when started from
+// the repo root.
+//
+// We also read the repo-root .env / .env.local, because the frontend's Vite
+// keys (VITE_SUPABASE_*) live there — so that's the natural place users drop
+// server secrets like GOOGLE_CLIENT_ID / STRIPE_SECRET_KEY too. Loading only
+// server/.env silently ignored those, leaving Calendar/Billing stuck reporting
+// "not configured" even though the keys were "set". dotenv never overrides an
+// already-defined var, so precedence is: real process.env (e.g. Render's
+// dashboard) > server/.env > root .env.local > root .env.
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-dotenv.config({ path: path.join(__dirname, '.env') })
+const repoRoot = path.join(__dirname, '..')
+for (const envPath of [
+  path.join(__dirname, '.env'),
+  path.join(repoRoot, '.env.local'),
+  path.join(repoRoot, '.env'),
+]) {
+  dotenv.config({ path: envPath })
+}
 
 const PORT = process.env.PORT || 8787
 const APP_ORIGIN = process.env.APP_ORIGIN || 'http://localhost:5173'
