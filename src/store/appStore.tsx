@@ -64,6 +64,7 @@ type Action =
   | { type: 'UPDATE_REMINDER'; reminderId: string; patch: Partial<Reminder> }
   | { type: 'START_STREAK'; noteId: string }
   | { type: 'DECLINE_STREAK'; noteId: string }
+  | { type: 'HYDRATE'; notes: Note[]; reminders: Reminder[] }
 
 const STORAGE_KEY = 'proactive-notes-v1'
 
@@ -334,6 +335,35 @@ function reducer(state: State, action: Action): State {
       )
       return { ...state, notes }
     }
+    case 'HYDRATE': {
+      // Merge cloud rows into local state (last-write-wins per id by updatedAt).
+      // Drop the empty starter note if real cloud notes arrive.
+      const byId = new Map(state.notes.map((n) => [n.id, n]))
+      for (const cloud of action.notes) {
+        const local = byId.get(cloud.id)
+        if (!local || (cloud.updatedAt ?? 0) >= (local.updatedAt ?? 0)) {
+          byId.set(cloud.id, cloud)
+        }
+      }
+      let notes = Array.from(byId.values())
+      // If the only local note was a blank starter, and cloud gave us real
+      // notes, drop the empty one so it doesn't linger.
+      if (action.notes.length) {
+        notes = notes.filter(
+          (n) => n.text.trim() !== '' || action.notes.some((c) => c.id === n.id),
+        )
+      }
+      if (!notes.length) notes = [newNote()]
+
+      const rById = new Map(state.reminders.map((r) => [r.id, r]))
+      for (const cloud of action.reminders) rById.set(cloud.id, cloud)
+      const reminders = Array.from(rById.values())
+
+      const selectedId = notes.some((n) => n.id === state.selectedId)
+        ? state.selectedId
+        : notes[0].id
+      return { ...state, notes, reminders, selectedId }
+    }
     case 'SET_ENRICHMENT': {
       const note = state.notes.find((n) => n.id === action.id)
       if (!note) return state
@@ -380,99 +410,88 @@ let saveTimeout: ReturnType<typeof setTimeout> | null = null
 
 async function syncToSupabase(state: State) {
   const { supabase } = await import('../services/supabase')
-  const { getAuthToken } = await import('../services/supabase')
 
   if (!supabase) return
 
-  const token = await getAuthToken()
-  if (!token) return
+  // The row's user_id must match the signed-in user or row-level security
+  // rejects the write with a 403. Get it from the current session.
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return
+  const userId = user.id
 
-  // For each note in the state, upsert it to the DB
-  for (const note of state.notes) {
-    const { error } = await supabase
-      .from('notes')
-      .upsert({
-        id: note.id,
-        data: note,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', note.id)
-
-    if (error) {
-      console.error('Failed to sync note to Supabase:', error)
-    }
+  // Upsert all notes in one batch (each row carries user_id for RLS).
+  const noteRows = state.notes.map((note) => ({
+    id: note.id,
+    user_id: userId,
+    data: note,
+    updated_at: new Date().toISOString(),
+  }))
+  if (noteRows.length) {
+    const { error } = await supabase.from('notes').upsert(noteRows)
+    if (error) console.error('Failed to sync notes to Supabase:', error)
   }
 
-  // Similarly for reminders
-  for (const reminder of state.reminders) {
-    const { error } = await supabase
-      .from('reminders')
-      .upsert({
-        id: reminder.id,
-        data: reminder,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', reminder.id)
-
-    if (error) {
-      console.error('Failed to sync reminder to Supabase:', error)
-    }
+  // Upsert all reminders the same way.
+  const reminderRows = state.reminders.map((reminder) => ({
+    id: reminder.id,
+    user_id: userId,
+    data: reminder,
+    updated_at: new Date().toISOString(),
+  }))
+  if (reminderRows.length) {
+    const { error } = await supabase.from('reminders').upsert(reminderRows)
+    if (error) console.error('Failed to sync reminders to Supabase:', error)
   }
 }
 
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reducer, undefined, load)
 
-  // Load fresh data from Supabase on mount
+  // Load the signed-in user's notes/reminders from Supabase on mount, and
+  // again whenever they sign in (so a fresh device pulls their data).
   useEffect(() => {
+    let cancelled = false
+
     const loadFromSupabase = async () => {
       const { supabase } = await import('../services/supabase')
-      const { getAuthToken } = await import('../services/supabase')
-
       if (!supabase) return
 
-      const token = await getAuthToken()
-      if (!token) return
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user || cancelled) return
 
-      // Fetch notes from Supabase
-      const { data: notesData, error: notesError } = await supabase
-        .from('notes')
-        .select('*')
+      // RLS scopes these selects to the current user automatically.
+      const [{ data: notesData }, { data: remindersData }] = await Promise.all([
+        supabase.from('notes').select('data'),
+        supabase.from('reminders').select('data'),
+      ])
+      if (cancelled) return
 
-      if (!notesError && notesData) {
-        const notesToAdd = notesData.filter(
-          (row: any) => !state.notes.find((n) => n.id === row.id),
-        )
-        notesToAdd.forEach((row: any) => {
-          dispatch({ type: 'CREATE_NOTE' })
-          // The new note's ID will be different, so this is a placeholder.
-          // In production, you'd do a more sophisticated merge.
-        })
-      }
-
-      // Fetch reminders from Supabase
-      const { data: remindersData, error: remindersError } = await supabase
-        .from('reminders')
-        .select('*')
-
-      if (!remindersError && remindersData) {
-        remindersData.forEach((row: any) => {
-          const exists = state.reminders.find((r) => r.id === row.id)
-          if (!exists) {
-            dispatch({
-              type: 'UPDATE_REMINDER',
-              reminderId: row.id,
-              patch: row.data,
-            })
-          }
-        })
+      const notes = (notesData ?? []).map((row: any) => row.data as Note)
+      const reminders = (remindersData ?? []).map((row: any) => row.data as Reminder)
+      if (notes.length || reminders.length) {
+        dispatch({ type: 'HYDRATE', notes, reminders })
       }
     }
 
-    // Load from Supabase once on mount
     loadFromSupabase().catch((err) => {
       console.error('Failed to load from Supabase:', err)
     })
+
+    // Re-pull whenever auth state changes (e.g. just signed in).
+    let unsub: (() => void) | undefined
+    import('../services/supabase').then(({ supabase }) => {
+      if (!supabase || cancelled) return
+      const { data } = supabase.auth.onAuthStateChange((event) => {
+        if (event === 'SIGNED_IN') loadFromSupabase().catch(() => {})
+      })
+      unsub = () => data.subscription.unsubscribe()
+    })
+
+    return () => {
+      cancelled = true
+      unsub?.()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
