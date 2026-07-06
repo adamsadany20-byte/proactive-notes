@@ -444,6 +444,30 @@ async function syncToSupabase(state: State) {
   }
 }
 
+// Propagate a deletion to Supabase. syncToSupabase only ever upserts, so a
+// deleted row lingers in the cloud and gets merged back on the next HYDRATE
+// (the note/reminder "resurrects"). Deleting a note cascades to the streak
+// reminders it owns, so we clear those rows too. Deletes are scoped by id;
+// RLS additionally restricts them to the signed-in user's rows.
+async function deleteFromSupabase(noteId: string, reminderIds: string[]) {
+  const { supabase } = await import('../services/supabase')
+  if (!supabase) return
+
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return
+
+  const { error: noteErr } = await supabase.from('notes').delete().eq('id', noteId)
+  if (noteErr) console.error('Failed to delete note from Supabase:', noteErr)
+
+  if (reminderIds.length) {
+    const { error: remErr } = await supabase
+      .from('reminders')
+      .delete()
+      .in('id', reminderIds)
+    if (remErr) console.error('Failed to delete reminders from Supabase:', remErr)
+  }
+}
+
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reducer, undefined, load)
 
@@ -521,7 +545,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       selected: state.notes.find((n) => n.id === state.selectedId) ?? null,
       createNote: () => dispatch({ type: 'CREATE_NOTE' }),
       select: (id) => dispatch({ type: 'SELECT', id }),
-      remove: (id) => dispatch({ type: 'DELETE', id }),
+      remove: (id) => {
+        // A note owns its streak reminders; capture their ids before the
+        // reducer drops them, so we can delete their cloud rows too. Without
+        // this, the deleted note/reminders come back on the next cloud hydrate.
+        const ownedReminderIds = state.reminders
+          .filter((r) => r.noteId === id)
+          .map((r) => r.id)
+        dispatch({ type: 'DELETE', id })
+        deleteFromSupabase(id, ownedReminderIds).catch((err) =>
+          console.error('Supabase delete error:', err),
+        )
+      },
       setText: (id, text) => dispatch({ type: 'SET_TEXT', id, text }),
       reassess: (id, paused) => dispatch({ type: 'REASSESS', id, paused }),
       answer: (id, field, value) => dispatch({ type: 'ANSWER', id, field, value }),
