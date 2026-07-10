@@ -25,6 +25,15 @@ services:
         sync: false
       - key: VITE_SUPABASE_ANON_KEY
         sync: false
+      # Server-side token verification (Supabase → Settings → API → JWT Secret).
+      # Required before enabling live billing so user ids can't be forged.
+      - key: SUPABASE_JWT_SECRET
+        sync: false
+      # Service-role key (Supabase → Settings → API → service_role). Lets the
+      # server persist paid credit in the `entitlements` table so it survives
+      # redeploys. Required before live billing. NEVER expose it to the browser.
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
       # Free mode: nothing is gated, no Stripe needed. Flip to "true" (and add
       # STRIPE_SECRET_KEY + STRIPE_WEBHOOK_SECRET) only when you want to charge.
       - key: BILLING_ENABLED

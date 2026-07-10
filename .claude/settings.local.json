@@ -43,7 +43,9 @@
       "Bash(curl -s -m 5 http://localhost:8787/api/config)",
       "Bash(npm start *)",
       "Bash(git add *)",
-      "Bash(git commit -m 'Professional polish pass: design consistency & code quality *)"
+      "Bash(git commit -m 'Professional polish pass: design consistency & code quality *)",
+      "WebFetch(domain:platform.openai.com)",
+      "WebFetch(domain:developers.openai.com)"
     ]
   }
 }

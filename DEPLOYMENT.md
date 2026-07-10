@@ -132,11 +132,13 @@ and testing without paying.
 ### What's implemented
 - **Master switch:** `BILLING_ENABLED` env var. `false` = free mode (default);
   `true` = enforce the paywall.
-- **Client identity (no login yet):** the browser generates a stable anonymous
-  `clientId` (localStorage `evolve.clientId`) and sends it with every request.
-  Balances are keyed by it in `server/.subscriptions.json` (dev-grade flat
-  file — see `server/entitlementStore.js`). Swap this store for a real DB +
-  accounts when you add login; the record shape already maps onto a users table.
+- **Billing identity:** the Supabase user id when the client is logged in, else
+  a stable anonymous `clientId` (localStorage `evolve.clientId`). The server
+  verifies the Supabase token (see `SUPABASE_JWT_SECRET`) before trusting the id.
+- **Balance store** (`server/entitlementStore.js`): with
+  `SUPABASE_SERVICE_ROLE_KEY` set, balances live in the Supabase `entitlements`
+  table (survives redeploys — use this in production). Without it, they fall back
+  to `server/.subscriptions.json` (dev-grade flat file that resets on redeploy).
 - **Owner bypass:** `FREE_CLIENT_IDS` — a comma-separated list of clientIds that
   are never billed. Put your own browser's id there so you can test a deployed
   app for free even with billing on.
@@ -168,12 +170,20 @@ and testing without paying.
    `/api/billing/webhook` and subscribe to `checkout.session.completed`.
 4. Restart the server. The startup log prints the billing state.
 
-### Before charging real money: accounts
-The `clientId` approach is per-browser, not per-person — fine for wiring up and
-testing, but for production you want real login so a subscription follows the
-user across devices. Easiest path for a solo dev: **Supabase Auth** or **Clerk**
-(hosted, free tier). Replace `clientId` with the authenticated user id and point
-`entitlementStore` at a real database (e.g. Postgres on Render, or Supabase).
+### Before charging real money: the checklist
+This is now wired up — you just need to set the env vars:
+1. **Accounts** (so a subscription follows the person, not the browser): enable
+   Supabase Auth (see the Accounts section below). When logged in, the billing
+   key is the Supabase user id, so paid credit works across devices.
+2. **Persistent balances:** set `SUPABASE_SERVICE_ROLE_KEY` so credit lives in
+   the Supabase `entitlements` table instead of the flat file (which resets on
+   redeploy and would wipe customers' credit).
+3. **Verified tokens:** set `SUPABASE_JWT_SECRET` so a forged token can't
+   impersonate another user's account.
+
+The startup log prints which entitlement backend and auth mode are active — check
+it says `Entitlements: Supabase` and `Auth: Supabase JWT signature-verified`
+before flipping to live Stripe keys.
 
 ---
 
@@ -213,6 +223,21 @@ create table reminders (
 alter table reminders enable row level security;
 create policy "own reminders" on reminders
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- Billing entitlements (paid credit). Keyed by the billing key: the Supabase
+-- user id when logged in, else an anonymous clientId. RLS is ON with NO policy,
+-- so the browser can never read or grant itself credit — only the server's
+-- service_role key (which bypasses RLS) touches this table.
+create table entitlements (
+  key text primary key,
+  status text not null default 'none',
+  credit_pence double precision not null default 0,
+  used_pence double precision not null default 0,
+  paid_pence double precision not null default 0,
+  customer_id text,
+  updated_at timestamptz not null default now()
+);
+alter table entitlements enable row level security;
 ```
 
 3. Click **Run**. The tables appear in the left sidebar under your database.
@@ -285,7 +310,21 @@ Add to `server/.env`:
 BILLING_ENABLED=true
 STRIPE_SECRET_KEY=sk_test_...       # from Step 1
 STRIPE_WEBHOOK_SECRET=whsec_...      # from Step 2
+# Persist paid credit + verify users (both from Supabase → Settings → API):
+SUPABASE_URL=https://xxxx.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=eyJhbGc...   # service_role key — server-only, secret
+SUPABASE_JWT_SECRET=...                # JWT Secret — verifies user tokens
 ```
+
+> **Why the two Supabase keys matter for billing:** paid credit is stored in the
+> Supabase `entitlements` table (created in the Accounts SQL above) so it
+> **survives redeploys**. Without `SUPABASE_SERVICE_ROLE_KEY` the server falls
+> back to a local flat file (`server/.subscriptions.json`) that resets whenever
+> the host restarts — fine for testing, but it would **wipe customers' paid
+> credit** in production. The startup log tells you which backend is active. On
+> Render you only need to add `SUPABASE_SERVICE_ROLE_KEY` + `SUPABASE_JWT_SECRET`
+> (the URL is already there via `VITE_SUPABASE_URL`); set `SUPABASE_URL` too for
+> local testing since Vite's root env isn't loaded into the server process.
 
 Optionally tweak the business model (all in `server/.env`):
 ```
@@ -318,7 +357,7 @@ When you're ready to charge real money:
 - **Test mode is free.** Keep testing before flipping to live.
 - **Webhook secret matters.** Without it, Stripe can't prove the message is real, and the webhook is ignored (fine for local `stripe listen`, but on production you MUST set it).
 - **Stripe Dashboard → Customers** shows who's activated/topped up and their spending.
-- **Chargeback/refund?** Manually clear their credit in `server/.subscriptions.json` (or your DB once you add one). Stripe handles the money; you handle the access.
+- **Chargeback/refund?** Clear their credit in the Supabase `entitlements` table (Table Editor → find their `key` → set `credit_pence`/`status`), or in `server/.subscriptions.json` if you're still on the flat-file fallback. Stripe handles the money; you handle the access.
 
 ---
 

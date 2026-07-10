@@ -4,6 +4,7 @@ import cors from 'cors'
 import path from 'path'
 import fs from 'fs'
 import { fileURLToPath } from 'url'
+import { createHmac, timingSafeEqual } from 'node:crypto'
 import { saveTokens, loadTokens, clearTokens } from './tokenStore.js'
 import {
   getEntitlement,
@@ -12,6 +13,7 @@ import {
   activate,
   addCredit,
   recordUsage,
+  entitlementsBackend,
 } from './entitlementStore.js'
 
 // Load server/.env explicitly relative to THIS file, so the keys load no matter
@@ -113,15 +115,15 @@ const FREE_CLIENT_IDS = new Set(
 
 // Free mode (billing off) → always allowed, so editing/trying never gets gated.
 // With billing on, a client needs an activated account with credit remaining.
-function hasAccess(clientId) {
+async function hasAccess(clientId) {
   if (!BILLING_ENABLED) return true
   if (clientId && FREE_CLIENT_IDS.has(clientId)) return true
-  return isActive(clientId) && hasCredit(clientId)
+  return (await isActive(clientId)) && (await hasCredit(clientId))
 }
 
 // 402 payload that tells the frontend WHY (buy activation vs top up credit).
-function paywallBody(clientId, extra = {}) {
-  const active = isActive(clientId)
+async function paywallBody(clientId, extra = {}) {
+  const active = await isActive(clientId)
   return {
     configured: true,
     subscribed: false,
@@ -163,10 +165,10 @@ function usageCostPence(usage, model) {
 
 // Deduct a call's cost from the client's credit. Metered even in free mode so
 // `usedPence` shows what your users would have cost you.
-function meterUsage(clientId, costPence) {
+async function meterUsage(clientId, costPence) {
   if (!clientId || !(costPence > 0)) return
   try {
-    recordUsage(clientId, costPence)
+    await recordUsage(clientId, costPence)
   } catch (err) {
     console.error('metering error:', err?.message || err)
   }
@@ -184,24 +186,61 @@ app.use((req, res, next) => {
   express.json({ limit: '256kb' })(req, res, next)
 })
 
-// Auth middleware: extract Supabase JWT and fall back to clientId
-app.use(async (req, res, next) => {
+// Supabase access tokens are HS256-signed with the project's JWT secret
+// (Settings → API → JWT Secret). When SUPABASE_JWT_SECRET is set we verify the
+// signature so a forged token can't impersonate another user (critical once
+// billing is real). Without it we fall back to an UNVERIFIED decode — fine for
+// local dev, but the startup log warns, and it must be set before charging.
+const SUPABASE_JWT_SECRET = process.env.SUPABASE_JWT_SECRET || ''
+
+function b64urlToBuf(s) {
+  return Buffer.from(s.replace(/-/g, '+').replace(/_/g, '/'), 'base64')
+}
+
+function verifySupabaseJwt(token) {
+  const parts = token.split('.')
+  if (parts.length !== 3) return null
+  const [h, p, sig] = parts
+  try {
+    const header = JSON.parse(b64urlToBuf(h).toString())
+    if (header.alg !== 'HS256') return null // only the shared-secret alg here
+    const expected = createHmac('sha256', SUPABASE_JWT_SECRET)
+      .update(`${h}.${p}`)
+      .digest()
+    const got = b64urlToBuf(sig)
+    if (expected.length !== got.length || !timingSafeEqual(expected, got))
+      return null
+    const payload = JSON.parse(b64urlToBuf(p).toString())
+    if (payload.exp && Date.now() / 1000 > payload.exp) return null // expired
+    return payload
+  } catch {
+    return null
+  }
+}
+
+// Legacy: decode without verifying the signature. Dev-only convenience.
+function decodeJwtUnverified(token) {
+  try {
+    const parts = token.split('.')
+    if (parts.length !== 3) return null
+    return JSON.parse(b64urlToBuf(parts[1]).toString())
+  } catch {
+    return null
+  }
+}
+
+// Auth middleware: extract the Supabase user id from the JWT (verified when a
+// secret is configured), and fall back to the anonymous clientId otherwise.
+app.use((req, res, next) => {
   const authHeader = req.headers.authorization
   if (authHeader?.startsWith('Bearer ')) {
     const token = authHeader.slice(7)
-    try {
-      // Verify JWT with Supabase (naive: just check it's a valid JWT structure).
-      // In production, verify the signature against Supabase's public key.
-      const parts = token.split('.')
-      if (parts.length === 3) {
-        const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString())
-        req.userId = payload.sub // Supabase uses 'sub' for the user UUID
-      }
-    } catch {
-      // Invalid token; fall back to clientId
-    }
+    const payload = SUPABASE_JWT_SECRET
+      ? verifySupabaseJwt(token)
+      : decodeJwtUnverified(token)
+    if (payload?.sub) req.userId = payload.sub // Supabase user UUID
+    // A forged/expired token yields no userId → treated as anonymous below.
   }
-  // If no valid auth token, use clientId (for backwards compatibility)
   if (!req.userId) {
     req.clientId = req.query.clientId || (req.body?.clientId ?? null)
   }
@@ -249,25 +288,46 @@ async function getStripe() {
 // What the frontend needs to decide whether to show a paywall, and — once
 // billing is on — the live credit balance. In free mode `subscribed` is true
 // for everyone so nothing is ever locked.
-app.get('/api/billing/status', (req, res) => {
+app.get('/api/billing/status', async (req, res) => {
   // Prefer userId (from Supabase JWT); fall back to clientId (legacy, for local-only)
   const key = req.userId || req.clientId
-  const e = getEntitlement(key)
-  res.json({
-    billingEnabled: BILLING_ENABLED,
-    billingConfigured: billingConfigured(),
-    freeMode: !BILLING_ENABLED,
-    subscribed: hasAccess(key),
-    active: isActive(key) || (key && FREE_CLIENT_IDS.has(key)),
-    creditPence: e ? Math.max(0, Math.round(e.creditPence * 100) / 100) : 0,
-    usedPence: e ? Math.round(e.usedPence * 100) / 100 : 0,
-    pricing: {
-      activationPence: ACTIVATION_PRICE_PENCE,
-      includedCreditPence: ACTIVATION_CREDIT_PENCE,
-      topupPence: TOPUP_PRICE_PENCE,
-      tokenMarkup: TOKEN_MARKUP, // £ paid per £1 of tokens after the included credit
-    },
-  })
+  const pricing = {
+    activationPence: ACTIVATION_PRICE_PENCE,
+    includedCreditPence: ACTIVATION_CREDIT_PENCE,
+    topupPence: TOPUP_PRICE_PENCE,
+    tokenMarkup: TOKEN_MARKUP, // £ paid per £1 of tokens after the included credit
+  }
+  try {
+    const [e, subscribed, active] = await Promise.all([
+      getEntitlement(key),
+      hasAccess(key),
+      isActive(key),
+    ])
+    res.json({
+      billingEnabled: BILLING_ENABLED,
+      billingConfigured: billingConfigured(),
+      freeMode: !BILLING_ENABLED,
+      subscribed,
+      active: active || !!(key && FREE_CLIENT_IDS.has(key)),
+      creditPence: e ? Math.max(0, Math.round(e.creditPence * 100) / 100) : 0,
+      usedPence: e ? Math.round(e.usedPence * 100) / 100 : 0,
+      pricing,
+    })
+  } catch (err) {
+    // A store read failure shouldn't 500 the UI. Fail closed on paid access
+    // (report not subscribed unless we're in free mode).
+    console.error('billing status error:', err?.message || err)
+    res.json({
+      billingEnabled: BILLING_ENABLED,
+      billingConfigured: billingConfigured(),
+      freeMode: !BILLING_ENABLED,
+      subscribed: !BILLING_ENABLED,
+      active: false,
+      creditPence: 0,
+      usedPence: 0,
+      pricing,
+    })
+  }
 })
 
 // Start a Stripe Checkout session for this client and return its URL.
@@ -351,14 +411,16 @@ app.post(
       switch (event.type) {
         case 'checkout.session.completed': {
           const s = event.data.object
-          const clientId = s.client_reference_id || s.metadata?.clientId
+          // checkout sets both client_reference_id and metadata.key to the
+          // billing key (Supabase userId, or anonymous clientId).
+          const clientId = s.client_reference_id || s.metadata?.key
           if (!clientId) break
           if (s.metadata?.kind === 'topup') {
             // Paid amount converts to token credit at the markup ratio.
             const credit = Math.floor((s.amount_total ?? 0) / TOKEN_MARKUP)
-            addCredit(clientId, credit, s.amount_total ?? 0)
+            await addCredit(clientId, credit, s.amount_total ?? 0)
           } else {
-            activate(clientId, {
+            await activate(clientId, {
               customerId: s.customer,
               creditPence: ACTIVATION_CREDIT_PENCE,
               paidPence: s.amount_total ?? ACTIVATION_PRICE_PENCE,
@@ -496,7 +558,7 @@ async function callClaude({
     }
     throw new Error('model did not finish after several continuations')
   } finally {
-    meterUsage(clientId, costPence)
+    await meterUsage(clientId, costPence)
   }
 }
 
@@ -556,7 +618,7 @@ If the candidate is just a personal name or something not in world knowledge, se
 app.post('/api/enrich', async (req, res) => {
   const { text = '', candidate = '', backend } = req.body || {}
   const key = req.userId || req.body?.clientId
-  if (!hasAccess(key)) return res.status(402).json(paywallBody(key))
+  if (!(await hasAccess(key))) return res.status(402).json(await paywallBody(key))
   const resolved = resolveBackend(backend)
   if (!resolved) return res.json({ configured: false })
   if (!candidate.trim()) return res.json({ configured: true, recognized: false })
@@ -637,8 +699,8 @@ icon, and a one-line description of what it does for this note.`
 app.post('/api/suggest', async (req, res) => {
   const { text = '', backend } = req.body || {}
   const key = req.userId || req.body?.clientId
-  if (!hasAccess(key))
-    return res.status(402).json(paywallBody(key, { suggestions: [] }))
+  if (!(await hasAccess(key)))
+    return res.status(402).json(await paywallBody(key, { suggestions: [] }))
   const resolved = resolveBackend(backend)
   if (!resolved) return res.json({ configured: false, suggestions: [] })
   if (!text.trim()) return res.json({ configured: true, suggestions: [] })
@@ -725,8 +787,8 @@ Examples:
 app.post('/api/recommend', async (req, res) => {
   const { text = '', backend } = req.body || {}
   const key = req.userId || req.body?.clientId
-  if (!hasAccess(key))
-    return res.status(402).json(paywallBody(key, { recommendations: [] }))
+  if (!(await hasAccess(key)))
+    return res.status(402).json(await paywallBody(key, { recommendations: [] }))
   const resolved = resolveBackend(backend)
   if (!resolved) return res.json({ configured: false, recommendations: [] })
   if (text.trim().length < 8)
@@ -811,7 +873,7 @@ Styling rules so it blends in seamlessly:
 app.post('/api/generate-feature', async (req, res) => {
   const { label = '', description = '', text = '', backend } = req.body || {}
   const key = req.userId || req.body?.clientId
-  if (!hasAccess(key)) return res.status(402).json(paywallBody(key))
+  if (!(await hasAccess(key))) return res.status(402).json(await paywallBody(key))
   const resolved = resolveBackend(backend)
   if (!resolved) return res.json({ configured: false })
   if (!label.trim()) return res.json({ configured: true, code: '' })
@@ -1069,4 +1131,32 @@ app.listen(PORT, () => {
         : 'free mode (BILLING_ENABLED=false) — nothing gated'
     }`,
   )
+  console.log(
+    `  Auth: Supabase JWT ${
+      SUPABASE_JWT_SECRET ? 'signature-verified' : 'UNVERIFIED (dev only)'
+    }`,
+  )
+  // Loud warning: charging real money while trusting unverified tokens lets
+  // anyone forge a user id. Set SUPABASE_JWT_SECRET before going live.
+  if (BILLING_ENABLED && !SUPABASE_JWT_SECRET) {
+    console.warn(
+      '  ⚠️  Billing is ON but SUPABASE_JWT_SECRET is unset — auth tokens are NOT verified.\n' +
+        '      Set it (Supabase → Settings → API → JWT Secret) before charging real money.',
+    )
+  }
+  console.log(
+    `  Entitlements: ${
+      entitlementsBackend === 'supabase'
+        ? 'Supabase (survives redeploys)'
+        : 'flat file server/.subscriptions.json'
+    }`,
+  )
+  // Ephemeral-filesystem warning: the flat file resets on redeploy/restart on
+  // most PaaS free tiers, wiping paid credit. Fine for testing only.
+  if (BILLING_ENABLED && entitlementsBackend === 'file') {
+    console.warn(
+      '  ⚠️  Entitlements are on the flat file — paid credit is LOST on redeploy.\n' +
+        '      Set SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY to persist before live billing.',
+    )
+  }
 })
