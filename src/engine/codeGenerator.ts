@@ -28,7 +28,7 @@ export async function generateCustomFeature(
   if (!result) {
     return {
       code: '',
-      error: 'Could not reach the server. Is it running on http://localhost:8787?',
+      error: 'Could not reach the server. Is the backend running?',
     }
   }
   if (result.configured === false) {

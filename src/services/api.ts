@@ -2,13 +2,17 @@
 // is down or a feature isn't configured, we return a "not configured" shape and
 // the app stays fully on the local engine / simulated calendar.
 
-// Base URL for the backend. In local dev it defaults to the Express server on
-// :8787. For deployment, set VITE_API_BASE at build time — use "" (empty) when
-// the backend serves the built frontend from the same origin, so requests go to
-// relative paths like /api/config.
+// Base URL for the backend.
+//   • If VITE_API_BASE is set at build time, use it verbatim (incl. "" for
+//     same-origin, or a full URL for a split frontend/backend deploy).
+//   • Otherwise fall back by build mode: local dev → the Express server on
+//     :8787; a production build → same origin ("") so a single-service deploy
+//     works even if the build command forgets to pass VITE_API_BASE="".
+const configuredApiBase = (import.meta as any).env?.VITE_API_BASE as
+  | string
+  | undefined
 const API_BASE =
-  ((import.meta as any).env?.VITE_API_BASE as string | undefined) ??
-  'http://localhost:8787'
+  configuredApiBase ?? (import.meta.env.DEV ? 'http://localhost:8787' : '')
 
 // Which AI tier the user has selected. 'local' never touches the network;
 // 'haiku' routes to Claude on the backend.
