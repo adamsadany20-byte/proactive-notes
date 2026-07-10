@@ -80,7 +80,7 @@ export function NoteEditor({ note }: { note: Note }) {
             ref={taRef}
             className="note-text"
             value={note.text}
-            placeholder="Start with a few words — “maths test”, “WWDC”, a trip you’re planning… I’ll shape the rest around it."
+            placeholder="Start with a few words — a goal, an event, a trip you’re planning… I’ll shape the rest around it."
             spellCheck={false}
             autoFocus
             onChange={(e) => setText(note.id, e.target.value)}
