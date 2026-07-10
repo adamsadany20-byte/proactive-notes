@@ -122,8 +122,10 @@ Claude AI tools (`/api/suggest`, `/api/recommend`, `/api/generate-feature`,
 and testing without paying.
 
 ### The commercial model
-- **£10 one-time activation** unlocks the Claude tools and includes **£1 of AI
+- **£10 one-time activation** unlocks the Claude tools and includes **£5 of AI
   token credit** (real token value).
+- **Users can set their own spending limit** (a max lifetime spend). Once they
+  hit it, checkout is blocked so they can't be charged more than they chose.
 - Every Claude call meters its **actual Anthropic cost** (tokens + web
   searches, converted to GBP pence) and deducts it from the credit balance.
 - When credit runs out, more is bought at **£2 per £1 of tokens** (default
@@ -148,7 +150,7 @@ and testing without paying.
   - `POST /api/billing/checkout` `{ clientId, kind: 'activate' | 'topup' }` →
     Stripe Checkout URL (inline `price_data`, no Price objects needed).
   - `POST /api/billing/webhook` → source of truth; on
-    `checkout.session.completed` it activates the account (+£1 credit) or adds
+    `checkout.session.completed` it activates the account (+£5 credit) or adds
     top-up credit (raw-body signature verification).
 - **Backend gate (the real one):** the AI routes return **402** unless
   `hasAccess(clientId)` — active AND credit remaining — with a `reason`
@@ -234,11 +236,18 @@ create table entitlements (
   credit_pence double precision not null default 0,
   used_pence double precision not null default 0,
   paid_pence double precision not null default 0,
+  cap_pence double precision not null default 0,   -- user's own spend limit (0 = none)
   customer_id text,
   updated_at timestamptz not null default now()
 );
 alter table entitlements enable row level security;
 ```
+
+> **Already created the `entitlements` table earlier (without `cap_pence`)?**
+> Just add the column:
+> ```sql
+> alter table entitlements add column if not exists cap_pence double precision not null default 0;
+> ```
 
 3. Click **Run**. The tables appear in the left sidebar under your database.
 
@@ -425,7 +434,7 @@ git push
 
 ## Recommended order
 1. ✅ Get all tiers working locally.
-2. ✅ Billing infrastructure (credit model: £10 activation + £1 credit, £2 per £1 of tokens after — free mode by default).
+2. ✅ Billing infrastructure (credit model: £10 activation + £5 credit, £2 per £1 of tokens after — free mode by default).
 3. Deploy the single service to Render with a test build — confirm it runs publicly.
 4. (Optional) Add accounts (Supabase) and swap localStorage → real DB.
 5. (Optional) Flip `BILLING_ENABLED=true` with live Stripe keys (add your own clientId to `FREE_CLIENT_IDS` so your own testing stays free).

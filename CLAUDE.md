@@ -5,13 +5,17 @@
 ### Billing: credit model (replaces subscriptions)
 
 `BILLING_ENABLED=false` (default) = everything free, nothing gated. When on:
-£10 one-time activation includes £1 of AI token credit; every Claude call
+£10 one-time activation includes £5 of AI token credit; every Claude call
 meters its real Anthropic cost (server-side, `usageCostPence` in
 `server/index.js`) and deducts it; more credit is bought at £2 per £1 of tokens
 (`kind: 'topup'` checkout). Checkout uses inline `price_data` (no Stripe Price
-IDs). `FREE_CLIENT_IDS` env = never-billed clientIds (owner bypass for testing
-a live deploy). Store: `server/entitlementStore.js`
-(`{status, creditPence, usedPence, paidPence}` per clientId).
+IDs). Users can set their own lifetime spend cap (`capPence`, enforced at
+checkout via `POST /api/billing/cap`; UI in `Sidebar.tsx` → `SpendLimit`).
+`FREE_CLIENT_IDS` env = never-billed clientIds (owner bypass for testing a live
+deploy). Store: `server/entitlementStore.js` — Supabase-backed when
+`SUPABASE_SERVICE_ROLE_KEY` is set (survives redeploys), else a local flat file;
+`{status, creditPence, usedPence, paidPence, capPence}` per billing key (Supabase
+user id when logged in, else anonymous clientId).
 
 ### World knowledge: Opus + live web search
 

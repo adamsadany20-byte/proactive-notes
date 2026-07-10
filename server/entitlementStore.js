@@ -49,6 +49,7 @@ function blank(clientId) {
     creditPence: 0, // remaining token credit, in pence of TOKEN VALUE
     usedPence: 0, // lifetime token value consumed
     paidPence: 0, // lifetime amount actually paid
+    capPence: 0, // user-set lifetime spend limit (0 = no limit)
     customerId: null,
     updatedAt: Date.now(),
   }
@@ -63,6 +64,7 @@ function fromRow(row) {
     creditPence: Number(row.credit_pence) || 0,
     usedPence: Number(row.used_pence) || 0,
     paidPence: Number(row.paid_pence) || 0,
+    capPence: Number(row.cap_pence) || 0,
     customerId: row.customer_id ?? null,
     updatedAt: row.updated_at ? Date.parse(row.updated_at) : Date.now(),
   }
@@ -97,6 +99,7 @@ async function sbWrite(rec) {
     credit_pence: rec.creditPence,
     used_pence: rec.usedPence,
     paid_pence: rec.paidPence,
+    cap_pence: rec.capPence,
     customer_id: rec.customerId,
     updated_at: new Date(rec.updatedAt).toISOString(),
   }
@@ -152,6 +155,13 @@ export function activate(clientId, { customerId, creditPence, paidPence }) {
     creditPence: rec.creditPence + creditPence,
     paidPence: rec.paidPence + (paidPence ?? 0),
   }))
+}
+
+// User-set lifetime spend limit (0 = no limit). Enforced at checkout so a user
+// can't be charged past what they chose to spend. Creates a record if needed so
+// a limit can be set before activation.
+export function setCap(clientId, capPence) {
+  return mutate(clientId, () => ({ capPence: Math.max(0, Number(capPence) || 0) }))
 }
 
 // Top-up: paid amount already converted to token credit by the caller.

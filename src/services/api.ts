@@ -57,6 +57,9 @@ export interface BillingStatus {
   active?: boolean
   creditPence?: number
   usedPence?: number
+  // Lifetime amount actually paid, and the user's self-set spend limit (0 = none).
+  paidPence?: number
+  capPence?: number
   pricing?: {
     activationPence: number
     includedCreditPence: number
@@ -89,6 +92,23 @@ export async function startCheckout(
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ clientId: getClientId(), kind }),
+    },
+  )
+  if (!r) return { error: 'Could not reach the server.' }
+  return r
+}
+
+// Set (or clear, with 0) the user's own lifetime spend limit, in pence. Enforced
+// server-side at checkout so a user can't be charged past what they chose.
+export async function setSpendCap(
+  capPence: number,
+): Promise<{ capPence?: number; error?: string }> {
+  const r = await safeJson<{ capPence?: number; error?: string }>(
+    API_BASE + '/api/billing/cap',
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ clientId: getClientId(), capPence }),
     },
   )
   if (!r) return { error: 'Could not reach the server.' }

@@ -1,6 +1,12 @@
+import { useState } from 'react'
 import { useStore } from '../store/appStore'
 import { KIND_META } from '../ui/kindMeta'
-import { startCheckout, type AiBackend } from '../services/api'
+import {
+  startCheckout,
+  setSpendCap,
+  fetchBillingStatus,
+  type AiBackend,
+} from '../services/api'
 
 function preview(text: string): string {
   const first = text.trim().split('\n')[0]
@@ -24,12 +30,17 @@ function AiTierSelector() {
   const locked = !!billing?.billingEnabled && !billing?.subscribed
   const outOfCredit = locked && !!billing?.active
   const credit = ((billing?.creditPence ?? 0) / 100).toFixed(2)
+  const activationFee = ((billing?.pricing?.activationPence ?? 1000) / 100).toFixed(0)
+  const includedCredit = (
+    (billing?.pricing?.includedCreditPence ?? 500) / 100
+  ).toFixed(2)
 
   // Per-tier availability + status line.
   const status = (id: AiBackend): string => {
     if (id === 'local') return 'Free — deterministic engine, no network'
     if (outOfCredit) return 'AI credit used up — top up to continue'
-    if (locked) return 'Unlock for £10 — includes £1 of AI credit'
+    if (locked)
+      return `Unlock for £${activationFee} — includes £${includedCredit} of AI credit`
     if (cfg?.haikuConfigured === false) return 'No ANTHROPIC_API_KEY on server'
     return billing?.billingEnabled && billing?.active
       ? `Claude tools · £${credit} credit left`
@@ -70,6 +81,114 @@ function AiTierSelector() {
         ))}
       </div>
       <span className="ai-toggle-text">{status(active)}</span>
+    </div>
+  )
+}
+
+// A user-set spending cap so nobody overspends on top-ups. Server-enforced at
+// checkout; shown only when billing is switched on.
+function SpendLimit() {
+  const { state, setBilling } = useStore()
+  const billing = state.billing
+  const [editing, setEditing] = useState(false)
+  const [value, setValue] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState<string | null>(null)
+
+  if (!billing?.billingEnabled) return null
+
+  const capPence = billing.capPence ?? 0
+  const paidPence = billing.paidPence ?? 0
+  const capPounds = (capPence / 100).toFixed(2)
+  const paidPounds = (paidPence / 100).toFixed(2)
+
+  const save = async (pounds: string) => {
+    const pence = Math.max(0, Math.round(parseFloat(pounds || '0') * 100))
+    setBusy(true)
+    setMsg(null)
+    const r = await setSpendCap(pence)
+    setBusy(false)
+    if (r.error) {
+      setMsg(r.error)
+      return
+    }
+    // Re-pull status so the displayed limit + spent totals are authoritative.
+    const fresh = await fetchBillingStatus()
+    if (fresh) setBilling(fresh)
+    setEditing(false)
+    setValue('')
+  }
+
+  return (
+    <div className="spend-limit">
+      <div className="sl-head">
+        <span className="sl-title">Spending limit</span>
+        {capPence > 0 && !editing && (
+          <button
+            className="sl-link"
+            onClick={() => save('0')}
+            disabled={busy}
+            title="Remove your spending limit"
+          >
+            Remove
+          </button>
+        )}
+      </div>
+
+      {!editing ? (
+        <button
+          className="sl-current"
+          onClick={() => {
+            setValue(capPence > 0 ? (capPence / 100).toString() : '')
+            setEditing(true)
+          }}
+        >
+          {capPence > 0 ? (
+            <>
+              £{capPounds} max · £{paidPounds} spent
+            </>
+          ) : (
+            <>No limit — tap to set one</>
+          )}
+        </button>
+      ) : (
+        <form
+          className="sl-edit"
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (!busy) save(value)
+          }}
+        >
+          <span className="sl-prefix">£</span>
+          <input
+            className="sl-input"
+            type="number"
+            min="0"
+            step="1"
+            inputMode="decimal"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            placeholder="20"
+            autoFocus
+            aria-label="Maximum you want to spend, in pounds"
+          />
+          <button className="sl-save" type="submit" disabled={busy}>
+            {busy ? '…' : 'Save'}
+          </button>
+          <button
+            className="sl-cancel"
+            type="button"
+            onClick={() => {
+              setEditing(false)
+              setMsg(null)
+            }}
+          >
+            Cancel
+          </button>
+        </form>
+      )}
+
+      {msg && <p className="sl-msg">{msg}</p>}
     </div>
   )
 }
@@ -149,6 +268,7 @@ export function Sidebar() {
 
       <div className="side-foot">
         <AiTierSelector />
+        <SpendLimit />
         <p>
           Notes evolve as you type. The local engine handles everything; Claude
           is only consulted for richer suggestions and tool generation.

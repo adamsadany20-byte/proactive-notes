@@ -13,6 +13,7 @@ import {
   activate,
   addCredit,
   recordUsage,
+  setCap,
   entitlementsBackend,
 } from './entitlementStore.js'
 
@@ -82,7 +83,7 @@ function todayContext() {
 // BILLING_ENABLED=true, so you can keep building and testing without paying.
 //
 // When it's on:
-//   • £10 one-time activation unlocks the Claude tools and includes £1 of AI
+//   • £10 one-time activation unlocks the Claude tools and includes £5 of AI
 //     token credit (credit is measured in real token value).
 //   • Every Claude call meters its actual Anthropic cost and deducts it.
 //   • More usage is bought at £2 per £1 of tokens (a £4 top-up = £2 of credit).
@@ -97,7 +98,7 @@ const billingConfigured = () => !!process.env.STRIPE_SECRET_KEY
 
 // The commercial knobs, all overridable per env (values in pence).
 const ACTIVATION_PRICE_PENCE = Number(process.env.ACTIVATION_PRICE_PENCE || 1000) // £10 flat fee
-const ACTIVATION_CREDIT_PENCE = Number(process.env.ACTIVATION_CREDIT_PENCE || 100) // includes £1 of tokens
+const ACTIVATION_CREDIT_PENCE = Number(process.env.ACTIVATION_CREDIT_PENCE || 500) // includes £5 of tokens
 const TOKEN_MARKUP = Number(process.env.TOKEN_MARKUP || 2) // £2 paid per £1 of tokens
 const TOPUP_PRICE_PENCE = Number(process.env.TOPUP_PRICE_PENCE || 400) // default top-up: £4 → £2 of tokens
 // Anthropic bills in USD; credit is in GBP pence. Fixed conversion, env-tunable.
@@ -311,6 +312,8 @@ app.get('/api/billing/status', async (req, res) => {
       active: active || !!(key && FREE_CLIENT_IDS.has(key)),
       creditPence: e ? Math.max(0, Math.round(e.creditPence * 100) / 100) : 0,
       usedPence: e ? Math.round(e.usedPence * 100) / 100 : 0,
+      paidPence: e ? Math.round(e.paidPence) : 0,
+      capPence: e ? Math.round(e.capPence) : 0,
       pricing,
     })
   } catch (err) {
@@ -325,13 +328,15 @@ app.get('/api/billing/status', async (req, res) => {
       active: false,
       creditPence: 0,
       usedPence: 0,
+      paidPence: 0,
+      capPence: 0,
       pricing,
     })
   }
 })
 
 // Start a Stripe Checkout session for this client and return its URL.
-// kind: 'activate' (£10 one-time, includes £1 of AI credit) or
+// kind: 'activate' (£10 one-time, includes £5 of AI credit) or
 //       'topup'    (buys credit at £{TOKEN_MARKUP} per £1 of tokens).
 app.post('/api/billing/checkout', async (req, res) => {
   if (!BILLING_ENABLED) return res.json({ freeMode: true })
@@ -344,6 +349,30 @@ app.post('/api/billing/checkout', async (req, res) => {
 
   const isTopup = kind === 'topup'
   const amount = isTopup ? TOPUP_PRICE_PENCE : ACTIVATION_PRICE_PENCE
+
+  // Respect the user's own spend limit: never let this charge push their
+  // lifetime paid total past the cap they chose. (0 = no limit.)
+  try {
+    const ent = await getEntitlement(key)
+    const cap = ent?.capPence || 0
+    const paid = ent?.paidPence || 0
+    if (cap > 0 && paid + amount > cap) {
+      return res.status(400).json({
+        error:
+          `This purchase (£${(amount / 100).toFixed(2)}) would take you past the ` +
+          `£${(cap / 100).toFixed(2)} spending limit you set — you've spent ` +
+          `£${(paid / 100).toFixed(2)} so far. Raise or clear your limit to continue.`,
+        capReached: true,
+        capPence: cap,
+        paidPence: paid,
+        remainingPence: Math.max(0, cap - paid),
+      })
+    }
+  } catch (err) {
+    console.error('cap check error:', err?.message || err)
+    // Don't hard-block a purchase on a transient read error; fall through.
+  }
+
   const creditPence = isTopup
     ? Math.floor(TOPUP_PRICE_PENCE / TOKEN_MARKUP)
     : ACTIVATION_CREDIT_PENCE
@@ -378,6 +407,21 @@ app.post('/api/billing/checkout', async (req, res) => {
   } catch (err) {
     console.error('checkout error:', err?.message || err)
     res.status(502).json({ error: 'checkout_failed' })
+  }
+})
+
+// Let a user set their own lifetime spend limit (in pence; 0 clears it). Keyed
+// to the account so it follows them across devices and is enforced at checkout.
+app.post('/api/billing/cap', async (req, res) => {
+  const key = req.userId || req.body?.clientId
+  if (!key) return res.status(400).json({ error: 'Missing auth or clientId' })
+  const capPence = Math.max(0, Math.round(Number(req.body?.capPence) || 0))
+  try {
+    const rec = await setCap(key, capPence)
+    res.json({ capPence: rec?.capPence ?? capPence })
+  } catch (err) {
+    console.error('set cap error:', err?.message || err)
+    res.status(502).json({ error: 'Could not save your spending limit.' })
   }
 })
 
