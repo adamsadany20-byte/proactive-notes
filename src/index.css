@@ -178,6 +178,12 @@ button {
     transparent 45%
   );
 }
+.brand-logo {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+}
 .brand-text {
   display: flex;
   flex-direction: column;
