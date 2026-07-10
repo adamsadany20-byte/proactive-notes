@@ -37,11 +37,10 @@ export function FeatureGenerator({ note }: Props) {
     if (url) window.location.href = url
     else if (error) alert(error)
   }
-  // Whether the Claude tier has its key on the server.
+  // Whether the cloud AI tier has its key on the server.
   const aiConfigured =
     backend === 'haiku' ? state.config?.haikuConfigured !== false : true
-  const backendLabel = 'Claude'
-  const backendKeyEnv = 'ANTHROPIC_API_KEY'
+  const backendLabel = 'Evolve AI'
 
   const [suggestions, setSuggestions] = useState<FeatureSuggestion[]>([])
   const [suggesting, setSuggesting] = useState(false)
@@ -201,13 +200,13 @@ export function FeatureGenerator({ note }: Props) {
           {outOfCredit ? (
             <p>
               <strong>You’ve used your AI credit.</strong> Top up £{topupPrice}{' '}
-              for £{topupCredit} more of Claude usage (£
+              for £{topupCredit} more of AI usage (£
               {pricing?.tokenMarkup ?? 2} per £1 of tokens). Your notes keep
               working for free on the Local engine.
             </p>
           ) : (
             <p>
-              <strong>Unlock Claude tools — £{activation} one-time.</strong>{' '}
+              <strong>Unlock AI tools — £{activation} one-time.</strong>{' '}
               Includes £{included} of AI usage; after that, more credit costs £
               {pricing?.tokenMarkup ?? 2} per £1 of tokens. Your notes keep
               classifying and building their workspace for free on the Local
@@ -240,7 +239,7 @@ export function FeatureGenerator({ note }: Props) {
           <p>
             You’re on the <strong>Local ML</strong> tier — the note still
             classifies, extracts dates and topics, and builds its workspace
-            offline. Switch to Claude to let Evolve suggest and build custom
+            offline. Switch to Evolve AI to let it suggest and build custom
             tools (flashcards, trackers, schedules) for this note.
           </p>
           <div className="gen-tier-actions">
@@ -248,7 +247,7 @@ export function FeatureGenerator({ note }: Props) {
               className="gen-suggest"
               onClick={() => setBackend('haiku')}
             >
-              ✦ Use Claude
+              ✦ Use Evolve AI
             </button>
           </div>
         </div>
@@ -271,9 +270,8 @@ export function FeatureGenerator({ note }: Props) {
 
       {!aiConfigured && (
         <div className="gen-error">
-          {backendLabel} is selected, but the server has no key configured. Add{' '}
-          {backendKeyEnv} to <code>server/.env</code> and restart to enable tool
-          generation — or switch to the Local ML tier.
+          {backendLabel} is selected, but it isn’t configured on the server yet.
+          Switch to the Local ML tier, or try again later.
         </div>
       )}
 

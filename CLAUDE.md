@@ -48,6 +48,21 @@ via nth-child animation-delay.
 
 A unified streak-tracking system for recurring commitments and finite plans. **Streaks are always opt-in**: they appear as an offer only when a note generates more than one occurrence laddering up to a wider goal.
 
+#### One global streak (across everything)
+
+There is a **single streak spanning ALL commitments**, not a separate streak per
+topic. `computeGlobalStreak(reminders, notes)` ([streak.ts](src/store/streak.ts))
+counts the trailing run of days where **every** commitment due that day was
+completed — "do everything", not just one habit. Today gets grace (an unfinished
+today is *at risk*, not broken); days with nothing scheduled are neutral. `best`
+is the longest such run over the whole history (derived from stored completions —
+nothing extra persisted). It's surfaced two ways: a hero banner at the top of the
+right column ([GlobalStreak.tsx](src/components/GlobalStreak.tsx) in
+[CalendarPanel.tsx](src/components/CalendarPanel.tsx)), and the flame-ring number
+inside every per-note streak segment (so the one number shows everywhere; the
+per-note controls just feed it). Per-note `computeStreak` still exists for the
+per-note trail + completion actions.
+
 #### Two Streak Modes
 
 **Recurring** (habits/goals, `mode: 'recurring'`)

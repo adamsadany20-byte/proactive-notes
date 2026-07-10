@@ -3,6 +3,7 @@ import type { CalendarEvent } from '../types'
 import { relativeDay } from '../store/calendar'
 import { reminderCalendarEvents } from '../store/streak'
 import { connectCalendar, disconnectCalendar } from '../services/api'
+import { GlobalStreak } from './GlobalStreak'
 
 const KIND_COLOR: Record<CalendarEvent['kind'], string> = {
   fixed: 'var(--general)',
@@ -93,6 +94,7 @@ export function CalendarPanel() {
 
   return (
     <div className="col col-cal">
+      <GlobalStreak />
       <div className="cal-head">
         📆 Calendar
         <span className="cal-conn-slot">

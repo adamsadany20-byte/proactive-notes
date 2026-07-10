@@ -16,6 +16,7 @@ import {
   cadenceLabel,
   candidateOccurrenceCount,
   computeStreak,
+  computeGlobalStreak,
   nextOccurrence,
   trailItems,
   WEEKDAY_FULL,
@@ -554,14 +555,12 @@ function StreakSeg({ note, seg }: { note: Note; seg: Segment }) {
   const sessions = reminder.mode === 'sessions'
   const trail = trailItems(reminder, note, streak)
   const next = sessions ? streak.actionableDate : nextOccurrence(reminder)
-  const alive = streak.current > 0
-  const unit = sessions
-    ? streak.current === 1
-      ? 'session'
-      : 'sessions'
-    : streak.current === 1
-      ? 'day'
-      : 'days'
+
+  // The headline number is the ONE global streak across every commitment — not a
+  // separate streak per topic. This note's controls below just feed into it.
+  const global = computeGlobalStreak(state.reminders, state.notes)
+  const alive = global.current > 0
+  const unit = global.current === 1 ? 'day' : 'days'
 
   // Complete the next actionable occurrence (celebrating a fresh completion).
   const doAction = () => {
@@ -580,45 +579,48 @@ function StreakSeg({ note, seg }: { note: Note; seg: Segment }) {
   return (
     <SegShell seg={seg} meta={sessions ? 'Study plan' : cadenceLabel(reminder.weekdays)}>
       <div
-        className={`streak ${alive ? 'alive' : ''} ${streak.atRisk ? 'at-risk' : ''} ${
+        className={`streak ${alive ? 'alive' : ''} ${global.atRisk ? 'at-risk' : ''} ${
           celebrate ? 'celebrate' : ''
         }`}
       >
         <div className="streak-ring">
           {celebrate && <StreakBurst />}
           <span className="streak-flame">{alive ? '🔥' : '🌱'}</span>
-          <span key={streak.current} className="streak-count">
-            {streak.current}
+          <span key={global.current} className="streak-count">
+            {global.current}
           </span>
           <span className="streak-unit">{unit}</span>
         </div>
 
         <div className="streak-side">
           <div className="streak-head">
-            {alive ? (streak.atRisk ? 'Keep it alive' : 'On a roll') : "Let's begin"}
+            {alive ? (global.atRisk ? 'Keep it alive' : 'On a roll') : "Let's begin"}
+            <span className="streak-scope"> · streak across everything</span>
           </div>
           <div className="streak-sub">
             {streak.atRisk
-              ? sessions
-                ? "A session's due — check it off to keep your streak."
-                : "Today's not done yet — check in to extend your streak."
+              ? 'Check in to keep your streak alive.'
               : streak.todayDone
                 ? 'Done for today. Beautifully consistent.'
-                : alive
+                : streak.actionableDate
                   ? sessions
-                    ? next
-                      ? `Best ever: ${streak.best} · next ${relativeDay(next).toLowerCase()}`
-                      : `All ${streak.current} sessions done — nicely paced.`
-                    : `Best ever: ${streak.best} · next ${
-                        next ? relativeDay(next).toLowerCase() : 'soon'
-                      }`
-                  : sessions
-                    ? 'Complete your first session to light the flame.'
-                    : 'Mark your first day to light the flame.'}
+                    ? 'A session is ready — check it off.'
+                    : 'Mark today done to add to your streak.'
+                  : `Next check-in ${
+                      next ? relativeDay(next).toLowerCase() : 'soon'
+                    }`}
+            {global.todayExpected && global.remainingToday > 0 && (
+              <>
+                {' '}
+                <span className="streak-remaining">
+                  {global.remainingToday} left today across all commitments.
+                </span>
+              </>
+            )}
           </div>
-          {streak.best > 0 && (
+          {global.best > 0 && (
             <div className="streak-best">
-              <span className="sb-ico">🏆</span> Best streak {streak.best}
+              <span className="sb-ico">🏆</span> Best streak {global.best}
             </div>
           )}
         </div>

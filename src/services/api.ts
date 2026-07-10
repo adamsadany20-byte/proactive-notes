@@ -19,11 +19,10 @@ const API_BASE =
 export type AiBackend = 'local' | 'haiku'
 
 export interface ServerConfig {
-  aiConfigured: boolean // true if the Claude tier has a key
+  aiConfigured: boolean // true if the cloud AI tier has a key
   haikuConfigured: boolean
   calendarConfigured: boolean
   calendarConnected: boolean
-  enrichModel?: string
   billingEnabled?: boolean
   billingConfigured?: boolean
 }

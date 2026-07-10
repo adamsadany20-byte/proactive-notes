@@ -15,7 +15,7 @@ function preview(text: string): string {
 
 const TIERS: { id: AiBackend; label: string; short: string }[] = [
   { id: 'local', label: 'Local ML', short: 'ML' },
-  { id: 'haiku', label: 'Claude', short: 'C' },
+  { id: 'haiku', label: 'Evolve AI', short: 'AI' },
 ]
 
 function AiTierSelector() {
@@ -41,10 +41,10 @@ function AiTierSelector() {
     if (outOfCredit) return 'AI credit used up — top up to continue'
     if (locked)
       return `Unlock for £${activationFee} — includes £${includedCredit} of AI credit`
-    if (cfg?.haikuConfigured === false) return 'No ANTHROPIC_API_KEY on server'
+    if (cfg?.haikuConfigured === false) return 'AI not configured on server'
     return billing?.billingEnabled && billing?.active
-      ? `Claude tools · £${credit} credit left`
-      : 'Claude for suggestions & tools'
+      ? `AI tools · £${credit} credit left`
+      : 'AI for suggestions & tools'
   }
 
   const unconfigured = (id: AiBackend): boolean =>
@@ -270,8 +270,8 @@ export function Sidebar() {
         <AiTierSelector />
         <SpendLimit />
         <p>
-          Notes evolve as you type. The local engine handles everything; Claude
-          is only consulted for richer suggestions and tool generation.
+          Notes evolve as you type. The local engine handles everything; Evolve
+          AI is only consulted for richer suggestions and tool generation.
         </p>
       </div>
     </div>

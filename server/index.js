@@ -266,8 +266,7 @@ app.get('/api/config', (_req, res) => {
     haikuConfigured: haikuConfigured(),
     calendarConfigured: calendarConfigured(),
     calendarConnected: !!loadTokens(),
-    enrichModel: AI_MODEL_KNOWLEDGE,
-    codeModel: AI_MODEL_CODE,
+    // Model names are intentionally not exposed to clients.
     billingEnabled: BILLING_ENABLED,
     billingConfigured: billingConfigured(),
   })

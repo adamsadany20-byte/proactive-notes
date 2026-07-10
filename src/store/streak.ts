@@ -211,6 +211,128 @@ export function computeStreak(reminder: Reminder, note?: Note): StreakInfo {
   return recurringStreak(reminder)
 }
 
+// ---- Global streak (one streak across everything) ---------------------------
+//
+// Instead of a separate streak per topic, this is a single streak spanning ALL
+// recurring commitments — the motivation to do *everything*, not just one habit.
+// A day "counts" only when every commitment expected that day is completed;
+// today gets grace (an unfinished today puts the streak at risk, doesn't break
+// it). Days with nothing scheduled are neutral (they neither extend nor break).
+
+export interface GlobalStreakInfo {
+  current: number // trailing run of fully-completed days
+  best: number // longest such run ever
+  expectedToday: number // commitments due today
+  doneToday: number // of those, how many are done
+  remainingToday: number // still to do today to keep the streak
+  todayExpected: boolean
+  atRisk: boolean // due today, not all done, and a streak is on the line
+  hasAny: boolean // any commitments are being tracked at all
+}
+
+// How many commitments a reminder expects on a given day, and how many of those
+// are already completed. Recurring reminders fire on their weekdays; session
+// plans fire on their scheduled dates.
+function dayStat(
+  reminders: Reminder[],
+  notesById: Map<string, Note>,
+  iso: string,
+): { expected: number; done: number } {
+  let expected = 0
+  let done = 0
+  for (const r of reminders) {
+    if (r.mode === 'sessions') {
+      const note = notesById.get(r.noteId)
+      if (!note) continue
+      if (sessionDates(note).includes(iso)) {
+        expected++
+        if (r.completions.includes(iso)) done++
+      }
+    } else if (isExpectedOn(r, iso)) {
+      expected++
+      if (r.completions.includes(iso)) done++
+    }
+  }
+  return { expected, done }
+}
+
+export function computeGlobalStreak(
+  reminders: Reminder[],
+  notes: Note[],
+): GlobalStreakInfo {
+  const empty: GlobalStreakInfo = {
+    current: 0,
+    best: 0,
+    expectedToday: 0,
+    doneToday: 0,
+    remainingToday: 0,
+    todayExpected: false,
+    atRisk: false,
+    hasAny: false,
+  }
+  if (!reminders.length) return empty
+
+  const notesById = new Map(notes.map((n) => [n.id, n]))
+  const today = todayIso()
+  const stat = (iso: string) => dayStat(reminders, notesById, iso)
+
+  // Trailing run ending today (today graced if not fully done).
+  const earliest = Math.min(...reminders.map((r) => r.createdAt))
+  let current = 0
+  {
+    const cursor = new Date()
+    cursor.setHours(0, 0, 0, 0)
+    for (let guard = 0; guard < 3650; guard++) {
+      const iso = isoOf(cursor)
+      const { expected, done } = stat(iso)
+      if (expected > 0) {
+        if (done >= expected) current++
+        else if (iso === today) {
+          // grace for today
+        } else break
+      }
+      cursor.setDate(cursor.getDate() - 1)
+      if (cursor.getTime() < earliest - 86400000) break
+    }
+  }
+
+  // Longest historical run (scan earliest → today).
+  let best = 0
+  {
+    let run = 0
+    const cursor = new Date(earliest)
+    cursor.setHours(0, 0, 0, 0)
+    const end = new Date()
+    end.setHours(0, 0, 0, 0)
+    for (let guard = 0; guard < 3650 && cursor <= end; guard++) {
+      const iso = isoOf(cursor)
+      const { expected, done } = stat(iso)
+      if (expected > 0) {
+        if (done >= expected) {
+          run++
+          if (run > best) best = run
+        } else if (iso !== today) {
+          run = 0
+        }
+      }
+      cursor.setDate(cursor.getDate() + 1)
+    }
+    best = Math.max(best, current)
+  }
+
+  const t = stat(today)
+  return {
+    current,
+    best,
+    expectedToday: t.expected,
+    doneToday: t.done,
+    remainingToday: Math.max(0, t.expected - t.done),
+    todayExpected: t.expected > 0,
+    atRisk: t.expected > 0 && t.done < t.expected && current > 0,
+    hasAny: true,
+  }
+}
+
 // ---- Trail (the row of dots the UI renders) ---------------------------------
 
 export interface TrailItem {

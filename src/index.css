@@ -1693,6 +1693,135 @@ button {
   line-height: 1.45;
   color: var(--ink-soft);
 }
+.streak-scope {
+  font-family: var(--sans, inherit);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-faint);
+}
+.streak-remaining {
+  font-weight: 650;
+  color: var(--tint-ink, var(--accent));
+}
+
+/* Global streak banner (top of the right column) */
+.gstreak {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 0 0 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+.gstreak.alive {
+  border-color: color-mix(in srgb, var(--goal, #e8964a) 45%, var(--line));
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--goal, #e8964a) 12%, var(--panel)),
+    var(--panel)
+  );
+}
+.gstreak.at-risk {
+  border-color: color-mix(in srgb, var(--goal, #e8964a) 70%, var(--line));
+  animation: gstreak-pulse 2.2s ease-in-out infinite;
+}
+@keyframes gstreak-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--goal, #e8964a) 30%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 6px transparent;
+  }
+}
+.gstreak-ring {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 62px;
+  height: 62px;
+  border-radius: 50%;
+  border: 2px solid var(--line);
+  background: var(--panel-2, var(--panel));
+}
+.gstreak.alive .gstreak-ring {
+  border-color: color-mix(in srgb, var(--goal, #e8964a) 55%, var(--line));
+  box-shadow: 0 3px 14px color-mix(in srgb, var(--goal, #e8964a) 22%, transparent);
+}
+.gstreak-flame {
+  font-size: 16px;
+  line-height: 1;
+}
+.gstreak.alive .gstreak-flame {
+  animation: flame-flicker 2.4s ease-in-out infinite;
+}
+.gstreak-count {
+  font-family: var(--display);
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--ink);
+  animation: count-pop 0.4s ease;
+}
+.gstreak-unit {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+}
+.gstreak-body {
+  min-width: 0;
+}
+.gstreak-head {
+  font-family: var(--display);
+  font-size: 14px;
+  font-weight: 750;
+  color: var(--ink);
+}
+.gstreak.at-risk .gstreak-head {
+  color: var(--tint-ink, var(--goal));
+}
+.gstreak-sub {
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--ink-soft);
+}
+.gstreak-progress {
+  display: flex;
+  gap: 4px;
+  margin-top: 7px;
+}
+.gstreak-pip {
+  width: 16px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--line);
+}
+.gstreak-pip.on {
+  background: var(--goal, var(--accent));
+}
+.gstreak-best {
+  margin-top: 6px;
+  font-size: 10.5px;
+  font-weight: 650;
+  color: var(--ink-faint);
+}
+@media (prefers-reduced-motion: reduce) {
+  .gstreak.at-risk {
+    animation: none;
+  }
+  .gstreak.alive .gstreak-flame {
+    animation: none;
+  }
+  .gstreak-count {
+    animation: none;
+  }
+}
 .streak-best {
   margin-top: 8px;
   display: inline-flex;
