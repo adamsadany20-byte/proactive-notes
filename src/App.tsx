@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useStore } from './store/appStore'
 import { Sidebar } from './components/Sidebar'
 import { CalendarPanel } from './components/CalendarPanel'
@@ -15,6 +15,22 @@ export function App() {
   const { selected, setConfig, setExternalEvents, setBilling } = useStore()
   const { toast, dismiss } = useReminders()
   usePushSync()
+
+  // Mobile: only one pane is on screen at a time, chosen by the bottom tab bar.
+  // On desktop this state is inert — CSS shows all three columns regardless.
+  const [mobileView, setMobileView] = useState<'notes' | 'editor' | 'calendar'>(
+    'notes',
+  )
+  // Picking (or creating) a note jumps you to the editor pane on mobile. Guard
+  // the very first render so a reload with a note already selected doesn't yank
+  // the user straight past the note list.
+  const prevSelectedId = useRef(selected?.id)
+  useEffect(() => {
+    if (selected?.id && selected.id !== prevSelectedId.current) {
+      setMobileView('editor')
+    }
+    prevSelectedId.current = selected?.id
+  }, [selected?.id])
 
   // On mount: learn what the backend can do, pull real calendar events if
   // already connected, and check subscription status. Also handle redirects
@@ -45,7 +61,7 @@ export function App() {
   }, [])
 
   return (
-    <div className="app">
+    <div className="app" data-mobile-view={mobileView}>
       <Sidebar />
 
       <div className="col col-main">
@@ -73,6 +89,34 @@ export function App() {
           </button>
         </div>
       )}
+
+      {/* Mobile-only pane switcher. Hidden on desktop via CSS. */}
+      <nav className="mobile-tabbar" aria-label="Views">
+        <button
+          className={`mtab ${mobileView === 'notes' ? 'on' : ''}`}
+          aria-current={mobileView === 'notes'}
+          onClick={() => setMobileView('notes')}
+        >
+          <span className="mtab-ico">📝</span>
+          <span className="mtab-label">Notes</span>
+        </button>
+        <button
+          className={`mtab ${mobileView === 'editor' ? 'on' : ''}`}
+          aria-current={mobileView === 'editor'}
+          onClick={() => setMobileView('editor')}
+        >
+          <span className="mtab-ico">✎</span>
+          <span className="mtab-label">Write</span>
+        </button>
+        <button
+          className={`mtab ${mobileView === 'calendar' ? 'on' : ''}`}
+          aria-current={mobileView === 'calendar'}
+          onClick={() => setMobileView('calendar')}
+        >
+          <span className="mtab-ico">📆</span>
+          <span className="mtab-label">Calendar</span>
+        </button>
+      </nav>
     </div>
   )
 }

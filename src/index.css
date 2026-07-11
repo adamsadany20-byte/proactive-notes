@@ -2922,36 +2922,137 @@ button {
 
 /* ---- responsive / mobile ------------------------------------------------- */
 
+/* The bottom tab bar is a mobile-only surface — hidden entirely on desktop, where
+   all three columns are always visible side by side. */
+.mobile-tabbar {
+  display: none;
+}
+
 @media (max-width: 980px) {
+  /* Phone/tablet portrait: show ONE pane at a time (chosen via the bottom tab
+     bar) instead of stacking all three columns into an endless scroll. Each
+     pane owns its own scroll region and the tab bar is pinned to the bottom, so
+     everything important is a tap away rather than a long scroll away. */
   .app {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto 1fr;
-    height: auto;
-    min-height: 100vh;
-  }
-  .col {
+    display: block;
     height: auto;
     overflow: visible;
   }
+
+  .col-side,
+  .col-main,
+  .col-cal {
+    display: none;
+  }
+  .app[data-mobile-view='notes'] .col-side {
+    display: block;
+  }
+  .app[data-mobile-view='editor'] .col-main {
+    display: flex;
+  }
+  .app[data-mobile-view='calendar'] .col-cal {
+    display: block;
+  }
+
+  .col {
+    height: 100dvh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    /* Leave room for the fixed tab bar (+ iOS home indicator). */
+    padding-bottom: calc(66px + env(safe-area-inset-bottom, 0px));
+  }
   .col-side {
     border-right: none;
-    border-bottom: 1px solid var(--line);
   }
   .col-cal {
     border-left: none;
-    border-top: 1px solid var(--line);
   }
   .col-main {
-    padding: 20px 14px 80px;
-    order: 0;
+    align-items: stretch;
+    padding: 16px 14px calc(80px + env(safe-area-inset-bottom, 0px));
   }
-  /* On mobile the workspace stacks directly under the note (it already does). */
+
+  /* Full-bleed content on phones — the desktop max-widths only waste edge space. */
   .note-card,
-  .workspace {
+  .workspace,
+  .gen {
     max-width: 100%;
   }
+  /* Never let a segment force its 330px min and overflow a narrow phone. */
+  .workspace {
+    grid-template-columns: 1fr;
+  }
+  /* The sidebar footer (AI tier, reminders, spend limit) MUST stay reachable on
+     mobile — it lives at the bottom of the Notes pane now, not hidden away. */
   .side-foot {
-    display: none;
+    display: block;
+  }
+
+  /* Sit the reminder toast above the tab bar so it never hides behind it. */
+  .toast {
+    bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+    left: 14px;
+    right: 14px;
+    transform: none;
+    max-width: none;
+  }
+  /* Keep the floating sign-out button clear of the tab bar too. */
+  .auth-signout {
+    bottom: calc(74px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .mobile-tabbar {
+    display: flex;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 60;
+    background: color-mix(in srgb, var(--panel) 92%, transparent);
+    backdrop-filter: saturate(1.4) blur(12px);
+    -webkit-backdrop-filter: saturate(1.4) blur(12px);
+    border-top: 1px solid var(--line);
+    padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px));
+    box-shadow: 0 -6px 22px rgba(74, 56, 28, 0.08);
+  }
+  .mtab {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    border: none;
+    background: transparent;
+    color: var(--ink-faint);
+    padding: 7px 4px;
+    border-radius: 12px;
+    transition: color 0.15s ease, background 0.15s ease;
+  }
+  .mtab-ico {
+    font-size: 19px;
+    line-height: 1;
+  }
+  .mtab-label {
+    font-size: 11px;
+    font-weight: 650;
+    letter-spacing: -0.01em;
+  }
+  .mtab.on {
+    color: var(--accent-ink);
+    background: var(--accent-soft);
+  }
+  .mtab:active {
+    transform: scale(0.96);
+  }
+}
+
+/* Very narrow phones: tighten the kanban board so three columns still read. */
+@media (max-width: 560px) {
+  .board {
+    gap: 6px;
+  }
+  .board-col {
+    padding: 7px 6px;
   }
 }
 
