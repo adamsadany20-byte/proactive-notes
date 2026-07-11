@@ -537,7 +537,10 @@ app.post('/api/push/subscribe', async (req, res) => {
     res.json({ ok: true })
   } catch (err) {
     console.error('push subscribe error:', err?.message || err)
-    res.status(502).json({ error: 'Could not save your subscription.' })
+    res.status(503).json({
+      error:
+        'Reminders storage isn’t set up on the server yet (the push_targets table is missing).',
+    })
   }
 })
 
@@ -577,20 +580,42 @@ app.post('/api/push/test', async (req, res) => {
   const key = pushKeyOf(req)
   if (!key) return res.status(400).json({ error: 'Missing auth or clientId' })
   if (!pushConfigured()) return res.status(400).json({ error: 'Push not configured' })
+
+  // Read the device record first. A throw here means the storage backend isn't
+  // ready (most commonly the Supabase `push_targets` table hasn't been created)
+  // — report that specifically instead of a generic "couldn't send".
+  let rec
   try {
-    const rec = await getTarget(key)
-    if (!rec?.subscriptions?.length) {
-      return res.status(400).json({ error: 'No devices subscribed yet.' })
-    }
-    const { sent } = await sendToTarget(rec, {
+    rec = await getTarget(key)
+  } catch (err) {
+    console.error('push test — store read failed:', err?.message || err)
+    return res.status(503).json({
+      error:
+        'Reminders storage isn’t set up on the server yet (the push_targets table is missing). Once it’s created this will work.',
+    })
+  }
+
+  if (!rec?.subscriptions?.length) {
+    return res.status(400).json({
+      error: 'No devices are registered on the server. Turn reminders off and back on, then try again.',
+    })
+  }
+
+  try {
+    const { sent, failures } = await sendToTarget(rec, {
       title: 'Reminders are on 🔔',
       body: "You'll get a nudge here even when the app is closed.",
       tag: 'evolve-test',
       url: '/',
     })
+    if (sent === 0) {
+      // Every send was rejected — surface why rather than claiming success.
+      const reason = failures?.[0]?.reason || 'the push service rejected it'
+      return res.status(502).json({ error: `Couldn’t deliver the test — ${reason}.` })
+    }
     res.json({ ok: true, sent })
   } catch (err) {
-    console.error('push test error:', err?.message || err)
+    console.error('push test — send failed:', err?.message || err)
     res.status(502).json({ error: 'Could not send a test notification.' })
   }
 })

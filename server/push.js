@@ -37,10 +37,18 @@ async function webpush() {
 // record self-heals). `changed` says whether anything was pruned.
 export async function sendToTarget(rec, payload) {
   const wp = await webpush()
-  if (!wp) return { subscriptions: rec.subscriptions, changed: false, sent: 0 }
+  if (!wp) {
+    return {
+      subscriptions: rec.subscriptions,
+      changed: false,
+      sent: 0,
+      failures: [{ reason: 'push isn’t configured on the server' }],
+    }
+  }
 
   const body = JSON.stringify(payload)
   const alive = []
+  const failures = []
   let sent = 0
   for (const sub of rec.subscriptions) {
     try {
@@ -53,6 +61,15 @@ export async function sendToTarget(rec, payload) {
       sent++
     } catch (err) {
       const code = err?.statusCode
+      // A 403 almost always means the VAPID keypair the server signs with no
+      // longer matches the key the subscription was created with (keys rotated).
+      const reason =
+        code === 403
+          ? 'the server’s notification keys don’t match this device — turn reminders off and on again'
+          : code === 404 || code === 410
+            ? 'the subscription has expired'
+            : `the push service returned ${code || 'an error'}`
+      failures.push({ code, reason })
       if (code === 404 || code === 410) {
         // Subscription is gone (uninstalled / permission revoked) — drop it.
         continue
@@ -61,7 +78,12 @@ export async function sendToTarget(rec, payload) {
       alive.push(sub)
     }
   }
-  return { subscriptions: alive, changed: alive.length !== rec.subscriptions.length, sent }
+  return {
+    subscriptions: alive,
+    changed: alive.length !== rec.subscriptions.length,
+    sent,
+    failures,
+  }
 }
 
 // ---- Due-reminder logic (server mirror of the client's streak schedule) -----
