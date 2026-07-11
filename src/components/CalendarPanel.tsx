@@ -2,7 +2,6 @@ import { useStore } from '../store/appStore'
 import type { CalendarEvent } from '../types'
 import { relativeDay } from '../store/calendar'
 import { reminderCalendarEvents } from '../store/streak'
-import { connectCalendar, disconnectCalendar } from '../services/api'
 import { GlobalStreak } from './GlobalStreak'
 
 const KIND_COLOR: Record<CalendarEvent['kind'], string> = {
@@ -24,38 +23,6 @@ const KIND_LABEL: Partial<Record<CalendarEvent['kind'], string>> = {
 
 function byTime(a: CalendarEvent, b: CalendarEvent): number {
   return (a.start ?? '').localeCompare(b.start ?? '')
-}
-
-function CalendarConnect() {
-  const { state, setExternalEvents, setConfig } = useStore()
-  const cfg = state.config
-  if (!cfg) return null
-  if (!cfg.calendarConfigured) {
-    return (
-      <span className="cal-conn hint" title="Set Google credentials in server/.env">
-        local mode
-      </span>
-    )
-  }
-  if (cfg.calendarConnected) {
-    return (
-      <button
-        className="cal-conn"
-        onClick={async () => {
-          await disconnectCalendar()
-          setExternalEvents([])
-          setConfig({ ...cfg, calendarConnected: false })
-        }}
-      >
-        ✓ Google · disconnect
-      </button>
-    )
-  }
-  return (
-    <button className="cal-conn connect" onClick={connectCalendar}>
-      Connect Google
-    </button>
-  )
 }
 
 export function CalendarPanel() {
@@ -95,12 +62,7 @@ export function CalendarPanel() {
   return (
     <div className="col col-cal">
       <GlobalStreak />
-      <div className="cal-head">
-        📆 Calendar
-        <span className="cal-conn-slot">
-          <CalendarConnect />
-        </span>
-      </div>
+      <div className="cal-head">📆 Calendar</div>
       <div className="cal-list">
         {days.length === 0 && (
           <div className="cal-empty">

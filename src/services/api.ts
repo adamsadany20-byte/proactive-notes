@@ -261,34 +261,7 @@ export async function generateFeatureApi(
   )
 }
 
-export async function fetchCalendarEvents(): Promise<ExternalEvent[]> {
-  const r = await safeJson<{ connected: boolean; events: ExternalEvent[] }>(
-    API_BASE + '/api/calendar/events',
-  )
-  return r?.events ?? []
-}
-
-export function createCalendarEvent(ev: {
-  title: string
-  date: string
-  start?: string
-  end?: string
-}) {
-  return safeJson<{ connected: boolean; event?: ExternalEvent }>(
-    API_BASE + '/api/calendar/events',
-    {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(ev),
-    },
-  )
-}
-
-export function disconnectCalendar() {
-  return safeJson(API_BASE + '/api/calendar/disconnect', { method: 'POST' })
-}
-
-// Kick off the OAuth flow by navigating the whole window to the backend.
-export function connectCalendar() {
-  window.location.href = API_BASE + '/auth/google'
-}
+// Google Calendar connection removed — the app uses its own local calendar and
+// note-owned events only, so there's no OAuth connect/disconnect or external
+// event sync. (The server's /auth/google + /api/calendar routes remain but are
+// no longer reachable from the UI.)

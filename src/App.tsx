@@ -3,16 +3,12 @@ import { useStore } from './store/appStore'
 import { Sidebar } from './components/Sidebar'
 import { CalendarPanel } from './components/CalendarPanel'
 import { NoteEditor } from './components/NoteEditor'
-import {
-  fetchServerConfig,
-  fetchCalendarEvents,
-  fetchBillingStatus,
-} from './services/api'
+import { fetchServerConfig, fetchBillingStatus } from './services/api'
 import { useReminders } from './ui/useReminders'
 import { usePushSync } from './ui/usePushSync'
 
 export function App() {
-  const { selected, setConfig, setExternalEvents, setBilling } = useStore()
+  const { selected, setConfig, setBilling } = useStore()
   const { toast, dismiss } = useReminders()
   usePushSync()
 
@@ -32,24 +28,16 @@ export function App() {
     prevSelectedId.current = selected?.id
   }, [selected?.id])
 
-  // On mount: learn what the backend can do, pull real calendar events if
-  // already connected, and check subscription status. Also handle redirects
-  // (?calendar=connected from OAuth, ?billing=success from Stripe checkout).
+  // On mount: learn what the backend can do and check subscription status. Also
+  // clean the ?billing=success return param from Stripe checkout out of the URL.
   useEffect(() => {
     let cancelled = false
     async function init() {
       const cfg = await fetchServerConfig()
-      if (!cancelled && cfg) {
-        setConfig(cfg)
-        if (cfg.calendarConnected) {
-          const events = await fetchCalendarEvents()
-          if (!cancelled) setExternalEvents(events)
-        }
-      }
+      if (!cancelled && cfg) setConfig(cfg)
       const billing = await fetchBillingStatus()
       if (!cancelled && billing) setBilling(billing)
-      // Clean OAuth / billing return params out of the URL.
-      if (/[?&](calendar|billing)=/.test(location.search)) {
+      if (/[?&]billing=/.test(location.search)) {
         history.replaceState({}, '', location.pathname)
       }
     }
