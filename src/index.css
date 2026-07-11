@@ -312,6 +312,29 @@ button {
 .side-foot p {
   margin: 12px 0 0;
 }
+/* Footer sign-out — only surfaced on mobile (see the mobile media query), where
+   the floating pill would collide with the bottom tab bar. */
+.side-signout {
+  display: none;
+  width: 100%;
+  margin-top: 14px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 600;
+  font-family: var(--font);
+  transition: background 0.16s ease, color 0.16s ease, border-color 0.16s ease;
+}
+.side-signout:hover {
+  background: var(--panel-2);
+  color: var(--ink);
+}
+.side-signout:active {
+  transform: scale(0.99);
+}
 
 /* AI tier selector */
 .ai-toggle {
@@ -2996,9 +3019,13 @@ button {
     transform: none;
     max-width: none;
   }
-  /* Keep the floating sign-out button clear of the tab bar too. */
+  /* The floating sign-out pill would sit on top of the right-most tab, so on
+     mobile we hide it and expose sign-out in the Notes-pane footer instead. */
   .auth-signout {
-    bottom: calc(74px + env(safe-area-inset-bottom, 0px));
+    display: none;
+  }
+  .side-signout {
+    display: block;
   }
 
   .mobile-tabbar {

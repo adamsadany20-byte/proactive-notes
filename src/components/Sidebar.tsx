@@ -3,6 +3,7 @@ import { useStore } from '../store/appStore'
 import { KIND_META } from '../ui/kindMeta'
 import { PushControls } from './PushControls'
 import { UpgradeModal } from './UpgradeModal'
+import { isSupabaseEnabled, supabase } from '../services/supabase'
 import {
   startCheckout,
   setSpendCap,
@@ -316,6 +317,17 @@ export function Sidebar() {
           Notes evolve as you type. The local engine handles everything; Evolve
           AI is only consulted for richer suggestions and tool generation.
         </p>
+        {/* Mobile-only sign-out: the desktop floating pill overlaps the bottom
+            tab bar on phones, so account controls live here instead (shown via
+            CSS only under the mobile breakpoint). */}
+        {isSupabaseEnabled && (
+          <button
+            className="side-signout"
+            onClick={() => supabase?.auth.signOut()}
+          >
+            Sign out
+          </button>
+        )}
       </div>
     </div>
   )
