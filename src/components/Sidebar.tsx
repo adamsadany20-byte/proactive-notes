@@ -250,7 +250,7 @@ export function Sidebar() {
     <div className="col col-side">
       <div className="side-head">
         <div className="brand">
-          <img src="/logo-small.svg" alt="Evolve" className="brand-logo" />
+          <img src="/logo.svg" alt="Evolve" className="brand-logo" />
           <span className="brand-text">
             <span className="brand-name">Evolve</span>
             <span className="brand-tag">Notes that think ahead</span>

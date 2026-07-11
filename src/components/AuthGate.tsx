@@ -68,7 +68,7 @@ export function AuthGate({ children }: AuthGateProps) {
     return (
       <div className="auth-screen">
         <div className="auth-loading">
-          <img src="/logo-small.svg" alt="Loading" className="brand-logo" />
+          <img src="/logo.svg" alt="Loading" className="brand-logo" />
         </div>
       </div>
     );
@@ -79,7 +79,7 @@ export function AuthGate({ children }: AuthGateProps) {
       <div className="auth-screen">
         <div className="auth-card">
           <div className="auth-brand">
-            <img src="/logo-small.svg" alt="Evolve" className="brand-logo" />
+            <img src="/logo.svg" alt="Evolve" className="brand-logo" />
             <span className="brand-text">
               <span className="brand-name">Evolve</span>
               <span className="brand-tag">Notes that think ahead</span>

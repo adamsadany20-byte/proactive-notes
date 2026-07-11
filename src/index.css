@@ -180,8 +180,8 @@ button {
 }
 .brand-logo {
   flex: none;
-  width: 32px;
-  height: 32px;
+  width: 48px;
+  height: 34px;
   object-fit: contain;
 }
 .brand-text {
