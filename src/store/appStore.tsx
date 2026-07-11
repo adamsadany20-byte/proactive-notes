@@ -52,7 +52,13 @@ interface State {
   config: ServerConfig | null
   billing: BillingStatus | null
   habits: Habits
+  // Ids of notes/reminders the user has deleted. Kept locally (never synced) so a
+  // cloud row whose deletion hasn't finished syncing can't be resurrected by
+  // HYDRATE on the next sign-in. Capped to a recent window.
+  deletedIds: string[]
 }
+
+const MAX_TOMBSTONES = 500
 
 type Action =
   | { type: 'CREATE_NOTE' }
@@ -103,6 +109,7 @@ function freshState(): State {
     config: null,
     billing: null,
     habits: { shoppingLog: [] },
+    deletedIds: [],
   }
 }
 
@@ -135,6 +142,7 @@ function load(): State {
       config: null,
       billing: null,
       habits: { shoppingLog: parsed.habits?.shoppingLog ?? [] },
+      deletedIds: parsed.deletedIds ?? [],
     }
   } catch {
     return freshState()
@@ -210,18 +218,29 @@ function reducer(state: State, action: Action): State {
     case 'SELECT':
       return { ...state, selectedId: action.id }
     case 'DELETE': {
+      const removedReminderIds = state.reminders
+        .filter((r) => r.noteId === action.id)
+        .map((r) => r.id)
       const notes = state.notes.filter((n) => n.id !== action.id)
       const calendar = state.calendar.filter((e) => e.noteId !== action.id)
       const reminders = state.reminders.filter((r) => r.noteId !== action.id)
       const selectedId =
         state.selectedId === action.id ? notes[0]?.id ?? null : state.selectedId
       const ensured = notes.length ? notes : [newNote()]
+      // Tombstone the note + its reminders so a not-yet-synced cloud row can't be
+      // resurrected by a later HYDRATE (e.g. after sign-out/in).
+      const gone = [action.id, ...removedReminderIds]
+      const deletedIds = [
+        ...state.deletedIds.filter((id) => !gone.includes(id)),
+        ...gone,
+      ].slice(-MAX_TOMBSTONES)
       return {
         ...state,
         notes: ensured,
         calendar,
         reminders,
         selectedId: selectedId ?? ensured[0].id,
+        deletedIds,
       }
     }
     case 'SET_TEXT': {
@@ -348,9 +367,14 @@ function reducer(state: State, action: Action): State {
     }
     case 'HYDRATE': {
       // Merge cloud rows into local state (last-write-wins per id by updatedAt).
-      // Drop the empty starter note if real cloud notes arrive.
+      // Skip anything the user has tombstoned — a deleted note/reminder must not
+      // be resurrected just because its cloud row hasn't finished being pruned.
+      const tomb = new Set(state.deletedIds)
+      const incomingNotes = action.notes.filter((n) => !tomb.has(n.id))
+      const incomingReminders = action.reminders.filter((r) => !tomb.has(r.id))
+
       const byId = new Map(state.notes.map((n) => [n.id, n]))
-      for (const cloud of action.notes) {
+      for (const cloud of incomingNotes) {
         const local = byId.get(cloud.id)
         if (!local || (cloud.updatedAt ?? 0) >= (local.updatedAt ?? 0)) {
           byId.set(cloud.id, cloud)
@@ -359,15 +383,15 @@ function reducer(state: State, action: Action): State {
       let notes = Array.from(byId.values())
       // If the only local note was a blank starter, and cloud gave us real
       // notes, drop the empty one so it doesn't linger.
-      if (action.notes.length) {
+      if (incomingNotes.length) {
         notes = notes.filter(
-          (n) => n.text.trim() !== '' || action.notes.some((c) => c.id === n.id),
+          (n) => n.text.trim() !== '' || incomingNotes.some((c) => c.id === n.id),
         )
       }
       if (!notes.length) notes = [newNote()]
 
       const rById = new Map(state.reminders.map((r) => [r.id, r]))
-      for (const cloud of action.reminders) rById.set(cloud.id, cloud)
+      for (const cloud of incomingReminders) rById.set(cloud.id, cloud)
       const reminders = Array.from(rById.values())
 
       const selectedId = notes.some((n) => n.id === state.selectedId)
@@ -458,6 +482,20 @@ async function syncToSupabase(state: State) {
   if (reminderRows.length) {
     const { error } = await supabase.from('reminders').upsert(reminderRows)
     if (error) console.error('Failed to sync reminders to Supabase:', error)
+  }
+
+  // Hard-delete anything the user has tombstoned. This is the authoritative
+  // deletion signal and runs even before the first hydrate (unlike the
+  // reconciliation below), so a deleted note can't linger in the cloud and be
+  // resurrected on the next sign-in.
+  if (state.deletedIds.length) {
+    const ids = state.deletedIds
+    const [{ error: ne }, { error: re }] = await Promise.all([
+      supabase.from('notes').delete().in('id', ids),
+      supabase.from('reminders').delete().in('id', ids),
+    ])
+    if (ne) console.error('Failed to delete tombstoned notes in Supabase:', ne)
+    if (re) console.error('Failed to delete tombstoned reminders in Supabase:', re)
   }
 
   // Reconcile deletions: an upsert-only sync leaves rows for notes/reminders the
