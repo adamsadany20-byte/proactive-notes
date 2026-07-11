@@ -35,6 +35,15 @@ interface Settings {
   broaderAi: boolean
 }
 
+// Locally-learned behavioural signals the deterministic engine uses to
+// personalise suggestions — never synced to the server, purely on-device.
+interface Habits {
+  // Timestamps of shopping trips the user has planned, newest appended. The
+  // pattern engine derives a weekly cadence ("you usually shop Tuesday
+  // evenings") from these once there's a repeated weekday.
+  shoppingLog: number[]
+}
+
 interface State {
   notes: Note[]
   calendar: CalendarEvent[]
@@ -43,6 +52,7 @@ interface State {
   settings: Settings
   config: ServerConfig | null
   billing: BillingStatus | null
+  habits: Habits
 }
 
 type Action =
@@ -64,6 +74,7 @@ type Action =
   | { type: 'UPDATE_REMINDER'; reminderId: string; patch: Partial<Reminder> }
   | { type: 'START_STREAK'; noteId: string }
   | { type: 'DECLINE_STREAK'; noteId: string }
+  | { type: 'LOG_SHOPPING'; ts: number }
   | { type: 'HYDRATE'; notes: Note[]; reminders: Reminder[] }
 
 const STORAGE_KEY = 'proactive-notes-v1'
@@ -93,6 +104,7 @@ function freshState(): State {
     settings: { aiBackend: 'local', broaderAi: false },
     config: null,
     billing: null,
+    habits: { shoppingLog: [] },
   }
 }
 
@@ -124,6 +136,7 @@ function load(): State {
       settings: { aiBackend: backend, broaderAi: backend !== 'local' },
       config: null,
       billing: null,
+      habits: { shoppingLog: parsed.habits?.shoppingLog ?? [] },
     }
   } catch {
     return freshState()
@@ -335,6 +348,14 @@ function reducer(state: State, action: Action): State {
       )
       return { ...state, notes }
     }
+    case 'LOG_SHOPPING': {
+      // Keep a bounded, de-duplicated history (ignore repeat logs within an
+      // hour so a double-tap doesn't skew the learned cadence).
+      const log = state.habits.shoppingLog
+      if (log.some((t) => Math.abs(t - action.ts) < 3600_000)) return state
+      const shoppingLog = [...log, action.ts].slice(-60)
+      return { ...state, habits: { ...state.habits, shoppingLog } }
+    }
     case 'HYDRATE': {
       // Merge cloud rows into local state (last-write-wins per id by updatedAt).
       // Drop the empty starter note if real cloud notes arrive.
@@ -401,6 +422,7 @@ interface StoreApi {
   updateReminder: (reminderId: string, patch: Partial<Reminder>) => void
   startStreak: (noteId: string) => void
   declineStreak: (noteId: string) => void
+  logShopping: (ts?: number) => void
 }
 
 const StoreContext = createContext<StoreApi | null>(null)
@@ -542,6 +564,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         dispatch({ type: 'UPDATE_REMINDER', reminderId, patch }),
       startStreak: (noteId) => dispatch({ type: 'START_STREAK', noteId }),
       declineStreak: (noteId) => dispatch({ type: 'DECLINE_STREAK', noteId }),
+      logShopping: (ts) => dispatch({ type: 'LOG_SHOPPING', ts: ts ?? Date.now() }),
     }),
     [state],
   )

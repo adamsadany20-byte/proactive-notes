@@ -2,6 +2,29 @@
 
 ## Recent Work (Jul 2026)
 
+### Local pattern recognition (free tier, no network)
+
+Deterministic on-device intelligence surfaced as a quiet strip under the editor
+([SmartSuggestions.tsx](src/components/SmartSuggestions.tsx), rendered in
+[NoteEditor.tsx](src/components/NoteEditor.tsx)). All logic is pure functions in
+[engine/patterns.ts](src/engine/patterns.ts):
+- **List continuation** — `detectListPattern(text)` spots an ordered list the
+  user is mid-writing (`1) 2)`, `a) b)`, `1a) 1b)` compound, `Step 1/2`,
+  bullets, `[ ]` checkboxes) and returns the next marker. Compound rolls the
+  letter and carries into the number (`1z)`→`2a)`). Offers only once the current
+  item has content. The chip appends `\n<marker> ` and refocuses the textarea.
+- **Shopping lists** — `detectShoppingList(text)` fires on an explicit cue
+  ("shopping list", "groceries", "pick up from Tesco"…) or a short list whose
+  items are dominated by a grocery lexicon; extracts the items (line- or
+  comma-split, markers stripped).
+- **Temporal cadence** — `describeCadence(timestamps)` learns a weekly shopping
+  rhythm from the habit log (dominant weekday with ≥2 shops → "Tuesday
+  evenings" + next date/time). Surfaced as a personalised suggestion instead of
+  re-asking. Backed by a local-only `habits.shoppingLog` slice in
+  [appStore.tsx](src/store/appStore.tsx) (`LOG_SHOPPING` action / `logShopping`,
+  de-dupes within an hour, capped at 60; persisted to localStorage, never synced
+  to Supabase). "Plan this shop" appends a timestamp.
+
 ### Billing: credit model (replaces subscriptions)
 
 `BILLING_ENABLED=false` (default) = everything free, nothing gated. When on:

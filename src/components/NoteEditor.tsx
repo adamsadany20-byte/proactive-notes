@@ -5,6 +5,7 @@ import { useInference } from '../ui/useInference'
 import { useWorldKnowledge } from '../ui/useWorldKnowledge'
 import { KIND_META, tintVars } from '../ui/kindMeta'
 import { ContextualPrompt } from './ContextualPrompt'
+import { SmartSuggestions } from './SmartSuggestions'
 import { SegmentView } from './Segments'
 import { eventConflicts } from '../store/reconcile'
 import { FeatureGenerator } from '../ui/FeatureGenerator'
@@ -87,6 +88,22 @@ export function NoteEditor({ note }: { note: Note }) {
           />
         ) : (
           <MindMap note={note} />
+        )}
+
+        {mode === 'write' && (
+          <SmartSuggestions
+            note={note}
+            onInsert={(text) => {
+              setText(note.id, note.text.replace(/\s+$/, '') + text)
+              const ta = taRef.current
+              if (ta) {
+                requestAnimationFrame(() => {
+                  ta.focus()
+                  ta.setSelectionRange(ta.value.length, ta.value.length)
+                })
+              }
+            }}
+          />
         )}
 
         {mode === 'write' && showPrompt && result.nextQuestion && (
