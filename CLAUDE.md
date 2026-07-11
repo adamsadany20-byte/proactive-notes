@@ -17,6 +17,35 @@ deploy). Store: `server/entitlementStore.js` — Supabase-backed when
 `{status, creditPence, usedPence, paidPence, capPence}` per billing key (Supabase
 user id when logged in, else anonymous clientId).
 
+### Closed-app reminders (Web Push)
+
+Reminder notifications that reach the user with the site closed — a PWA + Web
+Push, no native app. Client (`src/services/push.ts`, `public/sw.js`): registers
+a service worker, subscribes with the server's VAPID public key, and uploads a
+compact projection of the user's reminders (`usePushSync` → `POST
+/api/push/sync`) whenever they change. Server (`server/push.js`,
+`server/pushStore.js`): stores subscriptions + schedule per billing key (same
+keying as entitlements — Supabase `push_targets` table when
+`SUPABASE_SERVICE_ROLE_KEY` is set, else flat file `server/.push.json`).
+
+Delivery: `POST /api/cron/tick` (guarded by `CRON_SECRET`) runs a sweep —
+`runTick()` finds reminders due *now* (weekday/session-date match, past their
+`time` in the user's stored tz offset, not completed, not already sent today via
+the `sent` dedup log) and pushes via `web-push`. An **external cron pinger**
+(cron-job.org) drives it every 2–3 min AND wakes the sleeping Render free tier;
+an internal 60s `setInterval` also fires it while the server is awake (enough on
+an always-on host). Dead subscriptions (404/410) self-prune.
+
+Config lives in env only: `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` (must stay
+stable — changing them breaks existing subscriptions), `VAPID_SUBJECT`,
+`CRON_SECRET`. **`server/loadEnv.js` is imported first in `index.js`** so dotenv
+populates `process.env` before push.js/pushStore.js read it at import time (ESM
+evaluates imports before the body). UI: sidebar **🔔 Reminders**
+(`PushControls.tsx`) — enable/test/off, plus an iOS "Add to Home Screen" guide
+(Apple only allows Web Push for installed PWAs, not Safari tabs). The in-app 20s
+`useReminders` poll still handles nudges while the app is open; push is the
+additive closed-app path.
+
 ### World knowledge: Opus + live web search
 
 Split models (server/index.js): `AI_MODEL_CODE` (default `claude-haiku-4-5`)

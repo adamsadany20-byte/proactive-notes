@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useStore } from '../store/appStore'
 import { KIND_META } from '../ui/kindMeta'
+import { PushControls } from './PushControls'
 import {
   startCheckout,
   setSpendCap,
@@ -268,6 +269,7 @@ export function Sidebar() {
 
       <div className="side-foot">
         <AiTierSelector />
+        <PushControls />
         <SpendLimit />
         <p>
           Notes evolve as you type. The local engine handles everything; Evolve

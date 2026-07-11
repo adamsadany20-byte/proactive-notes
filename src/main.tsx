@@ -5,6 +5,15 @@ import { App } from './App'
 import { StoreProvider } from './store/appStore'
 import { isSupabaseEnabled, supabase } from './services/supabase'
 import { AuthGate } from './components/AuthGate'
+import { registerServiceWorker } from './services/push'
+
+// Register the push/PWA service worker as soon as the app loads, so a device
+// that already granted notification permission keeps receiving reminders.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    registerServiceWorker()
+  })
+}
 
 window.addEventListener('error', (e) => {
   const el = document.getElementById('root')

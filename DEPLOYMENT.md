@@ -241,6 +241,20 @@ create table entitlements (
   updated_at timestamptz not null default now()
 );
 alter table entitlements enable row level security;
+
+-- Web Push targets (closed-app reminders). Same keying as entitlements. Holds
+-- each user's device subscriptions + a projection of their reminder schedule so
+-- the server can fire notifications while the app is closed. RLS ON, no policy —
+-- only the server's service_role key touches it.
+create table push_targets (
+  key text primary key,
+  subscriptions jsonb not null default '[]',   -- [{endpoint, keys, ua, createdAt}]
+  reminders jsonb not null default '[]',        -- projected schedule + completions
+  tz_offset int not null default 0,             -- minutes behind UTC
+  sent jsonb not null default '{}',             -- dedup log "reminderId@date" -> ts
+  updated_at timestamptz not null default now()
+);
+alter table push_targets enable row level security;
 ```
 
 > **Already created the `entitlements` table earlier (without `cap_pence`)?**
@@ -248,6 +262,11 @@ alter table entitlements enable row level security;
 > ```sql
 > alter table entitlements add column if not exists cap_pence double precision not null default 0;
 > ```
+
+> **Push works without Supabase too.** With no `SUPABASE_SERVICE_ROLE_KEY`, push
+> targets fall back to a flat file (`server/.push.json`) — fine for local dev,
+> but it resets on redeploy, so create the `push_targets` table before relying on
+> reminders in production.
 
 3. Click **Run**. The tables appear in the left sidebar under your database.
 
@@ -370,6 +389,67 @@ When you're ready to charge real money:
 
 ---
 
+## Closed-app reminders (Web Push)
+
+Reminder notifications that reach the user **even when the browser/app is
+closed** — no native app, no App Store. Built on the Web Push standard + a
+service worker.
+
+### How it works
+1. The browser subscribes (service worker + your VAPID public key) and uploads
+   the subscription + a projection of the user's reminder schedule to the server.
+2. A **cron pinger** hits `POST /api/cron/tick` every few minutes. The server
+   finds every reminder that's due right now (correct weekday/session date, past
+   its time in the user's timezone, not yet completed, not already sent today)
+   and pushes a notification to that user's devices.
+3. The service worker shows the notification and focuses the app when tapped.
+
+While the server is awake it also runs the same sweep on an internal 60-second
+timer — so on an **always-on host the pinger is optional**. On a free tier that
+sleeps after inactivity, the pinger is what wakes it.
+
+### Setup (5 minutes)
+
+**1. Generate a VAPID key pair** (once — keep it stable forever):
+```bash
+node -e "console.log(JSON.stringify(require('web-push').generateVAPIDKeys()))"
+```
+Add both keys to `server/.env` (local) and the Render dashboard (production):
+```
+VAPID_PUBLIC_KEY=B....
+VAPID_PRIVATE_KEY=....
+VAPID_SUBJECT=mailto:you@example.com
+CRON_SECRET=some-long-random-string
+```
+> ⚠️ **Never change the VAPID keys after users subscribe** — it invalidates
+> every existing subscription. The private key must stay server-only.
+
+**2. Create the `push_targets` table** in Supabase (see the SQL in the Accounts
+section above). Without it, subscriptions fall back to a flat file that resets on
+redeploy.
+
+**3. Set up the cron pinger** (free — e.g. [cron-job.org](https://cron-job.org)):
+- Create a job that sends `POST` (or GET) to:
+  `https://your-app.onrender.com/api/cron/tick?secret=YOUR_CRON_SECRET`
+- Interval: every **2–3 minutes**. (Reminders fire at ±one interval, so tighter =
+  more punctual. Also keeps a free-tier Render service awake.)
+
+### iPhone requirement (Apple's rule, not ours)
+On iOS, Web Push works **only after the user adds the site to their Home Screen**
+(Safari → Share → *Add to Home Screen*). A plain Safari tab gets **no** push —
+this is an Apple restriction every web reminder app hits. The app detects iOS
+Safari and shows the user exactly how to install it. Android needs no install
+(just notification permission).
+
+### Verify
+- Server startup log shows `Push reminders: configured`.
+- In the app sidebar → **🔔 Reminders** → *Turn on reminders* → *Send test*. A
+  notification should appear even with the tab in the background.
+- `curl -X POST "https://your-app.onrender.com/api/cron/tick?secret=..."` returns
+  `{"ok":true,"configured":true,...}`.
+
+---
+
 ## Complete End-to-End Deployment Flow
 
 ### Timeline
@@ -413,6 +493,15 @@ git push
 5. Push & redeploy: `git add . && git commit && git push`
 6. Test: hit the paywall, complete a test payment, confirm you get credit.
 
+**Phase 4b: Closed-app reminders (Web Push) [optional]**
+1. Generate a VAPID key pair; add `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`,
+   `VAPID_SUBJECT`, `CRON_SECRET` to Render.
+2. Create the `push_targets` table in Supabase.
+3. Point a free cron pinger (cron-job.org) at
+   `/api/cron/tick?secret=…` every 2–3 min.
+4. Redeploy. Users enable reminders from the sidebar (iPhone: Add to Home Screen
+   first). See the "Closed-app reminders" section above.
+
 **Phase 5: Go live (real money)**
 1. In Stripe, toggle to **Live mode**.
 2. Copy **Live secret key** (`sk_live_…`).
@@ -428,7 +517,8 @@ git push
 - [ ] `ANTHROPIC_API_KEY` is set in `server/.env` (or ready to paste into Render)
 - [ ] (Optional) Supabase project created + credentials in `.env`
 - [ ] (Optional) Stripe account created + webhook ready (webhook secret not needed for `stripe listen` during dev)
-- [ ] `.gitignore` includes `server/.env` and `server/.subscriptions.json` (don't commit secrets or local test data)
+- [ ] `.gitignore` includes `server/.env`, `server/.subscriptions.json`, and `server/.push.json` (don't commit secrets or local test data)
+- [ ] (Optional) For closed-app reminders: VAPID keys set, `push_targets` table created, cron pinger scheduled
 
 ---
 

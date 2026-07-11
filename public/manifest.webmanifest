@@ -1,0 +1,24 @@
+{
+  "name": "Evolve Notes",
+  "short_name": "Evolve",
+  "description": "Notes that think ahead — with reminders that reach you even when the app is closed.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#efe7db",
+  "theme_color": "#efe7db",
+  "icons": [
+    {
+      "src": "/logo-small.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/logo-small.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}

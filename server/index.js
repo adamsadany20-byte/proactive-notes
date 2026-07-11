@@ -1,3 +1,4 @@
+import './loadEnv.js' // MUST be first — populates process.env before other imports read it
 import dotenv from 'dotenv'
 import express from 'express'
 import cors from 'cors'
@@ -16,6 +17,20 @@ import {
   setCap,
   entitlementsBackend,
 } from './entitlementStore.js'
+import {
+  addSubscription,
+  removeSubscription,
+  syncReminders as syncPushReminders,
+  getTarget,
+  deleteTarget,
+  pushBackend,
+} from './pushStore.js'
+import {
+  pushConfigured,
+  pushPublicKey,
+  sendToTarget,
+  runTick,
+} from './push.js'
 
 // Load server/.env explicitly relative to THIS file, so the keys load no matter
 // where the process is launched from (project root via `npm start`, or the
@@ -481,6 +496,115 @@ app.post(
     }
   },
 )
+
+// ---------------------------------------------------------------------------
+// Web Push — closed-app reminder notifications.
+//
+// Flow: the browser subscribes (service worker + VAPID public key) and POSTs the
+// PushSubscription here; it also uploads a compact projection of its reminders
+// whenever they change. A cron pinger hits /api/cron/tick every few minutes; the
+// sweep sends a notification for each reminder that's come due. The push key is
+// the same billing key used elsewhere (Supabase userId, else anonymous clientId).
+// ---------------------------------------------------------------------------
+const pushKeyOf = (req) => req.userId || req.clientId || req.body?.clientId
+
+// The browser needs the VAPID public key to create a subscription.
+app.get('/api/push/config', (_req, res) => {
+  res.json({ configured: pushConfigured(), publicKey: pushPublicKey || null })
+})
+
+// Register (or refresh) a device's push subscription.
+app.post('/api/push/subscribe', async (req, res) => {
+  const key = pushKeyOf(req)
+  if (!key) return res.status(400).json({ error: 'Missing auth or clientId' })
+  const { subscription, tzOffset } = req.body || {}
+  if (!subscription?.endpoint || !subscription?.keys) {
+    return res.status(400).json({ error: 'Invalid subscription' })
+  }
+  try {
+    await addSubscription(
+      key,
+      { ...subscription, ua: req.headers['user-agent'] || '' },
+      Number(tzOffset),
+    )
+    res.json({ ok: true })
+  } catch (err) {
+    console.error('push subscribe error:', err?.message || err)
+    res.status(502).json({ error: 'Could not save your subscription.' })
+  }
+})
+
+// Drop a device subscription (reminders turned off, or client cleaning up).
+app.post('/api/push/unsubscribe', async (req, res) => {
+  const key = pushKeyOf(req)
+  if (!key) return res.status(400).json({ error: 'Missing auth or clientId' })
+  const endpoint = req.body?.endpoint
+  try {
+    if (endpoint) await removeSubscription(key, endpoint)
+    else await deleteTarget(key)
+    res.json({ ok: true })
+  } catch (err) {
+    console.error('push unsubscribe error:', err?.message || err)
+    res.status(502).json({ error: 'Could not remove your subscription.' })
+  }
+})
+
+// Upload the current reminder schedule + completion state so the sweep knows
+// what's due. Sent by the client whenever reminders change.
+app.post('/api/push/sync', async (req, res) => {
+  const key = pushKeyOf(req)
+  if (!key) return res.status(400).json({ error: 'Missing auth or clientId' })
+  const { reminders, tzOffset } = req.body || {}
+  try {
+    await syncPushReminders(key, reminders, Number(tzOffset))
+    res.json({ ok: true })
+  } catch (err) {
+    console.error('push sync error:', err?.message || err)
+    res.status(502).json({ error: 'Could not sync reminders.' })
+  }
+})
+
+// Fire a one-off test push to this key's devices, so the user can confirm
+// notifications actually arrive after enabling them.
+app.post('/api/push/test', async (req, res) => {
+  const key = pushKeyOf(req)
+  if (!key) return res.status(400).json({ error: 'Missing auth or clientId' })
+  if (!pushConfigured()) return res.status(400).json({ error: 'Push not configured' })
+  try {
+    const rec = await getTarget(key)
+    if (!rec?.subscriptions?.length) {
+      return res.status(400).json({ error: 'No devices subscribed yet.' })
+    }
+    const { sent } = await sendToTarget(rec, {
+      title: 'Reminders are on 🔔',
+      body: "You'll get a nudge here even when the app is closed.",
+      tag: 'evolve-test',
+      url: '/',
+    })
+    res.json({ ok: true, sent })
+  } catch (err) {
+    console.error('push test error:', err?.message || err)
+    res.status(502).json({ error: 'Could not send a test notification.' })
+  }
+})
+
+// Cron endpoint — the external pinger (e.g. cron-job.org) calls this every few
+// minutes. It both wakes a sleeping free-tier server and fires due reminders.
+// Guard with CRON_SECRET so only your pinger can trigger sends.
+const CRON_SECRET = (process.env.CRON_SECRET || '').trim()
+app.all('/api/cron/tick', async (req, res) => {
+  if (CRON_SECRET) {
+    const given = req.query.secret || req.headers['x-cron-secret']
+    if (given !== CRON_SECRET) return res.status(401).json({ error: 'unauthorized' })
+  }
+  try {
+    const result = await runTick()
+    res.json({ ok: true, ...result })
+  } catch (err) {
+    console.error('cron tick error:', err?.message || err)
+    res.status(500).json({ error: 'tick failed' })
+  }
+})
 
 // ---------------------------------------------------------------------------
 // World-knowledge enrichment — called ONLY when the local engine signals it
@@ -1202,4 +1326,23 @@ app.listen(PORT, () => {
         '      Set SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY to persist before live billing.',
     )
   }
+  console.log(
+    `  Push reminders: ${
+      pushConfigured()
+        ? `configured (targets in ${
+            pushBackend === 'supabase' ? 'Supabase' : 'flat file server/.push.json'
+          })`
+        : 'not configured (set VAPID_PUBLIC_KEY + VAPID_PRIVATE_KEY)'
+    }`,
+  )
 })
+
+// Safety-net internal sweep: while the server is awake, fire due reminders every
+// 60s even without an external pinger (this alone is enough on an always-on
+// host). On a free tier that sleeps, the external cron pinger is what wakes it —
+// see /api/cron/tick. No-op when push isn't configured.
+if (pushConfigured()) {
+  setInterval(() => {
+    runTick().catch((err) => console.error('internal tick error:', err?.message || err))
+  }, 60000)
+}

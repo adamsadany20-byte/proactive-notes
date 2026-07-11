@@ -9,10 +9,12 @@ import {
   fetchBillingStatus,
 } from './services/api'
 import { useReminders } from './ui/useReminders'
+import { usePushSync } from './ui/usePushSync'
 
 export function App() {
   const { selected, setConfig, setExternalEvents, setBilling } = useStore()
   const { toast, dismiss } = useReminders()
+  usePushSync()
 
   // On mount: learn what the backend can do, pull real calendar events if
   // already connected, and check subscription status. Also handle redirects

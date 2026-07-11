@@ -494,6 +494,118 @@ button {
   color: var(--danger, #c0392b);
   line-height: 1.3;
 }
+
+/* --- Reminder push controls (sidebar) ------------------------------------ */
+.push-controls {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.pc-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.pc-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.pc-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 999px;
+  letter-spacing: 0.02em;
+}
+.pc-badge.on {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent-ink, var(--accent));
+}
+.pc-sub {
+  margin: 0 0 8px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--ink-faint);
+}
+.pc-enable {
+  width: 100%;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: filter 0.15s ease;
+}
+.pc-enable:hover:not(:disabled) {
+  filter: brightness(1.05);
+}
+.pc-enable:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.pc-actions {
+  display: flex;
+  gap: 6px;
+}
+.pc-test,
+.pc-off {
+  flex: 1;
+  border-radius: var(--radius-sm);
+  padding: 7px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.pc-test {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  color: var(--ink);
+}
+.pc-test:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+.pc-off {
+  background: none;
+  border: 1px solid transparent;
+  color: var(--ink-faint);
+}
+.pc-off:hover:not(:disabled) {
+  color: var(--danger, #c0392b);
+}
+.pc-test:disabled,
+.pc-off:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.pc-ios {
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 9px 10px;
+}
+.pc-steps {
+  margin: 4px 0 0;
+  padding-left: 16px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--ink-soft, var(--ink));
+}
+.pc-steps li {
+  margin-bottom: 2px;
+}
+.pc-msg {
+  margin: 7px 0 0;
+  font-size: 11px;
+  line-height: 1.3;
+  color: var(--ink-faint);
+}
+
 /* muted "Draft" label on unclassified notes in the list */
 .ni-draft {
   opacity: 0.6;

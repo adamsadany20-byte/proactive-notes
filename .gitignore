@@ -10,4 +10,6 @@ dist
 server/.env
 server/.google-tokens.json
 server/.subscriptions.json
+server/.push.json
+server/.vapid.json
 .DS_Store

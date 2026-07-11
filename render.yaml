@@ -42,3 +42,19 @@ services:
       # https://proactive-notes.onrender.com (used for Stripe/OAuth redirects).
       - key: APP_ORIGIN
         sync: false
+      # --- Web Push (closed-app reminder notifications) ---------------------
+      # Generate ONE stable VAPID key pair and paste both here (never change them
+      # after users subscribe, or their subscriptions break):
+      #   node -e "console.log(JSON.stringify(require('web-push').generateVAPIDKeys()))"
+      - key: VAPID_PUBLIC_KEY
+        sync: false
+      - key: VAPID_PRIVATE_KEY
+        sync: false
+      # Contact URI sent with each push (a mailto: is fine).
+      - key: VAPID_SUBJECT
+        value: mailto:notify@evolve.app
+      # Shared secret so only your cron pinger can trigger reminder sends. Set a
+      # random value, then have cron-job.org POST to
+      # https://YOUR-URL/api/cron/tick?secret=THIS every 2–3 minutes.
+      - key: CRON_SECRET
+        sync: false
