@@ -10,7 +10,6 @@ import type {
   CalendarEvent,
   Enrichment,
   InferenceResult,
-  MindMap,
   Note,
   Reminder,
   Segment,
@@ -64,7 +63,6 @@ type Action =
   | { type: 'ANSWER'; id: string; field: string; value: string }
   | { type: 'SKIP'; id: string; field: string }
   | { type: 'EDIT_SEGMENT'; id: string; segmentId: string; data: any }
-  | { type: 'SET_MINDMAP'; id: string; mindmap: MindMap }
   | { type: 'SET_BACKEND'; backend: AiBackend }
   | { type: 'SET_CONFIG'; config: ServerConfig }
   | { type: 'SET_BILLING'; billing: BillingStatus }
@@ -280,14 +278,6 @@ function reducer(state: State, action: Action): State {
       })
       return { ...state, notes }
     }
-    case 'SET_MINDMAP': {
-      const notes = state.notes.map((n) =>
-        n.id === action.id
-          ? { ...n, mindmap: action.mindmap, updatedAt: Date.now() }
-          : n,
-      )
-      return { ...state, notes }
-    }
     case 'SET_BACKEND':
       return {
         ...state,
@@ -412,7 +402,6 @@ interface StoreApi {
   answer: (id: string, field: string, value: string) => void
   skip: (id: string, field: string) => void
   editSegment: (id: string, segmentId: string, data: any) => void
-  setMindmap: (id: string, mindmap: MindMap) => void
   setBackend: (backend: AiBackend) => void
   setConfig: (config: ServerConfig) => void
   setBilling: (billing: BillingStatus) => void
@@ -593,7 +582,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       skip: (id, field) => dispatch({ type: 'SKIP', id, field }),
       editSegment: (id, segmentId, data) =>
         dispatch({ type: 'EDIT_SEGMENT', id, segmentId, data }),
-      setMindmap: (id, mindmap) => dispatch({ type: 'SET_MINDMAP', id, mindmap }),
       setBackend: (backend) => dispatch({ type: 'SET_BACKEND', backend }),
       setConfig: (config) => dispatch({ type: 'SET_CONFIG', config }),
       setBilling: (billing) => dispatch({ type: 'SET_BILLING', billing }),

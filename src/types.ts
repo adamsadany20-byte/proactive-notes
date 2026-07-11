@@ -124,24 +124,6 @@ export interface ChecklistItem {
   remindAt?: string
 }
 
-// ---- Mind map ("Map" mode) --------------------------------------------------
-
-export interface MindNode {
-  id: string
-  text: string
-  x: number // centre coordinates within the canvas
-  y: number
-}
-export interface MindEdge {
-  id: string
-  from: string
-  to: string
-}
-export interface MindMap {
-  nodes: MindNode[]
-  edges: MindEdge[]
-}
-
 export interface StudySession {
   id: string
   date: string // YYYY-MM-DD
@@ -246,8 +228,6 @@ export interface Note {
   entities?: Entities
   // World-knowledge enrichment from the LLM, when the local engine escalated.
   enrichment?: Enrichment
-  // Ideas connected on the "Map" mode canvas. Independent of the written text.
-  mindmap?: MindMap
   // True once the user has declined the "start a streak?" offer for this goal,
   // so we stop asking (they can still opt in from the tracker later).
   streakDeclined?: boolean
