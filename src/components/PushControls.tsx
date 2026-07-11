@@ -30,16 +30,28 @@ export function PushControls() {
   const enable = async () => {
     setBusy(true)
     setMsg(null)
-    const next = await enablePush()
-    setStatus(next)
-    if (next === 'granted') {
-      // Immediately upload the current schedule so reminders can start firing.
-      await syncReminderSchedule(state.reminders, state.notes)
-      setMsg('On — you’ll be nudged even when the app is closed.')
-    } else if (next === 'denied') {
-      setMsg('Notifications are blocked. Enable them in your browser settings.')
+    try {
+      const next = await enablePush()
+      setStatus(next)
+      if (next === 'granted') {
+        // Immediately upload the current schedule so reminders can start firing.
+        await syncReminderSchedule(state.reminders, state.notes)
+        setMsg('On — you’ll be nudged even when the app is closed.')
+      } else if (next === 'denied') {
+        setMsg('Notifications are blocked. Enable them in your browser settings.')
+      } else if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+        // The browser granted permission but we couldn't finish subscribing
+        // (e.g. the server rejected it). Say so instead of silently reverting to
+        // the "Turn on reminders" button, which reads as if nothing happened.
+        setMsg('Almost there — couldn’t reach the reminders server. Please try again.')
+      }
+      // else: the user dismissed the OS prompt without choosing — leave the
+      // button in place with no error so they can try again.
+    } catch {
+      setMsg('Something went wrong turning on reminders. Please try again.')
+    } finally {
+      setBusy(false)
     }
-    setBusy(false)
   }
 
   const disable = async () => {

@@ -63,6 +63,14 @@ the `sent` dedup log) and pushes via `web-push`. An **external cron pinger**
 an internal 60s `setInterval` also fires it while the server is awake (enough on
 an always-on host). Dead subscriptions (404/410) self-prune.
 
+`enablePush` is resilient: if a stale subscription made with a *different* VAPID
+key lingers (keys rotated), it unsubscribes and re-subscribes rather than
+throwing (`sameKey`/`subscribeFresh` in `push.ts`); and `PushControls.enable`
+wraps the whole flow so that if permission is granted but the server rejects the
+subscription (e.g. missing Supabase `push_targets` table), the user sees a clear
+"couldn't reach the reminders server" message instead of the button silently
+staying put.
+
 Config lives in env only: `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` (must stay
 stable — changing them breaks existing subscriptions), `VAPID_SUBJECT`,
 `CRON_SECRET`. **`server/loadEnv.js` is imported first in `index.js`** so dotenv

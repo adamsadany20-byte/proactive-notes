@@ -124,6 +124,37 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
   return out
 }
 
+// Does an existing subscription use the given VAPID public key? Compares the
+// raw applicationServerKey bytes so a rotated/stale key is detected.
+function sameKey(sub: PushSubscription, publicKey: string): boolean {
+  const opt = sub.options?.applicationServerKey
+  if (!opt) return false
+  const have = new Uint8Array(opt as ArrayBuffer)
+  const want = urlBase64ToUint8Array(publicKey)
+  if (have.length !== want.length) return false
+  for (let i = 0; i < have.length; i++) if (have[i] !== want[i]) return false
+  return true
+}
+
+// Subscribe, tolerating the browser throwing when a conflicting subscription
+// still exists — clear it and try once more before giving up.
+async function subscribeFresh(
+  reg: ServiceWorkerRegistration,
+  applicationServerKey: BufferSource,
+): Promise<PushSubscription | null> {
+  try {
+    return await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey })
+  } catch {
+    const existing = await reg.pushManager.getSubscription()
+    if (existing) await existing.unsubscribe().catch(() => {})
+    try {
+      return await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey })
+    } catch {
+      return null
+    }
+  }
+}
+
 // Ask permission, subscribe, and register the subscription with the server.
 // Returns the resulting state so the UI can reflect success/denial.
 export async function enablePush(): Promise<PushState> {
@@ -142,15 +173,18 @@ export async function enablePush(): Promise<PushState> {
   const cfg = await getPushConfig()
   if (!cfg.publicKey) return 'unconfigured'
 
+  const appServerKey = urlBase64ToUint8Array(cfg.publicKey) as BufferSource
   let sub = await reg.pushManager.getSubscription()
   if (!sub) {
-    sub = await reg.pushManager.subscribe({
-      userVisibleOnly: true,
-      // Cast: TS's DOM lib types applicationServerKey narrowly; a Uint8Array is
-      // a valid BufferSource at runtime.
-      applicationServerKey: urlBase64ToUint8Array(cfg.publicKey) as BufferSource,
-    })
+    sub = await subscribeFresh(reg, appServerKey)
+  } else if (!sameKey(sub, cfg.publicKey)) {
+    // An existing subscription made with a *different* VAPID key (the server's
+    // keys were rotated, or a stale one lingered). The browser won't let us
+    // subscribe with a new key until the old one is gone, so drop it and re-sub.
+    await sub.unsubscribe().catch(() => {})
+    sub = await subscribeFresh(reg, appServerKey)
   }
+  if (!sub) return 'default'
 
   const res = await fetch(API_BASE + '/api/push/subscribe', {
     method: 'POST',
