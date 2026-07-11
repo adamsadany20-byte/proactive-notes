@@ -218,32 +218,61 @@ function ReminderControl({
 function ChecklistSeg({ note, seg }: { note: Note; seg: Segment }) {
   const { editSegment } = useStore()
   const items: ChecklistItem[] = seg.data.items ?? []
-  if (!items.length)
-    return (
-      <SegShell seg={seg}>
-        <Skeleton rows={3} />
-      </SegShell>
-    )
-  const done = items.filter((i) => i.done).length
-  const patchItems = (next: ChecklistItem[]) =>
+
+  // Ticking a box / setting a reminder leaves the list auto-managed. Editing the
+  // text, adding, or removing an item marks it user-owned (auto:false) so the
+  // reconciler stops regenerating it over the top of the user's edits.
+  const patch = (next: ChecklistItem[]) =>
     editSegment(note.id, seg.id, { ...seg.data, items: next })
+  const patchOwned = (next: ChecklistItem[]) =>
+    editSegment(note.id, seg.id, { ...seg.data, items: next, auto: false })
+
   const toggle = (id: string) =>
-    patchItems(items.map((i) => (i.id === id ? { ...i, done: !i.done } : i)))
+    patch(items.map((i) => (i.id === id ? { ...i, done: !i.done } : i)))
   const setReminder = (id: string, remindAt?: string) =>
-    patchItems(items.map((i) => (i.id === id ? { ...i, remindAt } : i)))
+    patch(items.map((i) => (i.id === id ? { ...i, remindAt } : i)))
+  const setText = (id: string, text: string) =>
+    patchOwned(items.map((i) => (i.id === id ? { ...i, text } : i)))
+  const removeItem = (id: string) => patchOwned(items.filter((i) => i.id !== id))
+  const addItem = () =>
+    patchOwned([...items, { id: uid('chk'), text: '', done: false }])
+
+  const done = items.filter((i) => i.done).length
+
   return (
-    <SegShell seg={seg} meta={`${done}/${items.length}`}>
+    <SegShell seg={seg} meta={items.length ? `${done}/${items.length}` : undefined}>
       {items.map((i) => (
-        <div
-          key={i.id}
-          className={`check-item ${i.done ? 'done' : ''}`}
-          onClick={() => toggle(i.id)}
-        >
-          <span className={`check-box ${i.done ? 'on' : ''}`}>{i.done ? '✓' : ''}</span>
-          <span className="ci-text">{i.text}</span>
+        <div key={i.id} className={`check-item editable ${i.done ? 'done' : ''}`}>
+          <button
+            className={`check-box ${i.done ? 'on' : ''}`}
+            onClick={() => toggle(i.id)}
+            aria-label={i.done ? 'Mark not done' : 'Mark done'}
+          >
+            {i.done ? '✓' : ''}
+          </button>
+          <input
+            className="ci-edit"
+            value={i.text}
+            placeholder="Describe this item…"
+            onChange={(e) => setText(i.id, e.target.value)}
+          />
           <ReminderControl item={i} onSet={(r) => setReminder(i.id, r)} />
+          <button
+            className="ci-del"
+            onClick={() => removeItem(i.id)}
+            title="Remove item"
+            aria-label="Remove item"
+          >
+            ✕
+          </button>
         </div>
       ))}
+      {items.length === 0 && (
+        <div className="list-empty">Nothing here yet — add your first item.</div>
+      )}
+      <button className="list-add" onClick={addItem}>
+        + Add item
+      </button>
     </SegShell>
   )
 }
@@ -252,21 +281,36 @@ function ChecklistSeg({ note, seg }: { note: Note; seg: Segment }) {
 
 function FlashFace({
   card,
+  onEditFront,
   onEditBack,
+  onDelete,
 }: {
   card: Flashcard
+  onEditFront: (id: string, front: string) => void
   onEditBack: (id: string, back: string) => void
+  onDelete: (id: string) => void
 }) {
   const [flipped, setFlipped] = useState(false)
   return (
-    <div
-      className={`flashcard ${flipped ? 'flipped' : ''}`}
-      onClick={() => setFlipped((f) => !f)}
-    >
-      <div className="fc-inner">
+    <div className={`flashcard ${flipped ? 'flipped' : ''}`}>
+      <button
+        className="fc-del"
+        title="Remove card"
+        aria-label="Remove card"
+        onClick={() => onDelete(card.id)}
+      >
+        ✕
+      </button>
+      <div className="fc-inner" onClick={() => setFlipped((f) => !f)}>
         <div className="fc-face">
           <span className="fc-topic">{card.topic}</span>
-          <span className="fc-q">{card.front}</span>
+          <textarea
+            className="fc-q-edit"
+            value={card.front}
+            placeholder="Type the question…"
+            onClick={(e) => e.stopPropagation()}
+            onChange={(e) => onEditFront(card.id, e.target.value)}
+          />
           <span className="fc-hint">tap to flip</span>
         </div>
         <div className="fc-face back">
@@ -287,6 +331,21 @@ function FlashFace({
 function FlashcardSeg({ note, seg }: { note: Note; seg: Segment }) {
   const { editSegment } = useStore()
   const cards: Flashcard[] = seg.data.cards ?? []
+
+  // Any edit to the deck marks it user-owned so the reconciler stops
+  // regenerating cards over the top of the user's questions/answers.
+  const patchCards = (next: Flashcard[]) =>
+    editSegment(note.id, seg.id, { ...seg.data, cards: next, auto: false })
+  const editFront = (id: string, front: string) =>
+    patchCards(cards.map((c) => (c.id === id ? { ...c, front } : c)))
+  const editBack = (id: string, back: string) =>
+    patchCards(cards.map((c) => (c.id === id ? { ...c, back } : c)))
+  const removeCard = (id: string) => patchCards(cards.filter((c) => c.id !== id))
+  const addCard = () => {
+    const topic = cards[cards.length - 1]?.topic ?? note.entities?.subject ?? 'New'
+    patchCards([...cards, { id: uid('fc'), topic, front: '', back: '' }])
+  }
+
   if (!cards.length)
     return (
       <SegShell seg={seg}>
@@ -294,20 +353,28 @@ function FlashcardSeg({ note, seg }: { note: Note; seg: Segment }) {
           {Array.from({ length: 3 }).map((_, i) => (
             <div key={i} className="skel skel-card" />
           ))}
+          <button className="fc-add" onClick={addCard}>
+            + Add card
+          </button>
         </div>
       </SegShell>
     )
-  const editBack = (id: string, back: string) =>
-    editSegment(note.id, seg.id, {
-      ...seg.data,
-      cards: cards.map((c) => (c.id === id ? { ...c, back } : c)),
-    })
+
   return (
     <SegShell seg={seg} meta={`${cards.length} cards`}>
       <div className="deck">
         {cards.map((c) => (
-          <FlashFace key={c.id} card={c} onEditBack={editBack} />
+          <FlashFace
+            key={c.id}
+            card={c}
+            onEditFront={editFront}
+            onEditBack={editBack}
+            onDelete={removeCard}
+          />
         ))}
+        <button className="fc-add" onClick={addCard}>
+          + Add card
+        </button>
       </div>
     </SegShell>
   )

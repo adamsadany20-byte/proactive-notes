@@ -1336,6 +1336,12 @@ button {
   height: 19px;
   border-radius: 6px;
   border: 1.8px solid var(--line);
+  /* Rendered as a <button> in the editable checklist — strip native chrome so it
+     matches the <span> variant used elsewhere. */
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  padding: 0;
   display: grid;
   place-items: center;
   font-size: 12px;
@@ -1536,6 +1542,135 @@ button {
 .fc-answer::placeholder {
   color: var(--tint-ink);
   opacity: 0.45;
+}
+
+/* Editable question on the front face — mirrors the answer field. */
+.fc-q-edit {
+  flex: 1;
+  width: 100%;
+  border: none;
+  outline: none;
+  resize: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.35;
+  color: var(--ink);
+  padding: 0;
+  margin: 4px 0;
+}
+.fc-q-edit::placeholder {
+  color: var(--ink-faint);
+}
+/* Per-card delete — sits on the card frame (outside the flipping inner). */
+.flashcard {
+  position: relative;
+}
+.fc-del {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  z-index: 3;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: none;
+  background: color-mix(in srgb, var(--panel) 78%, transparent);
+  color: var(--ink-faint);
+  font-size: 11px;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+  opacity: 0;
+  transition: opacity 0.14s ease, background 0.14s ease, color 0.14s ease;
+}
+.flashcard:hover .fc-del,
+.fc-del:focus-visible {
+  opacity: 1;
+}
+.fc-del:hover {
+  background: var(--goal-soft);
+  color: var(--goal);
+}
+/* Add-card tile — same footprint as a card. */
+.fc-add {
+  height: 110px;
+  border: 1.5px dashed var(--line);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--tint-ink, var(--accent));
+  font-size: 13px;
+  font-weight: 600;
+  transition: background 0.14s ease, border-color 0.14s ease;
+}
+.fc-add:hover {
+  background: var(--tint-soft);
+  border-color: color-mix(in srgb, var(--tint) 35%, var(--line));
+}
+
+/* Editable checklist rows (topic lists) */
+.check-item.editable {
+  cursor: default;
+}
+.ci-edit {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: 13.5px;
+  color: var(--ink);
+  padding: 2px 0;
+}
+.ci-edit::placeholder {
+  color: var(--ink-faint);
+}
+.check-item.done .ci-edit {
+  text-decoration: line-through;
+  color: var(--ink-faint);
+}
+.ci-del {
+  flex: none;
+  border: none;
+  background: transparent;
+  color: var(--ink-faint);
+  font-size: 12px;
+  padding: 2px 5px;
+  border-radius: 6px;
+  opacity: 0;
+  transition: opacity 0.14s ease, background 0.14s ease, color 0.14s ease;
+}
+.check-item:hover .ci-del,
+.ci-del:focus-visible {
+  opacity: 0.65;
+}
+.ci-del:hover {
+  opacity: 1;
+  background: var(--goal-soft);
+  color: var(--goal);
+}
+.list-empty {
+  font-size: 12.5px;
+  color: var(--ink-faint);
+  padding: 6px 4px 2px;
+}
+.list-add {
+  margin-top: 8px;
+  border: 1px dashed var(--line);
+  background: transparent;
+  color: var(--tint-ink, var(--accent));
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 7px 12px;
+  border-radius: var(--radius-sm);
+  width: 100%;
+  transition: background 0.14s ease, border-color 0.14s ease;
+}
+.list-add:hover {
+  background: var(--tint-soft);
+  border-color: color-mix(in srgb, var(--tint) 35%, var(--line));
 }
 
 /* schedule */
