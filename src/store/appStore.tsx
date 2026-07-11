@@ -430,6 +430,12 @@ const StoreContext = createContext<StoreApi | null>(null)
 // Debounce Supabase sync to avoid hammering the DB on rapid edits
 let saveTimeout: ReturnType<typeof setTimeout> | null = null
 
+// Whether this device has pulled the user's cloud data down yet. Deletion
+// reconciliation (pruning cloud rows that no longer exist locally) is gated on
+// this: before the first load completes, local state is just the blank starter,
+// so pruning then would wipe every real note out of the cloud.
+let hydrated = false
+
 async function syncToSupabase(state: State) {
   const { supabase } = await import('../services/supabase')
 
@@ -464,6 +470,35 @@ async function syncToSupabase(state: State) {
     const { error } = await supabase.from('reminders').upsert(reminderRows)
     if (error) console.error('Failed to sync reminders to Supabase:', error)
   }
+
+  // Reconcile deletions: an upsert-only sync leaves rows for notes/reminders the
+  // user has since deleted, so on the next load they'd be pulled back and merged
+  // in — deletes never "stuck". Prune any cloud row whose id is gone locally.
+  // Gated on `hydrated` so we never prune before this device has the cloud data.
+  if (!hydrated) return
+
+  const localNoteIds = new Set(state.notes.map((n) => n.id))
+  const { data: cloudNotes } = await supabase.from('notes').select('id')
+  const staleNotes = (cloudNotes ?? [])
+    .map((r: any) => r.id as string)
+    .filter((id) => !localNoteIds.has(id))
+  if (staleNotes.length) {
+    const { error } = await supabase.from('notes').delete().in('id', staleNotes)
+    if (error) console.error('Failed to prune deleted notes in Supabase:', error)
+  }
+
+  const localReminderIds = new Set(state.reminders.map((r) => r.id))
+  const { data: cloudReminders } = await supabase.from('reminders').select('id')
+  const staleReminders = (cloudReminders ?? [])
+    .map((r: any) => r.id as string)
+    .filter((id) => !localReminderIds.has(id))
+  if (staleReminders.length) {
+    const { error } = await supabase
+      .from('reminders')
+      .delete()
+      .in('id', staleReminders)
+    if (error) console.error('Failed to prune deleted reminders in Supabase:', error)
+  }
 }
 
 export function StoreProvider({ children }: { children: ReactNode }) {
@@ -473,6 +508,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // again whenever they sign in (so a fresh device pulls their data).
   useEffect(() => {
     let cancelled = false
+    // Re-gate pruning until this mount has pulled the cloud down. The provider
+    // remounts on sign-out/in (AuthGate swaps it out), and a stale `hydrated`
+    // from a previous session could otherwise let a sync prune a freshly
+    // signed-in user's cloud notes before their data has loaded.
+    hydrated = false
 
     const loadFromSupabase = async () => {
       const { supabase } = await import('../services/supabase')
@@ -493,6 +533,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (notes.length || reminders.length) {
         dispatch({ type: 'HYDRATE', notes, reminders })
       }
+      // Cloud data is now in local state, so it's safe for the sync to prune rows
+      // the user deletes from here on without risking a wipe of unpulled notes.
+      hydrated = true
     }
 
     loadFromSupabase().catch((err) => {
