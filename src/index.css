@@ -2953,13 +2953,17 @@ button {
 
 @media (max-width: 980px) {
   /* Phone/tablet portrait: show ONE pane at a time (chosen via the bottom tab
-     bar) instead of stacking all three columns into an endless scroll. Each
-     pane owns its own scroll region and the tab bar is pinned to the bottom, so
-     everything important is a tap away rather than a long scroll away. */
+     bar) instead of stacking all three columns into an endless scroll. The app
+     is a flex column that fills the viewport; the active pane scrolls inside it
+     and the tab bar is a normal flex child at the bottom (NOT position:fixed —
+     a fixed bar detaches and "floats up" mid-screen when iOS restores the page
+     from its back/forward cache after an external redirect, e.g. Stripe or
+     Google OAuth). Keeping it in flow means it always sits at the true bottom. */
   .app {
-    display: block;
-    height: auto;
-    overflow: visible;
+    display: flex;
+    flex-direction: column;
+    height: 100dvh;
+    overflow: hidden;
   }
 
   .col-side,
@@ -2978,11 +2982,12 @@ button {
   }
 
   .col {
-    height: 100dvh;
+    flex: 1;
+    min-height: 0;
+    height: auto;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
-    /* Leave room for the fixed tab bar (+ iOS home indicator). */
-    padding-bottom: calc(66px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: 24px;
   }
   .col-side {
     border-right: none;
@@ -2992,7 +2997,16 @@ button {
   }
   .col-main {
     align-items: stretch;
-    padding: 16px 14px calc(80px + env(safe-area-inset-bottom, 0px));
+    padding: 16px 14px 32px;
+  }
+
+  /* The long editor placeholder wraps to several lines on a narrow screen; the
+     desktop 92px floor clipped it. Give the empty note more room and slightly
+     smaller type so the full prompt is visible. min-height wins over the inline
+     auto-grow height, so this only affects the short/empty state. */
+  .note-text {
+    min-height: 150px;
+    font-size: 17px;
   }
 
   /* Full-bleed content on phones — the desktop max-widths only waste edge space. */
@@ -3011,9 +3025,9 @@ button {
     display: block;
   }
 
-  /* Sit the reminder toast above the tab bar so it never hides behind it. */
+  /* Sit the reminder toast above the in-flow tab bar so it never hides behind it. */
   .toast {
-    bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+    bottom: calc(72px + env(safe-area-inset-bottom, 0px));
     left: 14px;
     right: 14px;
     transform: none;
@@ -3030,12 +3044,9 @@ button {
 
   .mobile-tabbar {
     display: flex;
-    position: fixed;
-    left: 0;
-    right: 0;
-    bottom: 0;
+    flex: none;
     z-index: 60;
-    background: color-mix(in srgb, var(--panel) 92%, transparent);
+    background: color-mix(in srgb, var(--panel) 96%, transparent);
     backdrop-filter: saturate(1.4) blur(12px);
     -webkit-backdrop-filter: saturate(1.4) blur(12px);
     border-top: 1px solid var(--line);
