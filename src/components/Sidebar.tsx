@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useStore } from '../store/appStore'
 import { KIND_META } from '../ui/kindMeta'
 import { PushControls } from './PushControls'
+import { UpgradeModal } from './UpgradeModal'
 import {
   startCheckout,
   setSpendCap,
@@ -51,15 +52,29 @@ function AiTierSelector() {
   const unconfigured = (id: AiBackend): boolean =>
     id === 'haiku' && cfg?.haikuConfigured === false
 
-  const onPick = async (id: AiBackend) => {
-    // A locked Claude tier sends the user to checkout rather than switching.
+  // When the locked AI tier is tapped we don't jump straight to Stripe — we open
+  // a confirmation modal first so the user chooses the paid plan deliberately.
+  const [showUpgrade, setShowUpgrade] = useState(false)
+  const [checkoutBusy, setCheckoutBusy] = useState(false)
+
+  const onPick = (id: AiBackend) => {
     if (id === 'haiku' && locked) {
-      const { url, error } = await startCheckout(outOfCredit ? 'topup' : 'activate')
-      if (url) window.location.href = url
-      else if (error) alert(error)
+      setShowUpgrade(true)
       return
     }
     setBackend(id)
+  }
+
+  const goToCheckout = async () => {
+    setCheckoutBusy(true)
+    const { url, error } = await startCheckout(outOfCredit ? 'topup' : 'activate')
+    if (url) {
+      window.location.href = url
+      return
+    }
+    setCheckoutBusy(false)
+    setShowUpgrade(false)
+    if (error) alert(error)
   }
 
   return (
@@ -82,12 +97,26 @@ function AiTierSelector() {
         ))}
       </div>
       <span className="ai-toggle-text">{status(active)}</span>
+
+      {showUpgrade && (
+        <UpgradeModal
+          kind={outOfCredit ? 'topup' : 'activate'}
+          pricing={billing?.pricing}
+          busy={checkoutBusy}
+          onConfirm={goToCheckout}
+          onStayFree={() => {
+            setShowUpgrade(false)
+            setBackend('local')
+          }}
+        />
+      )}
     </div>
   )
 }
 
-// A user-set spending cap so nobody overspends on top-ups. Server-enforced at
-// checkout; shown only when billing is switched on.
+// A user-set spending cap for how much extra they'll spend on AI usage ON TOP OF
+// the one-time activation. Server-enforced at top-up checkout. Shown only once
+// the user has paid (activated) — before that there's nothing to cap.
 function SpendLimit() {
   const { state, setBilling } = useStore()
   const billing = state.billing
@@ -96,12 +125,16 @@ function SpendLimit() {
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
 
-  if (!billing?.billingEnabled) return null
+  if (!billing?.billingEnabled || !billing?.active) return null
 
   const capPence = billing.capPence ?? 0
+  // Spend that counts against the limit is what's been paid ON TOP OF the
+  // activation fee (i.e. top-ups) — the activation itself doesn't eat the cap.
+  const activationPence = billing.pricing?.activationPence ?? 1000
   const paidPence = billing.paidPence ?? 0
+  const topupPence = Math.max(0, paidPence - activationPence)
   const capPounds = (capPence / 100).toFixed(2)
-  const paidPounds = (paidPence / 100).toFixed(2)
+  const topupPounds = (topupPence / 100).toFixed(2)
 
   const save = async (pounds: string) => {
     const pence = Math.max(0, Math.round(parseFloat(pounds || '0') * 100))
@@ -123,7 +156,7 @@ function SpendLimit() {
   return (
     <div className="spend-limit">
       <div className="sl-head">
-        <span className="sl-title">Spending limit</span>
+        <span className="sl-title">Extra spending limit</span>
         {capPence > 0 && !editing && (
           <button
             className="sl-link"
@@ -143,13 +176,14 @@ function SpendLimit() {
             setValue(capPence > 0 ? (capPence / 100).toString() : '')
             setEditing(true)
           }}
+          title="A cap on AI usage you buy on top of your plan — the £10 activation doesn't count toward it"
         >
           {capPence > 0 ? (
             <>
-              £{capPounds} max · £{paidPounds} spent
+              £{capPounds} on top-ups · £{topupPounds} used
             </>
           ) : (
-            <>No limit — tap to set one</>
+            <>No limit on extra usage — tap to set one</>
           )}
         </button>
       ) : (
@@ -187,6 +221,13 @@ function SpendLimit() {
             Cancel
           </button>
         </form>
+      )}
+
+      {editing && (
+        <p className="sl-hint">
+          A cap on AI usage you buy <strong>on top of</strong> your plan. Your £
+          {(activationPence / 100).toFixed(0)} activation doesn’t count toward it.
+        </p>
       )}
 
       {msg && <p className="sl-msg">{msg}</p>}

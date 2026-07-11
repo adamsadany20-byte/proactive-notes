@@ -9,10 +9,14 @@
 meters its real Anthropic cost (server-side, `usageCostPence` in
 `server/index.js`) and deducts it; more credit is bought at £2 per £1 of tokens
 (`kind: 'topup'` checkout). Checkout uses inline `price_data` (no Stripe Price
-IDs). Users can set their own lifetime spend cap (`capPence`, enforced at
-checkout via `POST /api/billing/cap`; UI in `Sidebar.tsx` → `SpendLimit`).
-`FREE_CLIENT_IDS` env = never-billed clientIds (owner bypass for testing a live
-deploy). Store: `server/entitlementStore.js` — Supabase-backed when
+IDs). Tapping the locked Evolve AI tier opens a confirmation modal
+(`UpgradeModal.tsx`) — pay vs stay free — instead of jumping straight to Stripe.
+Users can set a spend cap (`capPence`) that limits **top-up** spend **on top of**
+the activation fee (the £10 activation never counts toward it): enforced only on
+`kind:'topup'` checkout against `paidPence - ACTIVATION_PRICE_PENCE`
+(`POST /api/billing/cap`; UI in `Sidebar.tsx` → `SpendLimit`, shown only once
+activated). `FREE_CLIENT_IDS` env = never-billed clientIds (owner bypass for
+testing a live deploy). Store: `server/entitlementStore.js` — Supabase-backed when
 `SUPABASE_SERVICE_ROLE_KEY` is set (survives redeploys), else a local flat file;
 `{status, creditPence, usedPence, paidPence, capPence}` per billing key (Supabase
 user id when logged in, else anonymous clientId).

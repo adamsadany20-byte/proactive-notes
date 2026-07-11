@@ -364,27 +364,34 @@ app.post('/api/billing/checkout', async (req, res) => {
   const isTopup = kind === 'topup'
   const amount = isTopup ? TOPUP_PRICE_PENCE : ACTIVATION_PRICE_PENCE
 
-  // Respect the user's own spend limit: never let this charge push their
-  // lifetime paid total past the cap they chose. (0 = no limit.)
-  try {
-    const ent = await getEntitlement(key)
-    const cap = ent?.capPence || 0
-    const paid = ent?.paidPence || 0
-    if (cap > 0 && paid + amount > cap) {
-      return res.status(400).json({
-        error:
-          `This purchase (£${(amount / 100).toFixed(2)}) would take you past the ` +
-          `£${(cap / 100).toFixed(2)} spending limit you set — you've spent ` +
-          `£${(paid / 100).toFixed(2)} so far. Raise or clear your limit to continue.`,
-        capReached: true,
-        capPence: cap,
-        paidPence: paid,
-        remainingPence: Math.max(0, cap - paid),
-      })
+  // Respect the user's own spend limit. The limit is what they're willing to
+  // spend ON TOP OF the one-time activation fee — i.e. it caps top-up spend, not
+  // the entry fee. So activation is never blocked by the cap; only top-ups are,
+  // and they're measured against how much they've already topped up (paid beyond
+  // the activation price). (cap = 0 → no limit.)
+  if (isTopup) {
+    try {
+      const ent = await getEntitlement(key)
+      const cap = ent?.capPence || 0
+      const paid = ent?.paidPence || 0
+      const topupSpend = Math.max(0, paid - ACTIVATION_PRICE_PENCE)
+      if (cap > 0 && topupSpend + amount > cap) {
+        return res.status(400).json({
+          error:
+            `This top-up (£${(amount / 100).toFixed(2)}) would take you past the ` +
+            `£${(cap / 100).toFixed(2)} spending limit you set for usage on top of ` +
+            `your plan — you've added £${(topupSpend / 100).toFixed(2)} so far. ` +
+            `Raise or clear your limit to continue.`,
+          capReached: true,
+          capPence: cap,
+          topupPence: topupSpend,
+          remainingPence: Math.max(0, cap - topupSpend),
+        })
+      }
+    } catch (err) {
+      console.error('cap check error:', err?.message || err)
+      // Don't hard-block a purchase on a transient read error; fall through.
     }
-  } catch (err) {
-    console.error('cap check error:', err?.message || err)
-    // Don't hard-block a purchase on a transient read error; fall through.
   }
 
   const creditPence = isTopup
