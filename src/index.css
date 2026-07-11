@@ -2130,121 +2130,339 @@ button {
   color: var(--tint-ink, var(--accent));
 }
 
-/* Global streak banner (top of the right column) */
-.gstreak {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  margin: 0 0 14px;
-  padding: 14px 16px;
+/* ---- Today ritual card (the one streak, made interactive) ---------------- */
+.today {
+  --streak: var(--goal, #c0496a);
+  margin: 0 0 16px;
+  padding: 16px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--panel);
+  box-shadow: var(--shadow-sm);
+  transition: border-color 0.4s ease, box-shadow 0.4s ease, background 0.4s ease;
 }
-.gstreak.alive {
-  border-color: color-mix(in srgb, var(--goal, #e8964a) 45%, var(--line));
-  background: linear-gradient(
-    135deg,
-    color-mix(in srgb, var(--goal, #e8964a) 12%, var(--panel)),
-    var(--panel)
-  );
+.today.alive {
+  border-color: color-mix(in srgb, var(--streak) 42%, var(--line));
+  background: radial-gradient(
+      120% 90% at 85% -20%,
+      color-mix(in srgb, var(--streak) 14%, transparent),
+      transparent 60%
+    ),
+    var(--panel);
+  box-shadow: 0 8px 26px color-mix(in srgb, var(--streak) 13%, transparent);
 }
-.gstreak.at-risk {
-  border-color: color-mix(in srgb, var(--goal, #e8964a) 70%, var(--line));
-  animation: gstreak-pulse 2.2s ease-in-out infinite;
+.today.at-risk {
+  border-color: color-mix(in srgb, var(--streak) 62%, var(--line));
+  animation: today-breathe 2.6s ease-in-out infinite;
 }
-@keyframes gstreak-pulse {
+@keyframes today-breathe {
   0%,
   100% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--goal, #e8964a) 30%, transparent);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--streak) 26%, transparent);
   }
   50% {
-    box-shadow: 0 0 0 6px transparent;
+    box-shadow: 0 0 0 7px transparent;
   }
 }
-.gstreak-ring {
-  flex: none;
+.today.milestone.celebrate {
+  border-color: color-mix(in srgb, var(--streak) 70%, var(--line));
+  box-shadow: 0 12px 34px color-mix(in srgb, var(--streak) 28%, transparent);
+}
+
+.today-top {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  width: 62px;
-  height: 62px;
+  gap: 15px;
+}
+
+/* The living flame ring — lights up only once the streak is alive. */
+.today-ring {
+  position: relative;
+  flex: none;
+  width: 76px;
+  height: 76px;
   border-radius: 50%;
+  display: grid;
+  place-items: center;
+  grid-template-areas: 'stack';
+  background: radial-gradient(circle at 50% 36%, var(--panel), var(--panel-2));
   border: 2px solid var(--line);
-  background: var(--panel-2, var(--panel));
+  transition: border-color 0.4s ease, box-shadow 0.5s ease, transform 0.4s ease;
 }
-.gstreak.alive .gstreak-ring {
-  border-color: color-mix(in srgb, var(--goal, #e8964a) 55%, var(--line));
-  box-shadow: 0 3px 14px color-mix(in srgb, var(--goal, #e8964a) 22%, transparent);
+.today.alive .today-ring {
+  border-color: color-mix(in srgb, var(--streak) 55%, transparent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--streak) 12%, transparent),
+    0 8px 20px color-mix(in srgb, var(--streak) 24%, transparent);
 }
-.gstreak-flame {
-  font-size: 16px;
+.today.celebrate .today-ring {
+  animation: ring-lift 0.7s cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+.today-flame {
+  grid-area: stack;
+  align-self: start;
+  margin-top: 9px;
+  font-size: 17px;
   line-height: 1;
+  filter: grayscale(0.6) opacity(0.55);
+  transition: filter 0.4s ease;
 }
-.gstreak.alive .gstreak-flame {
-  animation: flame-flicker 2.4s ease-in-out infinite;
+.today.alive .today-flame {
+  filter: none;
+  animation: flame-flicker 2.8s ease-in-out infinite;
 }
-.gstreak-count {
+.today.celebrate .today-flame {
+  animation: flame-leap 0.8s ease-out both;
+}
+.today-count {
+  grid-area: stack;
   font-family: var(--display);
-  font-size: 20px;
+  font-size: 30px;
   font-weight: 800;
-  line-height: 1;
+  letter-spacing: -0.02em;
   color: var(--ink);
-  animation: count-pop 0.4s ease;
+  margin-top: 6px;
+  animation: count-pop 0.45s cubic-bezier(0.2, 1.4, 0.4, 1) both;
 }
-.gstreak-unit {
+.today.alive .today-count {
+  color: color-mix(in srgb, var(--streak) 60%, var(--ink));
+}
+.today-unit {
+  grid-area: stack;
+  align-self: end;
+  margin-bottom: 10px;
   font-size: 9px;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   color: var(--ink-faint);
 }
-.gstreak-body {
+
+.today-headline {
   min-width: 0;
+  flex: 1;
 }
-.gstreak-head {
+.today-title {
   font-family: var(--display);
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 750;
   color: var(--ink);
 }
-.gstreak.at-risk .gstreak-head {
-  color: var(--tint-ink, var(--goal));
+.today.at-risk .today-title {
+  color: color-mix(in srgb, var(--streak) 58%, var(--ink));
 }
-.gstreak-sub {
+.today-sub {
   margin-top: 2px;
   font-size: 12px;
   line-height: 1.4;
   color: var(--ink-soft);
 }
-.gstreak-progress {
+
+/* This week's rhythm — a bar per day, filled when the day was fully completed. */
+.today-week {
   display: flex;
-  gap: 4px;
-  margin-top: 7px;
+  gap: 5px;
+  margin-top: 11px;
 }
-.gstreak-pip {
-  width: 16px;
-  height: 5px;
+.tw-day {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.tw-dot {
+  width: 100%;
+  max-width: 22px;
+  height: 8px;
   border-radius: 999px;
   background: var(--line);
+  transition: background 0.3s ease, box-shadow 0.3s ease, opacity 0.3s ease;
 }
-.gstreak-pip.on {
-  background: var(--goal, var(--accent));
+.tw-day.done .tw-dot {
+  background: linear-gradient(
+    150deg,
+    color-mix(in srgb, var(--streak) 80%, white),
+    var(--streak)
+  );
+  box-shadow: 0 2px 6px color-mix(in srgb, var(--streak) 30%, transparent);
 }
-.gstreak-best {
-  margin-top: 6px;
-  font-size: 10.5px;
+.tw-day.missed .tw-dot {
+  background: color-mix(in srgb, var(--streak) 18%, var(--line));
+}
+.tw-day.future .tw-dot {
+  opacity: 0.45;
+}
+/* Today, still pending: an accent-tinted bar (plus the accent label below) marks
+   it without a floating ring that would break the row's flat rhythm. When today
+   is already done it keeps the full "done" fill. NB the modifier is `now`, not
+   `today` — `.today` is the card class and would otherwise style this cell. */
+.tw-day.now:not(.done) .tw-dot {
+  background: color-mix(in srgb, var(--streak) 34%, var(--line));
+}
+.tw-label {
+  font-size: 9px;
   font-weight: 650;
   color: var(--ink-faint);
 }
+.tw-day.now .tw-label {
+  color: color-mix(in srgb, var(--streak) 60%, var(--ink));
+}
+
+/* Today's commitments — the checklist that IS the ritual. */
+.today-list {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.today-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  padding: 9px 11px;
+  border-radius: 11px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  transition: background 0.16s ease, border-color 0.16s ease, transform 0.1s ease;
+}
+.today-item:hover {
+  border-color: color-mix(in srgb, var(--streak) 35%, var(--line));
+}
+.today-item:active {
+  transform: scale(0.99);
+}
+.ti-check {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  border: 1.5px solid var(--line);
+  background: var(--panel);
+  color: transparent;
+  font-size: 12px;
+  font-weight: 800;
+  transition: all 0.2s cubic-bezier(0.2, 0.9, 0.25, 1);
+}
+.today-item.done .ti-check {
+  color: #fff;
+  border-color: transparent;
+  background: linear-gradient(
+    150deg,
+    color-mix(in srgb, var(--streak) 82%, white),
+    var(--streak)
+  );
+  box-shadow: 0 2px 7px color-mix(in srgb, var(--streak) 32%, transparent);
+}
+.ti-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.today-item.done .ti-title {
+  color: var(--ink-soft);
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, var(--streak) 45%, transparent);
+}
+.ti-hint {
+  flex: none;
+  font-size: 9.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-faint);
+}
+.today-item.done .ti-hint {
+  color: color-mix(in srgb, var(--streak) 50%, var(--ink-faint));
+}
+
+.today-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 13px;
+}
+.today-milestone,
+.today-best {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10.5px;
+  font-weight: 650;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--ink-soft);
+}
+.today-milestone {
+  border-color: color-mix(in srgb, var(--streak) 35%, var(--line));
+  color: color-mix(in srgb, var(--streak) 55%, var(--ink));
+}
+
+/* Celebration burst inside the ring. */
+.today-burst {
+  grid-area: stack;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.tb-spark {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 3px;
+  height: 10px;
+  border-radius: 2px;
+  background: var(--streak);
+  transform: translate(-50%, -50%) rotate(var(--a)) translateY(-8px);
+  opacity: 0;
+  animation: tb-fly 0.85s ease-out both;
+}
+.tb-pulse {
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--streak) 50%, transparent);
+  animation: tb-ring 0.85s ease-out both;
+}
+@keyframes tb-fly {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) rotate(var(--a)) translateY(-8px);
+  }
+  35% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) rotate(var(--a)) translateY(-42px);
+  }
+}
+@keyframes tb-ring {
+  0% {
+    opacity: 0.8;
+    transform: scale(0.6);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.6);
+  }
+}
 @media (prefers-reduced-motion: reduce) {
-  .gstreak.at-risk {
-    animation: none;
-  }
-  .gstreak.alive .gstreak-flame {
-    animation: none;
-  }
-  .gstreak-count {
+  .today.at-risk,
+  .today.alive .today-flame,
+  .today-count,
+  .tb-spark,
+  .tb-pulse {
     animation: none;
   }
 }
@@ -3054,6 +3272,7 @@ button {
     box-shadow: 0 -6px 22px rgba(74, 56, 28, 0.08);
   }
   .mtab {
+    position: relative;
     flex: 1;
     display: flex;
     flex-direction: column;
@@ -3065,6 +3284,38 @@ button {
     padding: 7px 4px;
     border-radius: 12px;
     transition: color 0.15s ease, background 0.15s ease;
+  }
+  /* Ambient streak badge on the Calendar tab — momentum visible from anywhere. */
+  .mtab-streak {
+    position: absolute;
+    top: 0;
+    left: calc(50% + 3px);
+    display: inline-flex;
+    align-items: center;
+    font-size: 9.5px;
+    font-weight: 800;
+    line-height: 1;
+    padding: 2px 5px;
+    border-radius: 999px;
+    color: #fff;
+    background: linear-gradient(
+      150deg,
+      color-mix(in srgb, var(--goal) 88%, white),
+      var(--goal)
+    );
+    box-shadow: 0 2px 6px color-mix(in srgb, var(--goal) 40%, transparent);
+  }
+  .mtab-streak.at-risk {
+    animation: badge-throb 1.8s ease-in-out infinite;
+  }
+  @keyframes badge-throb {
+    0%,
+    100% {
+      transform: scale(1);
+    }
+    50% {
+      transform: scale(1.14);
+    }
   }
   .mtab-ico {
     font-size: 19px;

@@ -6,9 +6,10 @@ import { NoteEditor } from './components/NoteEditor'
 import { fetchServerConfig, fetchBillingStatus } from './services/api'
 import { useReminders } from './ui/useReminders'
 import { usePushSync } from './ui/usePushSync'
+import { computeGlobalStreak } from './store/streak'
 
 export function App() {
-  const { selected, setConfig, setBilling } = useStore()
+  const { state, selected, setConfig, setBilling } = useStore()
   const { toast, dismiss } = useReminders()
   usePushSync()
 
@@ -27,6 +28,10 @@ export function App() {
     }
     prevSelectedId.current = selected?.id
   }, [selected?.id])
+
+  // Ambient momentum on the mobile Calendar tab: a flame badge so the streak is
+  // visible from anywhere, not only once you open the calendar.
+  const streak = computeGlobalStreak(state.reminders, state.notes)
 
   // On mount: learn what the backend can do and check subscription status. Also
   // clean the ?billing=success return param from Stripe checkout out of the URL.
@@ -103,6 +108,14 @@ export function App() {
         >
           <span className="mtab-ico">📆</span>
           <span className="mtab-label">Calendar</span>
+          {streak.current > 0 && (
+            <span
+              className={`mtab-streak ${streak.atRisk ? 'at-risk' : ''}`}
+              aria-label={`${streak.current} day streak`}
+            >
+              🔥{streak.current}
+            </span>
+          )}
         </button>
       </nav>
     </div>

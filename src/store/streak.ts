@@ -333,6 +333,121 @@ export function computeGlobalStreak(
   }
 }
 
+// ---- Today's commitments (the actionable daily ritual) ----------------------
+
+export interface Commitment {
+  reminderId: string
+  noteId: string
+  title: string
+  mode: Reminder['mode']
+  done: boolean
+}
+
+// Every commitment due *today*, with its completion state — the exact list the
+// user ticks off to keep the global streak alive. Unfinished ones first so it
+// reads as a to-do list.
+export function todaysCommitments(
+  reminders: Reminder[],
+  notes: Note[],
+): Commitment[] {
+  const notesById = new Map(notes.map((n) => [n.id, n]))
+  const today = todayIso()
+  const out: Commitment[] = []
+  for (const r of reminders) {
+    let due = false
+    if (r.mode === 'sessions') {
+      const note = notesById.get(r.noteId)
+      due = !!note && sessionDates(note).includes(today)
+    } else {
+      due = isExpectedOn(r, today)
+    }
+    if (!due) continue
+    out.push({
+      reminderId: r.id,
+      noteId: r.noteId,
+      title: r.title,
+      mode: r.mode,
+      done: r.completions.includes(today),
+    })
+  }
+  return out.sort((a, b) => Number(a.done) - Number(b.done))
+}
+
+// ---- Milestones -------------------------------------------------------------
+//
+// Streaks earn a sense of building toward something. These are the rungs; the
+// UI shows how far off the next one is ("4 days to a week").
+
+export const MILESTONES = [3, 7, 14, 21, 30, 50, 75, 100, 150, 200, 365]
+
+export function milestoneLabel(target: number): string {
+  if (target === 7) return 'a week'
+  if (target === 14) return 'two weeks'
+  if (target === 21) return 'three weeks'
+  if (target === 30) return 'a month'
+  if (target === 100) return '100 days'
+  if (target === 365) return 'a year'
+  return `${target} days`
+}
+
+export function nextMilestone(
+  current: number,
+): { target: number; remaining: number; label: string } | null {
+  for (const m of MILESTONES) {
+    if (m > current)
+      return { target: m, remaining: m - current, label: milestoneLabel(m) }
+  }
+  return null
+}
+
+export function isMilestone(current: number): boolean {
+  return MILESTONES.includes(current)
+}
+
+// ---- This week's rhythm -----------------------------------------------------
+//
+// A Monday→Sunday snapshot of which days were fully completed — makes recent
+// consistency visible at a glance rather than as a bare number.
+
+export interface WeekDay {
+  iso: string
+  label: string // S M T W T F S
+  isToday: boolean
+  isFuture: boolean
+  expected: boolean // anything due that day
+  complete: boolean // every commitment that day done
+  missed: boolean // expected, in the past, not all done
+}
+
+export function weekRhythm(reminders: Reminder[], notes: Note[]): WeekDay[] {
+  const notesById = new Map(notes.map((n) => [n.id, n]))
+  const base = new Date()
+  base.setHours(0, 0, 0, 0)
+  const todayI = isoOf(base)
+  // Monday-start week containing today.
+  const monday = new Date(base)
+  monday.setDate(monday.getDate() - ((base.getDay() + 6) % 7))
+
+  const out: WeekDay[] = []
+  const cursor = new Date(monday)
+  for (let i = 0; i < 7; i++) {
+    const iso = isoOf(cursor)
+    const { expected, done } = dayStat(reminders, notesById, iso)
+    const isFuture = iso > todayI
+    out.push({
+      iso,
+      label: WEEKDAY_LABELS[cursor.getDay()],
+      isToday: iso === todayI,
+      isFuture,
+      expected: expected > 0,
+      complete: expected > 0 && done >= expected,
+      missed: expected > 0 && !isFuture && iso !== todayI && done < expected,
+    })
+    cursor.setDate(cursor.getDate() + 1)
+  }
+  return out
+}
+
 // ---- Trail (the row of dots the UI renders) ---------------------------------
 
 export interface TrailItem {
