@@ -44,8 +44,11 @@ export function SmartSuggestions({
           <span className="smart-ico" aria-hidden>
             ↳
           </span>
-          Continue the list
+          <span className="smart-chip-label">Continue the list</span>
           <span className="smart-next">{list.label}</span>
+          <kbd className="smart-key" aria-hidden>
+            ⇥
+          </kbd>
         </button>
       )}
 

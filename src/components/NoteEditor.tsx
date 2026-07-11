@@ -7,6 +7,7 @@ import { KIND_META, tintVars } from '../ui/kindMeta'
 import { ContextualPrompt } from './ContextualPrompt'
 import { SmartSuggestions } from './SmartSuggestions'
 import { SegmentView } from './Segments'
+import { detectListPattern } from '../engine/patterns'
 import { eventConflicts } from '../store/reconcile'
 import { FeatureGenerator } from '../ui/FeatureGenerator'
 import { MindMap } from './MindMap'
@@ -41,6 +42,33 @@ export function NoteEditor({ note }: { note: Note }) {
     title: e.title,
     date: e.date,
   }))
+
+  // Append a list-continuation marker to the note and drop the caret right after
+  // it. Shared by the chip click and the Tab shortcut so both feel identical.
+  const insertContinuation = (text: string) => {
+    setText(note.id, note.text.replace(/\s+$/, '') + text)
+    const ta = taRef.current
+    if (ta) {
+      requestAnimationFrame(() => {
+        ta.focus()
+        ta.setSelectionRange(ta.value.length, ta.value.length)
+      })
+    }
+  }
+
+  // Tab accepts a pending list continuation — like editor autocomplete. Only
+  // hijacks Tab when the caret is at the very end (so it never interrupts an
+  // edit earlier in the note) and a suggestion actually exists.
+  const onEditorKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key !== 'Tab' || e.shiftKey) return
+    const ta = e.currentTarget
+    if (ta.selectionStart !== ta.value.length || ta.selectionStart !== ta.selectionEnd)
+      return
+    const sug = detectListPattern(note.text)
+    if (!sug) return
+    e.preventDefault()
+    insertContinuation(sug.insert)
+  }
 
   return (
     <>
@@ -85,25 +113,14 @@ export function NoteEditor({ note }: { note: Note }) {
             spellCheck={false}
             autoFocus
             onChange={(e) => setText(note.id, e.target.value)}
+            onKeyDown={onEditorKeyDown}
           />
         ) : (
           <MindMap note={note} />
         )}
 
         {mode === 'write' && (
-          <SmartSuggestions
-            note={note}
-            onInsert={(text) => {
-              setText(note.id, note.text.replace(/\s+$/, '') + text)
-              const ta = taRef.current
-              if (ta) {
-                requestAnimationFrame(() => {
-                  ta.focus()
-                  ta.setSelectionRange(ta.value.length, ta.value.length)
-                })
-              }
-            }}
-          />
+          <SmartSuggestions note={note} onInsert={insertContinuation} />
         )}
 
         {mode === 'write' && showPrompt && result.nextQuestion && (

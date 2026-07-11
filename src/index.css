@@ -1140,19 +1140,21 @@ button {
 /* ---- Smart suggestions (local pattern recognition) ----------------------- */
 
 /* A quiet strip under the editor: list-continuation + shopping-list help,
-   all computed on-device by the deterministic engine. */
+   all computed on-device by the deterministic engine. Padded to line up with
+   the note text's own left edge so it reads as part of the writing surface,
+   not a separate widget floating below it. */
 .smart {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   align-items: flex-start;
-  margin: 10px 2px 2px;
+  padding: 0 18px 6px;
   animation: smart-in 0.22s ease both;
 }
 @keyframes smart-in {
   from {
     opacity: 0;
-    transform: translateY(-3px);
+    transform: translateY(-2px);
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -1161,35 +1163,59 @@ button {
   }
 }
 
+/* The list-continuation affordance: a soft, borderless chip tinted to match the
+   note's kind, with the next marker shown as the same monospace it will insert
+   and a Tab keycap — so it reads like inline editor autocomplete. */
 .smart-chip {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  border: 1px solid color-mix(in srgb, var(--accent) 26%, var(--line));
-  background: color-mix(in srgb, var(--accent) 7%, #fff);
-  color: var(--ink);
-  border-radius: 999px;
-  padding: 6px 12px;
+  border: 1px solid transparent;
+  background: color-mix(in srgb, var(--tint) 7%, transparent);
+  color: var(--tint-ink);
+  border-radius: 9px;
+  padding: 4px 6px 4px 8px;
   font-size: 12.5px;
-  font-weight: 600;
+  font-weight: 550;
   cursor: pointer;
+  -webkit-appearance: none;
   transition: background 0.15s ease, border-color 0.15s ease;
 }
 .smart-chip:hover {
-  background: color-mix(in srgb, var(--accent) 13%, #fff);
-  border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
+  background: color-mix(in srgb, var(--tint) 14%, transparent);
+  border-color: color-mix(in srgb, var(--tint) 22%, transparent);
+}
+.smart-chip:active {
+  background: color-mix(in srgb, var(--tint) 18%, transparent);
+}
+.smart-chip-label {
+  color: var(--ink-soft);
 }
 .smart-ico {
   font-size: 13px;
   line-height: 1;
+  opacity: 0.7;
 }
 .smart-next {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 11.5px;
-  background: var(--accent);
-  color: #fff;
-  border-radius: 6px;
+  color: var(--tint-ink);
+  background: color-mix(in srgb, var(--tint) 15%, transparent);
+  border-radius: 5px;
   padding: 1px 6px;
+  letter-spacing: -0.02em;
+}
+.smart-key {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  color: var(--ink-faint);
+  background: color-mix(in srgb, var(--line-soft) 70%, transparent);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0 5px;
+  line-height: 1.55;
+  min-width: 15px;
+  text-align: center;
 }
 
 .smart-shop {
