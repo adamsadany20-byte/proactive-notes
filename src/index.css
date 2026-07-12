@@ -1,8 +1,9 @@
 :root {
-  /* ---- Earthy identity, deepened ------------------------------------------
+  /* ---- "Modern" theme (default) ------------------------------------------
      Warm stone surfaces, deep espresso ink, a punchier clay accent. Creamier
-     panels float on a richer parchment ground for real contrast. One considered
-     palette — no themes, no toggles. */
+     panels float on a richer parchment ground for real contrast, symmetric
+     shapes, an editorial serif. The original "Earthy" theme is a full override
+     layer at the bottom of this file, chosen via data-theme on <html>. */
   --bg: #e7ddc9;
   --panel: #fdfcf7;
   --panel-2: #f4eee0;
@@ -338,6 +339,7 @@ button {
   display: flex;
   flex-direction: column;
 }
+.theme-toggle,
 .ai-toggle,
 .push-controls,
 .spend-limit {
@@ -346,12 +348,62 @@ button {
   border-radius: var(--radius-sm);
   padding: 13px 14px 14px;
 }
+.theme-toggle {
+  margin-top: 2px;
+}
 .ai-toggle {
   margin-top: 10px;
 }
 .push-controls,
 .spend-limit {
   margin-top: 10px;
+}
+
+/* Design theme switcher (Earthy / Modern) */
+.tt-label {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 650;
+  color: var(--ink);
+  margin-bottom: 8px;
+}
+.tt-seg {
+  display: flex;
+  gap: 4px;
+  background: var(--line);
+  border-radius: 999px;
+  padding: 3px;
+}
+.tt-opt {
+  flex: 1;
+  border: none;
+  background: transparent;
+  border-radius: 999px;
+  padding: 6px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-faint);
+  cursor: pointer;
+  transition: background 0.18s var(--ease-out), color 0.18s var(--ease-out),
+    transform 0.18s var(--ease-spring);
+}
+.tt-opt:hover {
+  color: var(--ink);
+}
+.tt-opt:active {
+  transform: scale(0.96);
+}
+.tt-opt.on {
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--accent) 32%, transparent);
+}
+.tt-note {
+  display: block;
+  margin-top: 8px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--ink-faint);
 }
 /* Footer sign-out — only surfaced on mobile (see the mobile media query), where
    the floating pill would collide with the bottom tab bar. */
@@ -4535,5 +4587,203 @@ input {
   .chip:hover,
   .seg-head:hover .seg-ico {
     transform: none;
+  }
+}
+
+/* ===========================================================================
+   THEME: Earthy — the original design, selectable via the Design toggle.
+   ---------------------------------------------------------------------------
+   The base stylesheet above is "Modern" (the default). Setting
+   data-theme="earthy" on <html> reverts to the original: flatter warm palette,
+   the asymmetric tucked-corner shapes, Inter headings, bordered columns.
+
+   Tokens revert globally — most rules follow automatically because they read
+   the tokens. The structural reverts that only differ on desktop (floating
+   panels, column spacing) are scoped to desktop so they never override the
+   mobile single-column layout, which is identical in both themes.
+   =========================================================================== */
+
+:root[data-theme='earthy'] {
+  --bg: #ece5d7;
+  --panel: #fbf9f3;
+  --panel-2: #f3ede1;
+  --ink: #2a2620;
+  --ink-soft: #6a6253;
+  --ink-faint: #a89d88;
+  --line: #e3dac7;
+  --line-soft: #ece4d4;
+  --accent: #b0563a;
+  --card-highlight: rgba(255, 253, 246, 0.7);
+
+  /* Inter for headings too — the original had no serif. */
+  --display: 'Inter', var(--font);
+
+  /* The signature asymmetric "leaf" corner returns. */
+  --radius: 17px;
+  --radius-sm: 11px;
+  --radius-notch: 21px 21px 21px 6px;
+  --radius-notch-note: 22px 7px 22px 22px;
+  --radius-notch-sm: 13px 13px 13px 4px;
+
+  --shadow-sm: 0 1px 2px rgba(74, 56, 28, 0.06),
+    0 1px 3px rgba(74, 56, 28, 0.04);
+  --shadow: 0 1px 2px rgba(74, 56, 28, 0.05),
+    0 6px 16px rgba(74, 56, 28, 0.07), 0 16px 38px rgba(74, 56, 28, 0.07);
+  --shadow-lg: 0 2px 6px rgba(74, 56, 28, 0.1),
+    0 20px 56px rgba(74, 56, 28, 0.17);
+}
+
+/* ---- Earthy: global component reverts (apply on mobile too) --------------- */
+
+/* Footer tools were flat with hairline dividers, not inset cards. */
+[data-theme='earthy'] .ai-toggle {
+  margin-top: 0;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+[data-theme='earthy'] .theme-toggle,
+[data-theme='earthy'] .push-controls,
+[data-theme='earthy'] .spend-limit {
+  margin-top: 12px;
+  padding: 12px 0 0;
+  border: none;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+}
+
+/* Segmented controls + pills were smaller, softer rectangles. */
+[data-theme='earthy'] .tier-seg {
+  border-radius: 8px;
+}
+[data-theme='earthy'] .tier-opt {
+  border-radius: 6px;
+  padding: 5px 6px;
+}
+[data-theme='earthy'] .tt-seg {
+  border-radius: 8px;
+}
+[data-theme='earthy'] .tt-opt {
+  border-radius: 6px;
+}
+[data-theme='earthy'] .pc-enable {
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: none;
+}
+[data-theme='earthy'] .pc-title {
+  font-size: 12px;
+  font-weight: 600;
+}
+[data-theme='earthy'] .pc-sub {
+  margin: 0 0 8px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--ink-faint);
+}
+[data-theme='earthy'] .prompt-input input {
+  border-radius: 8px;
+  padding: 7px 10px;
+}
+[data-theme='earthy'] .prompt-input button,
+[data-theme='earthy'] .prompt-skip {
+  border-radius: 8px;
+  padding: 7px 12px;
+}
+[data-theme='earthy'] .toast {
+  border-radius: 14px;
+  padding: 12px 14px 12px 15px;
+}
+[data-theme='earthy'] .toast-x {
+  border-radius: 9px;
+  padding: 6px 12px;
+}
+
+/* Headings were Inter at the original sizes (no big editorial serif). */
+[data-theme='earthy'] .seg-head .seg-title {
+  font-weight: 620;
+  font-size: 14px;
+}
+[data-theme='earthy'] .cal-head {
+  font-size: 15px;
+  letter-spacing: normal;
+  gap: 8px;
+  padding: 20px 18px 10px;
+}
+[data-theme='earthy'] .empty {
+  max-width: 360px;
+  margin-top: 8vh;
+}
+[data-theme='earthy'] .empty h2 {
+  color: var(--ink-soft);
+  font-weight: 600;
+  font-size: 17px;
+  line-height: 1.35;
+  letter-spacing: normal;
+  margin: 0;
+}
+[data-theme='earthy'] .empty .hint {
+  font-size: 13px;
+  margin-top: 10px;
+}
+[data-theme='earthy'] .brand-logo {
+  width: 48px;
+  height: 34px;
+}
+[data-theme='earthy'] .brand-name {
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+[data-theme='earthy'] .brand-tag {
+  font-size: 11px;
+  letter-spacing: normal;
+  white-space: normal;
+}
+
+/* ---- Earthy: desktop-only structural reverts ----------------------------- */
+/* These undo the floating-panel shell. Mobile is a single scrolling column in
+   both themes, so they must NOT apply there. */
+@media (min-width: 981px) {
+  [data-theme='earthy'] .app {
+    grid-template-columns: 248px minmax(0, 1fr) 340px;
+    gap: 0;
+    height: 100vh;
+    padding: 0;
+  }
+  [data-theme='earthy'] .col {
+    height: 100vh;
+  }
+  [data-theme='earthy'] .col-main {
+    padding: 40px 32px 120px;
+  }
+  [data-theme='earthy'] .col-side {
+    background: var(--panel-2);
+    border: none;
+    border-right: 1px solid var(--line);
+    border-radius: 0;
+    box-shadow: none;
+  }
+  [data-theme='earthy'] .col-cal {
+    background: var(--panel-2);
+    border: none;
+    border-left: 1px solid var(--line);
+    border-radius: 0;
+    box-shadow: none;
+  }
+  [data-theme='earthy'] .side-head {
+    gap: 0;
+    padding: 20px 18px 12px;
+  }
+  [data-theme='earthy'] .icon-btn {
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    background: var(--panel);
+    box-shadow: none;
   }
 }

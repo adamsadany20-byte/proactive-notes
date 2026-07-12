@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useStore } from '../store/appStore'
 import { KIND_META } from '../ui/kindMeta'
 import { PushControls } from './PushControls'
+import { ThemeToggle } from './ThemeToggle'
 import { UpgradeModal } from './UpgradeModal'
 import { isSupabaseEnabled, supabase } from '../services/supabase'
 import { ChevronIcon, PlusIcon, TuneIcon, XIcon } from '../ui/icons'
@@ -329,6 +330,7 @@ export function Sidebar() {
         </button>
         <div className={`side-tools ${toolsOpen ? 'open' : ''}`}>
           <div className="side-tools-inner">
+            <ThemeToggle />
             <AiTierSelector />
             <PushControls />
             <SpendLimit />

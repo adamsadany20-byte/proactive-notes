@@ -23,6 +23,13 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   </head>
   <body>
+    <!-- Apply the saved design theme before first paint so there's no flash. -->
+    <script>
+      try {
+        var t = localStorage.getItem('evolve.theme');
+        if (t === 'earthy') document.documentElement.dataset.theme = 'earthy';
+      } catch (e) {}
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
