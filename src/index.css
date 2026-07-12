@@ -1,26 +1,28 @@
 :root {
-  /* ---- Earthy identity (single, baked-in) --------------------------------
-     Warm stone surfaces, espresso ink, a clay accent. No themes, no toggles —
-     one considered palette. */
-  --bg: #ece5d7;
-  --panel: #fbf9f3;
-  --panel-2: #f3ede1;
-  --ink: #2a2620;
-  --ink-soft: #6a6253;
-  --ink-faint: #a89d88;
-  --line: #e3dac7;
-  --line-soft: #ece4d4;
+  /* ---- Earthy identity, deepened ------------------------------------------
+     Warm stone surfaces, deep espresso ink, a punchier clay accent. Creamier
+     panels float on a richer parchment ground for real contrast. One considered
+     palette — no themes, no toggles. */
+  --bg: #e7ddc9;
+  --panel: #fdfcf7;
+  --panel-2: #f4eee0;
+  --ink: #211c15;
+  --ink-soft: #625a4a;
+  --ink-faint: #a1957c;
+  --line: #ded3ba;
+  --line-soft: #ebe3d0;
 
-  --accent: #b0563a; /* clay / terracotta */
+  --accent: #b04e2e; /* clay / terracotta, a shade punchier */
   --accent-soft: color-mix(in srgb, var(--accent) 13%, var(--panel));
   --accent-ink: color-mix(in srgb, var(--accent) 64%, var(--ink));
 
   /* Warm inset top-edge highlight on raised surfaces. */
-  --card-highlight: rgba(255, 253, 246, 0.7);
+  --card-highlight: rgba(255, 253, 246, 0.8);
 
-  /* Modern sans for headings + brand — character comes from type, motion,
-     shape and the clay accent, not ornament. */
-  --display: 'Inter', var(--font);
+  /* Editorial voice: a warm serif for display moments (brand, headings, the big
+     streak numerals); Inter stays for body and controls. Type carries the
+     character now that the shapes are calm and symmetric. */
+  --display: 'Fraunces', 'Iowan Old Style', Georgia, 'Times New Roman', serif;
 
   /* per-kind tints — each -soft derives from its base against the panel so the
      kind identity stays legible on the warm surface. */
@@ -39,25 +41,32 @@
   --purchase: #3a9aa0;
   --purchase-soft: color-mix(in srgb, var(--purchase) 13%, var(--panel));
 
-  /* Shape language — a signature asymmetric "leaf" corner: three soft corners
-     and one tucked-in. It reads as crafted and distinctive rather than the
-     default rounded rectangle everywhere. */
-  --radius: 17px;
-  --radius-sm: 11px;
-  /* Two notch orientations so cards aren't all the same silhouette: segments
-     tuck the bottom-left; the note card (the "head" of the page) tucks the
-     top-right, near its mode toggle. */
-  --radius-notch: 21px 21px 21px 6px;
-  --radius-notch-note: 22px 7px 22px 22px;
-  --radius-notch-sm: 13px 13px 13px 4px;
+  /* Shape language — soft, generous, fully symmetric. Large calm radii on
+     surfaces, pills on controls. (The legacy --radius-notch names are kept so
+     every existing rule updates in place; they now resolve symmetric.) */
+  --radius: 20px;
+  --radius-sm: 13px;
+  --radius-notch: 20px;
+  --radius-notch-note: 24px;
+  --radius-notch-sm: 13px;
 
-  /* Warm, layered elevation. */
-  --shadow-sm: 0 1px 2px rgba(74, 56, 28, 0.06),
-    0 1px 3px rgba(74, 56, 28, 0.04);
-  --shadow: 0 1px 2px rgba(74, 56, 28, 0.05),
-    0 6px 16px rgba(74, 56, 28, 0.07), 0 16px 38px rgba(74, 56, 28, 0.07);
-  --shadow-lg: 0 2px 6px rgba(74, 56, 28, 0.1),
-    0 20px 56px rgba(74, 56, 28, 0.17);
+  /* Dimensional elevation: a tight warm contact shadow plus a wide soft ambient
+     one, so surfaces feel physically layered rather than flatly bordered. */
+  --shadow-sm: 0 1px 2px rgba(64, 47, 22, 0.07),
+    0 2px 6px rgba(64, 47, 22, 0.05);
+  --shadow: 0 1px 2px rgba(64, 47, 22, 0.06),
+    0 8px 20px rgba(64, 47, 22, 0.08), 0 24px 48px rgba(64, 47, 22, 0.07);
+  --shadow-lg: 0 3px 8px rgba(64, 47, 22, 0.1),
+    0 24px 64px rgba(64, 47, 22, 0.18);
+  /* Floating panels (the app's three columns) sit a clear step above the page. */
+  --shadow-float: 0 1px 2px rgba(64, 47, 22, 0.05),
+    0 10px 28px rgba(64, 47, 22, 0.07), 0 32px 72px rgba(64, 47, 22, 0.08);
+
+  /* Motion vocabulary — one springy ease for arrivals, one calm ease for
+     everything that follows the cursor. */
+  --ease-spring: cubic-bezier(0.3, 1.25, 0.4, 1);
+  --ease-out: cubic-bezier(0.22, 0.8, 0.28, 1);
+
   --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
     Helvetica, Arial, sans-serif;
 }
@@ -107,17 +116,22 @@ button {
   cursor: pointer;
 }
 
-/* ---- App shell ----------------------------------------------------------- */
+/* ---- App shell ------------------------------------------------------------
+   Desktop: the sidebar and calendar are floating panels resting on the warm
+   parchment ground; the writing canvas between them stays open. Dimensional,
+   not boxed-in — three surfaces at two depths, not three identical columns. */
 
 .app {
   display: grid;
-  grid-template-columns: 248px minmax(0, 1fr) 340px;
-  height: 100vh;
+  grid-template-columns: 264px minmax(0, 1fr) 348px;
+  gap: 16px;
+  height: 100dvh;
+  padding: 16px;
   overflow: hidden;
 }
 
 .col {
-  height: 100vh;
+  height: calc(100dvh - 32px);
   overflow-y: auto;
 }
 
@@ -125,17 +139,15 @@ button {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 40px 32px 120px;
+  padding: 26px 28px 120px;
 }
 
-.col-side {
-  border-right: 1px solid var(--line);
-  background: var(--panel-2);
-}
-
+.col-side,
 .col-cal {
-  border-left: 1px solid var(--line);
-  background: var(--panel-2);
+  background: var(--panel);
+  border: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+  border-radius: var(--radius-notch-note);
+  box-shadow: var(--shadow-float);
 }
 
 /* ---- Sidebar ------------------------------------------------------------- */
@@ -144,19 +156,20 @@ button {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 20px 18px 12px;
+  gap: 14px;
+  padding: 22px 20px 16px;
 }
 .brand {
   display: flex;
   align-items: center;
   gap: 11px;
+  min-width: 0;
 }
 .brand .dot {
   flex: none;
   width: 26px;
   height: 26px;
   border-radius: var(--radius-notch-sm);
-  /* Echoes the signature notch of the cards. */
   background: linear-gradient(
     150deg,
     color-mix(in srgb, var(--accent) 72%, white) 0%,
@@ -180,8 +193,8 @@ button {
 }
 .brand-logo {
   flex: none;
-  width: 48px;
-  height: 34px;
+  width: 40px;
+  height: 32px;
   object-fit: contain;
 }
 .brand-text {
@@ -191,29 +204,36 @@ button {
 }
 .brand-name {
   font-family: var(--display);
-  font-size: 19px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
+  font-size: 21px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
   color: var(--ink);
 }
 .brand-tag {
-  font-size: 11px;
-  letter-spacing: normal;
+  font-size: 10.5px;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
   color: var(--ink-faint);
   font-weight: 500;
   margin-top: 2px;
 }
 .icon-btn {
+  flex: none;
   border: 1px solid var(--line);
-  background: var(--panel);
-  width: 30px;
-  height: 30px;
-  border-radius: 8px;
+  background: var(--panel-2);
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
   font-size: 17px;
   color: var(--ink-soft);
   display: grid;
   place-items: center;
-  transition: all 0.15s ease;
+  box-shadow: var(--shadow-sm);
+  transition: background 0.18s var(--ease-out), color 0.18s var(--ease-out),
+    transform 0.18s var(--ease-spring), box-shadow 0.2s var(--ease-out);
+}
+.icon-btn:active {
+  transform: scale(0.94);
 }
 .icon-btn:hover {
   background: var(--accent-soft);
@@ -243,8 +263,7 @@ button {
 .note-item:hover {
   background: var(--line-soft);
 }
-/* Selected note: a tucked-corner clay chip — selection wears the shape motif
-   rather than a generic white-card highlight. */
+/* Selected note: a soft clay chip rather than a generic white-card highlight. */
 .note-item.active {
   background: color-mix(in srgb, var(--accent) 9%, var(--panel));
   border-color: color-mix(in srgb, var(--accent) 22%, var(--line));
@@ -303,14 +322,36 @@ button {
 }
 
 .side-foot {
-  padding: 14px 18px;
+  padding: 16px 16px 18px;
   font-size: 11px;
   color: var(--ink-faint);
-  border-top: 1px solid var(--line);
-  margin-top: 8px;
+  border-top: 1px solid var(--line-soft);
+  margin-top: 12px;
 }
 .side-foot p {
-  margin: 12px 0 0;
+  margin: 14px 4px 0;
+  line-height: 1.5;
+}
+/* Each tool (AI tier, reminders, spend cap) is its own soft inset card — clear
+   separation instead of cramped rules-and-margins. */
+.side-tools-inner {
+  display: flex;
+  flex-direction: column;
+}
+.ai-toggle,
+.push-controls,
+.spend-limit {
+  background: var(--panel-2);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  padding: 13px 14px 14px;
+}
+.ai-toggle {
+  margin-top: 10px;
+}
+.push-controls,
+.spend-limit {
+  margin-top: 10px;
 }
 /* Footer sign-out — only surfaced on mobile (see the mobile media query), where
    the floating pill would collide with the bottom tab bar. */
@@ -344,15 +385,15 @@ button {
   display: flex;
   gap: 4px;
   background: var(--line);
-  border-radius: 8px;
+  border-radius: 999px;
   padding: 3px;
 }
 .tier-opt {
   flex: 1;
   border: none;
   background: transparent;
-  border-radius: 6px;
-  padding: 5px 6px;
+  border-radius: 999px;
+  padding: 6px 8px;
   font-size: 11px;
   font-weight: 600;
   color: var(--ink-faint);
@@ -425,11 +466,6 @@ button {
 }
 
 /* Per-user spend limit control */
-.spend-limit {
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid var(--line);
-}
 .sl-head {
   display: flex;
   align-items: center;
@@ -669,20 +705,15 @@ button {
 }
 
 /* --- Reminder push controls (sidebar) ------------------------------------ */
-.push-controls {
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid var(--line);
-}
 .pc-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 6px;
+  margin-bottom: 7px;
 }
 .pc-title {
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 12.5px;
+  font-weight: 650;
   color: var(--ink);
 }
 .pc-badge {
@@ -697,22 +728,24 @@ button {
   color: var(--accent-ink, var(--accent));
 }
 .pc-sub {
-  margin: 0 0 8px;
-  font-size: 11px;
-  line-height: 1.4;
-  color: var(--ink-faint);
+  margin: 0 0 11px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--ink-soft);
 }
 .pc-enable {
   width: 100%;
   background: var(--accent);
   color: #fff;
   border: none;
-  border-radius: var(--radius-sm);
-  padding: 8px 10px;
-  font-size: 12px;
-  font-weight: 600;
+  border-radius: 999px;
+  padding: 10px 14px;
+  font-size: 12.5px;
+  font-weight: 650;
   cursor: pointer;
-  transition: filter 0.15s ease;
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--accent) 30%, transparent);
+  transition: filter 0.15s ease, transform 0.18s var(--ease-spring),
+    box-shadow 0.2s var(--ease-out);
 }
 .pc-enable:hover:not(:disabled) {
   filter: brightness(1.05);
@@ -855,8 +888,8 @@ button {
   animation: slideUp 0.32s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 /* Recognised note: no edge sliver. The whole card warms to the kind — a tinted
-   hairline border and a soft wash that pools out of the tucked corner, plus a
-   faint tint halo. Distinctive and calm, not a generic accent stripe. */
+   hairline border and a soft wash that pools from the top corner, plus a faint
+   tint halo. Distinctive and calm, not a generic accent stripe. */
 .note-card.tinted {
   border-color: color-mix(in srgb, var(--tint) 38%, var(--line));
   background: radial-gradient(
@@ -1030,8 +1063,8 @@ button {
 .prompt-input input {
   flex: 1;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 7px 10px;
+  border-radius: 999px;
+  padding: 7px 13px;
   font-size: 13px;
   font-family: inherit;
   outline: none;
@@ -1045,8 +1078,8 @@ button {
   border: none;
   background: var(--tint);
   color: #fff;
-  border-radius: 8px;
-  padding: 7px 12px;
+  border-radius: 999px;
+  padding: 7px 14px;
   font-size: 12.5px;
   font-weight: 600;
 }
@@ -1309,8 +1342,9 @@ button {
   color: var(--tint-ink);
 }
 .seg-head .seg-title {
-  font-weight: 620;
-  font-size: 14px;
+  font-family: var(--display);
+  font-weight: 600;
+  font-size: 15.5px;
   letter-spacing: -0.01em;
   flex: 1;
   min-width: 0;
@@ -1495,8 +1529,8 @@ button {
   background: var(--panel);
   border: 1px solid var(--line);
   box-shadow: var(--shadow-lg);
-  border-radius: 14px;
-  padding: 12px 14px 12px 15px;
+  border-radius: 999px;
+  padding: 12px 14px 12px 18px;
   max-width: 440px;
   z-index: 50;
   animation: slideUp 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) both;
@@ -1516,8 +1550,8 @@ button {
   color: #fff;
   font-size: 12px;
   font-weight: 600;
-  padding: 6px 12px;
-  border-radius: 9px;
+  padding: 7px 14px;
+  border-radius: 999px;
 }
 
 /* flashcards */
@@ -3005,12 +3039,14 @@ button {
 /* ---- Calendar panel ------------------------------------------------------ */
 
 .cal-head {
-  padding: 20px 18px 10px;
+  padding: 22px 20px 10px;
+  font-family: var(--display);
   font-weight: 650;
-  font-size: 15px;
+  font-size: 18px;
+  letter-spacing: -0.01em;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 9px;
 }
 .cal-list {
   padding: 4px 14px 40px;
@@ -3101,19 +3137,25 @@ button {
 .empty {
   text-align: center;
   color: var(--ink-faint);
-  max-width: 360px;
-  margin-top: 8vh;
-  animation: slideUp 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  max-width: 420px;
+  margin-top: 10vh;
+  animation: slideUp 0.4s var(--ease-out) both;
 }
+/* The blank page earns the biggest editorial moment in the app. */
 .empty h2 {
-  color: var(--ink-soft);
+  font-family: var(--display);
+  color: var(--ink);
   font-weight: 600;
-  font-size: 17px;
+  font-size: 30px;
+  line-height: 1.2;
+  letter-spacing: -0.015em;
+  margin: 0 0 4px;
 }
 .empty .hint {
-  font-size: 13px;
-  margin-top: 10px;
+  font-size: 13.5px;
+  margin-top: 12px;
   line-height: 1.7;
+  color: var(--ink-soft);
 }
 .empty code {
   background: var(--panel);
@@ -3216,6 +3258,7 @@ button {
     display: block;
     height: auto;
     min-height: 100dvh;
+    padding: 0;
     overflow: visible;
   }
 
@@ -3245,7 +3288,9 @@ button {
     margin: 0 auto;
     border: none;
     background: transparent;
-    animation: page-in 0.34s cubic-bezier(0.22, 0.8, 0.28, 1) both;
+    border-radius: 0;
+    box-shadow: none;
+    animation: page-in 0.34s var(--ease-out) both;
   }
   .col-main {
     align-items: stretch;
@@ -4394,13 +4439,11 @@ input {
 
 /* ---- Signature shape on primary actions ----------------------------------- */
 
-/* The tucked corner is the brand's silhouette — primary CTAs wear it too, so
-   the most important button on any card echoes the card itself. */
+/* Primary CTAs share the surface radius so the most important button on any
+   card echoes the card itself. */
 .streak-btn.go,
 .si-go,
-.pc-enable,
 .auth-primary,
-.toast-x,
 .gen-suggest,
 .modal-go {
   border-radius: var(--radius-notch-sm);
