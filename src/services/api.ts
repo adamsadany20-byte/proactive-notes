@@ -177,27 +177,6 @@ export function enrich(text: string, candidate: string, backend?: AiBackend) {
   })
 }
 
-export interface VisionResult {
-  configured?: boolean
-  description?: string
-  kind?: string
-  text?: string
-  summary?: string
-  error?: string
-}
-
-// Send a (compressed) image data URL for OCR + identification. Returns null if
-// the server is unreachable; a VisionResult (possibly with `error`) otherwise.
-export async function analyzeImage(
-  image: string,
-  backend?: AiBackend,
-): Promise<VisionResult | null> {
-  return safeJson<VisionResult>(API_BASE + '/api/vision', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ image, backend, clientId: getClientId() }),
-  })
-}
 
 export interface FeatureSuggestion {
   label: string

@@ -216,18 +216,6 @@ export interface StreakInfo {
 
 // ---- Notes ------------------------------------------------------------------
 
-// An image attached to a note. The (compressed) image is stored inline as a data
-// URL; vision analysis fills in what it is (`description`) and any text it holds
-// (`text`, OCR).
-export interface NoteAttachment {
-  id: string
-  dataUrl: string
-  status: 'analyzing' | 'done' | 'error'
-  description?: string // what the image is
-  text?: string // transcribed text (OCR), if any
-  error?: string
-}
-
 export interface Note {
   id: string
   text: string
@@ -240,8 +228,6 @@ export interface Note {
   // Questions already asked (so we never repeat).
   askedFields: string[]
   segments: Segment[]
-  // Images the user attached (photos of notes, whiteboards, timetables…).
-  attachments?: NoteAttachment[]
   // Cached entity extraction for change-detection / propagation.
   entities?: Entities
   // World-knowledge enrichment from the LLM, when the local engine escalated.

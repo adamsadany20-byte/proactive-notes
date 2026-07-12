@@ -9,6 +9,7 @@ import {
   isIOS,
   type PushState,
 } from '../services/push'
+import { BellIcon } from '../ui/icons'
 
 // The reminders-notification control in the sidebar. Lets the user turn on
 // closed-app push, sends a test, and surfaces the one case we can't code around:
@@ -79,7 +80,9 @@ export function PushControls() {
   return (
     <div className="push-controls">
       <div className="pc-head">
-        <span className="pc-title">🔔 Reminders</span>
+        <span className="pc-title">
+          <BellIcon className="ico" /> Reminders
+        </span>
         {status === 'granted' && <span className="pc-badge on">On</span>}
       </div>
 

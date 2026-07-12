@@ -9,7 +9,18 @@ import type {
   Segment,
   StudySession,
 } from '../types'
-import { SEGMENT_ICON } from '../ui/kindMeta'
+import {
+  SEGMENT_ICONS,
+  BellIcon,
+  ChevronIcon,
+  ClockIcon,
+  FlameIcon,
+  SproutIcon,
+  StarSixIcon,
+  TargetIcon,
+  TrophyIcon,
+  TuneIcon,
+} from '../ui/icons'
 import { useStore } from '../store/appStore'
 import { relativeDay } from '../store/calendar'
 import {
@@ -45,6 +56,7 @@ function SegShell({
   // collapsed segment still tells you what's inside at a glance.
   const [open, setOpen] = useState(true)
   const wide = WIDE_SEGMENTS.has(seg.type)
+  const Icon = SEGMENT_ICONS[seg.type]
   return (
     <section className={`segment ${wide ? 'wide' : ''} ${open ? '' : 'closed'}`}>
       <button
@@ -53,7 +65,9 @@ function SegShell({
         aria-expanded={open}
         title={open ? 'Collapse' : 'Expand'}
       >
-        <span className="seg-ico">{SEGMENT_ICON[seg.type]}</span>
+        <span className="seg-ico">
+          <Icon />
+        </span>
         <span className="seg-title">{seg.title}</span>
         {!seg.filled ? (
           <span className="seg-forming">
@@ -63,7 +77,7 @@ function SegShell({
           <span className="seg-meta">{meta}</span>
         ) : null}
         <span className={`seg-chevron ${open ? 'open' : ''}`} aria-hidden>
-          ⌄
+          <ChevronIcon />
         </span>
       </button>
       <div className="seg-collapse">
@@ -171,7 +185,7 @@ function ReminderControl({
           onClick={() => setOpen((o) => !o)}
           title="Edit reminder"
         >
-          ⏰ {info?.label}
+          <ClockIcon className="rem-ico" /> {info?.label}
         </button>
       ) : (
         <button
@@ -186,7 +200,7 @@ function ReminderControl({
             }
           }}
         >
-          🔔
+          <BellIcon />
         </button>
       )}
       {open && (
@@ -564,7 +578,7 @@ function StreakInvite({ note, seg }: { note: Note; seg: Segment }) {
     return (
       <SegShell seg={seg} meta={meta}>
         <button className="streak-start-link" onClick={() => startStreak(note.id)}>
-          🔥 Start a streak
+          <FlameIcon className="ico" /> Start a streak
         </button>
       </SegShell>
     )
@@ -574,7 +588,7 @@ function StreakInvite({ note, seg }: { note: Note; seg: Segment }) {
     <SegShell seg={seg} meta={meta}>
       <div className="streak-invite">
         <div className="si-ring" aria-hidden>
-          🔥
+          <FlameIcon />
         </div>
         <div className="si-body">
           <div className="si-head">
@@ -671,7 +685,9 @@ function StreakSeg({ note, seg }: { note: Note; seg: Segment }) {
       >
         <div className="streak-ring">
           {celebrate && <StreakBurst />}
-          <span className="streak-flame">{alive ? '🔥' : '🌱'}</span>
+          <span className="streak-flame">
+            {alive ? <FlameIcon /> : <SproutIcon />}
+          </span>
           <span key={global.current} className="streak-count">
             {global.current}
           </span>
@@ -706,7 +722,7 @@ function StreakSeg({ note, seg }: { note: Note; seg: Segment }) {
           </div>
           {global.best > 0 && (
             <div className="streak-best">
-              <span className="sb-ico">🏆</span> Best streak {global.best}
+              <TrophyIcon className="sb-ico" /> Best streak {global.best}
             </div>
           )}
         </div>
@@ -756,7 +772,13 @@ function StreakSeg({ note, seg }: { note: Note; seg: Segment }) {
       {!sessions && (
         <>
           <button className="streak-editlink" onClick={() => setEditing((e) => !e)}>
-            {editing ? 'Done' : '⚙ Schedule & reminder'}
+            {editing ? (
+              'Done'
+            ) : (
+              <>
+                <TuneIcon className="ico" /> Schedule & reminder
+              </>
+            )}
           </button>
           {editing && (
             <div className="streak-editor">
@@ -798,7 +820,9 @@ function StreakSeg({ note, seg }: { note: Note; seg: Segment }) {
       )}
 
       {sessions && reminder.target && (
-        <div className="streak-plan-target">🎯 {reminder.target}</div>
+        <div className="streak-plan-target">
+          <TargetIcon className="ico" /> {reminder.target}
+        </div>
       )}
     </SegShell>
   )
@@ -824,7 +848,9 @@ function EventSeg({
     <SegShell seg={seg} meta={d.category}>
       {d.enriched && (
         <div className="enriched-note">
-          <span>✦ identified via broader AI</span>
+          <span>
+            <StarSixIcon className="ico" /> identified via broader AI
+          </span>
           {d.summary && <p>{d.summary}</p>}
         </div>
       )}

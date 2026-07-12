@@ -7,72 +7,21 @@ import { useVoiceInput } from '../ui/useVoiceInput'
 import { KIND_META, tintVars } from '../ui/kindMeta'
 import { ContextualPrompt } from './ContextualPrompt'
 import { SmartSuggestions } from './SmartSuggestions'
-import { NoteAttachments } from './NoteAttachments'
 import { SegmentView } from './Segments'
 import { detectListPattern } from '../engine/patterns'
 import { eventConflicts } from '../store/reconcile'
 import { FeatureGenerator } from '../ui/FeatureGenerator'
-import { compressImage } from '../services/image'
-import { analyzeImage } from '../services/api'
-import { uid } from '../engine/generate'
+import { KIND_ICONS, MicIcon, StarSixIcon } from '../ui/icons'
 
 export function NoteEditor({ note }: { note: Note }) {
-  const { state, setText, answer, skip, appendText, addAttachment, resolveAttachment } =
-    useStore()
+  const { state, setText, answer, skip, appendText } = useStore()
   const result = useInference(note)
   useWorldKnowledge(note, result)
   const taRef = useRef<HTMLTextAreaElement>(null)
-  const fileRef = useRef<HTMLInputElement>(null)
 
-  // Voice-memo dictation → appended to the note's current text.
+  // Voice-memo dictation → appended to the note's current text. Runs entirely
+  // on-device via the Web Speech API; no cloud involved.
   const voice = useVoiceInput((t) => appendText(note.id, t))
-
-  const aiConfigured = state.config?.aiConfigured !== false
-
-  // Attach an image: compress it, show it immediately, then (if AI is available)
-  // send it for OCR + identification and fold the result back into the note.
-  const onPickImage = async (files: FileList | null) => {
-    if (!files) return
-    for (const file of Array.from(files)) {
-      if (!file.type.startsWith('image/')) continue
-      const attId = uid('att')
-      let dataUrl: string
-      try {
-        dataUrl = await compressImage(file)
-      } catch {
-        continue
-      }
-      addAttachment(note.id, {
-        id: attId,
-        dataUrl,
-        status: aiConfigured ? 'analyzing' : 'done',
-      })
-      if (!aiConfigured) continue
-      analyzeImage(dataUrl, 'haiku')
-        .then((r) => {
-          if (!r || r.configured === false) {
-            resolveAttachment(note.id, attId, { status: 'done' })
-            return
-          }
-          if (r.error) {
-            resolveAttachment(note.id, attId, { status: 'error', error: r.error })
-            return
-          }
-          resolveAttachment(
-            note.id,
-            attId,
-            { status: 'done', description: r.description, text: r.text },
-            r.summary,
-          )
-        })
-        .catch(() =>
-          resolveAttachment(note.id, attId, {
-            status: 'error',
-            error: 'Could not analyze the image',
-          }),
-        )
-    }
-  }
 
   // Auto-grow the textarea without ever moving the caret.
   useEffect(() => {
@@ -136,7 +85,11 @@ export function NoteEditor({ note }: { note: Note }) {
             {recognised && meta.label && (
               <span className="ambient">
                 <span className="pulse" />
-                {meta.icon} {meta.label}
+                {(() => {
+                  const KindIcon = KIND_ICONS[result.kind]
+                  return KindIcon ? <KindIcon className="ico" /> : null
+                })()}
+                {meta.label}
                 <span className="conf">
                   {Math.round(result.confidence * 100)}%
                 </span>
@@ -144,7 +97,8 @@ export function NoteEditor({ note }: { note: Note }) {
             )}
             {note.enrichment?.status === 'pending' && (
               <span className="ambient world">
-                <span className="pulse" />✦ looking into that…
+                <span className="pulse" />
+                <StarSixIcon className="ico" /> looking into that…
               </span>
             )}
           </div>
@@ -161,43 +115,26 @@ export function NoteEditor({ note }: { note: Note }) {
           onKeyDown={onEditorKeyDown}
         />
 
-        <div className="editor-tools">
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/*"
-            multiple
-            hidden
-            onChange={(e) => {
-              onPickImage(e.target.files)
-              e.target.value = ''
-            }}
-          />
-          <button
-            type="button"
-            className="etool"
-            title="Add a photo — I'll read any text and recognise it"
-            onClick={() => fileRef.current?.click()}
-          >
-            <span className="etool-ico">📷</span>
-            <span className="etool-label">Photo</span>
-          </button>
-          {voice.supported && (
+        {voice.supported && (
+          <div className="editor-tools">
             <button
               type="button"
               className={`etool ${voice.listening ? 'recording' : ''}`}
               title={voice.listening ? 'Stop dictation' : 'Dictate a voice memo'}
               onClick={voice.toggle}
             >
-              <span className="etool-ico">🎤</span>
+              <MicIcon className="etool-ico" live={voice.listening} />
               <span className="etool-label">
-                {voice.listening ? 'Listening…' : 'Voice'}
+                {voice.listening ? 'Listening…' : 'Speak'}
               </span>
+              {voice.listening && (
+                <span className="etool-wave" aria-hidden>
+                  <i /><i /><i /><i />
+                </span>
+              )}
             </button>
-          )}
-        </div>
-
-        <NoteAttachments note={note} />
+          </div>
+        )}
 
         <SmartSuggestions note={note} onInsert={insertContinuation} />
 

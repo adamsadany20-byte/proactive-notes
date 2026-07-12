@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useStore } from '../store/appStore'
+import { FlameIcon, SproutIcon, TrophyIcon } from '../ui/icons'
 import {
   computeGlobalStreak,
   todaysCommitments,
@@ -87,7 +88,9 @@ export function GlobalStreak() {
       <div className="today-top">
         <div className="today-ring">
           {celebrate && <TodayBurst />}
-          <span className="today-flame">{alive ? '🔥' : '🌱'}</span>
+          <span className="today-flame">
+            {alive ? <FlameIcon /> : <SproutIcon />}
+          </span>
           <span key={g.current} className="today-count">
             {g.current}
           </span>
@@ -135,10 +138,15 @@ export function GlobalStreak() {
         <div className="today-foot">
           {alive && milestone && (
             <span className="today-milestone">
-              🔥 {milestone.remaining} to {milestone.label}
+              <FlameIcon className="ico" /> {milestone.remaining} to{' '}
+              {milestone.label}
             </span>
           )}
-          {g.best > 0 && <span className="today-best">🏆 Best {g.best}</span>}
+          {g.best > 0 && (
+            <span className="today-best">
+              <TrophyIcon className="ico" /> Best {g.best}
+            </span>
+          )}
         </div>
       )}
     </div>

@@ -3,6 +3,7 @@ import type { CalendarEvent } from '../types'
 import { relativeDay } from '../store/calendar'
 import { reminderCalendarEvents } from '../store/streak'
 import { GlobalStreak } from './GlobalStreak'
+import { DayGlyphIcon, FlameIcon } from '../ui/icons'
 
 const KIND_COLOR: Record<CalendarEvent['kind'], string> = {
   fixed: 'var(--general)',
@@ -62,7 +63,9 @@ export function CalendarPanel() {
   return (
     <div className="col col-cal">
       <GlobalStreak />
-      <div className="cal-head">📆 Calendar</div>
+      <div className="cal-head">
+        <DayGlyphIcon className="ico" /> Calendar
+      </div>
       <div className="cal-list">
         {days.length === 0 && (
           <div className="cal-empty">
@@ -91,7 +94,13 @@ export function CalendarPanel() {
                     <div className="ce-title">
                       {(e.kind === 'reminder' || e.kind === 'study') && (
                         <span className="ce-streak-ico">
-                          {e.done ? '✓' : e.kind === 'reminder' ? '🔥' : ''}
+                          {e.done ? (
+                            '✓'
+                          ) : e.kind === 'reminder' ? (
+                            <FlameIcon className="ico" />
+                          ) : (
+                            ''
+                          )}
                         </span>
                       )}
                       {e.title}

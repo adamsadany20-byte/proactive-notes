@@ -13,6 +13,18 @@
       "runtimeArgs": ["run", "dev:web"],
       "port": 5173,
       "autoPort": true
+    },
+    {
+      "name": "web-noauth",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "VITE_SUPABASE_URL=",
+        "VITE_SUPABASE_ANON_KEY=",
+        "npx",
+        "vite"
+      ],
+      "port": 5173,
+      "autoPort": true
     }
   ]
 }

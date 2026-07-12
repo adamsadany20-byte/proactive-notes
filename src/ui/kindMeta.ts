@@ -1,4 +1,4 @@
-import type { NoteKind, SegmentType } from '../types'
+import type { NoteKind } from '../types'
 
 export interface KindMeta {
   label: string
@@ -83,13 +83,5 @@ export function tintVars(kind: NoteKind): React.CSSProperties {
   }
 }
 
-export const SEGMENT_ICON: Record<SegmentType, string> = {
-  calendar: '📆',
-  checklist: '☑️',
-  flashcards: '🃏',
-  schedule: '🗓️',
-  'project-board': '📋',
-  'streak-tracker': '🔥',
-  'event-alert': '✨',
-  'purchase-planner': '🛒',
-}
+// Segment/kind glyphs live in ui/icons.tsx (SEGMENT_ICONS / KIND_ICONS) — the
+// app draws its own icon set rather than emoji.

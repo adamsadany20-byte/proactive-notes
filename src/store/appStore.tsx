@@ -11,7 +11,6 @@ import type {
   Enrichment,
   InferenceResult,
   Note,
-  NoteAttachment,
   Reminder,
   Segment,
 } from '../types'
@@ -67,15 +66,6 @@ type Action =
   | { type: 'DELETE'; id: string }
   | { type: 'SET_TEXT'; id: string; text: string }
   | { type: 'APPEND_TEXT'; id: string; text: string; block?: boolean }
-  | { type: 'ADD_ATTACHMENT'; id: string; attachment: NoteAttachment }
-  | {
-      type: 'RESOLVE_ATTACHMENT'
-      id: string
-      attId: string
-      patch: Partial<NoteAttachment>
-      append?: string
-    }
-  | { type: 'REMOVE_ATTACHMENT'; id: string; attId: string }
   | { type: 'REASSESS'; id: string; paused: boolean }
   | { type: 'ANSWER'; id: string; field: string; value: string }
   | { type: 'SKIP'; id: string; field: string }
@@ -283,50 +273,6 @@ function reducer(state: State, action: Action): State {
       })
       return { ...state, notes }
     }
-    case 'ADD_ATTACHMENT': {
-      const notes = state.notes.map((n) =>
-        n.id === action.id
-          ? {
-              ...n,
-              attachments: [...(n.attachments ?? []), action.attachment],
-              updatedAt: Date.now(),
-            }
-          : n,
-      )
-      return { ...state, notes }
-    }
-    case 'RESOLVE_ATTACHMENT': {
-      const note = state.notes.find((n) => n.id === action.id)
-      if (!note) return state
-      const attachments = (note.attachments ?? []).map((a) =>
-        a.id === action.attId ? { ...a, ...action.patch } : a,
-      )
-      const append = action.append?.trim()
-      const text = append
-        ? note.text + (note.text.trim() ? '\n\n' : '') + append
-        : note.text
-      const updated: Note = { ...note, attachments, text, updatedAt: Date.now() }
-      const nextState = {
-        ...state,
-        notes: state.notes.map((n) => (n.id === note.id ? updated : n)),
-      }
-      // Appending transcribed text should reshape the workspace around it.
-      return append ? reassess(nextState, updated, true) : nextState
-    }
-    case 'REMOVE_ATTACHMENT': {
-      const notes = state.notes.map((n) =>
-        n.id === action.id
-          ? {
-              ...n,
-              attachments: (n.attachments ?? []).filter(
-                (a) => a.id !== action.attId,
-              ),
-              updatedAt: Date.now(),
-            }
-          : n,
-      )
-      return { ...state, notes }
-    }
     case 'REASSESS': {
       const note = state.notes.find((n) => n.id === action.id)
       if (!note) return state
@@ -499,14 +445,6 @@ interface StoreApi {
   remove: (id: string) => void
   setText: (id: string, text: string) => void
   appendText: (id: string, text: string, block?: boolean) => void
-  addAttachment: (id: string, attachment: NoteAttachment) => void
-  resolveAttachment: (
-    id: string,
-    attId: string,
-    patch: Partial<NoteAttachment>,
-    append?: string,
-  ) => void
-  removeAttachment: (id: string, attId: string) => void
   reassess: (id: string, paused: boolean) => void
   answer: (id: string, field: string, value: string) => void
   skip: (id: string, field: string) => void
@@ -702,12 +640,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setText: (id, text) => dispatch({ type: 'SET_TEXT', id, text }),
       appendText: (id, text, block) =>
         dispatch({ type: 'APPEND_TEXT', id, text, block }),
-      addAttachment: (id, attachment) =>
-        dispatch({ type: 'ADD_ATTACHMENT', id, attachment }),
-      resolveAttachment: (id, attId, patch, append) =>
-        dispatch({ type: 'RESOLVE_ATTACHMENT', id, attId, patch, append }),
-      removeAttachment: (id, attId) =>
-        dispatch({ type: 'REMOVE_ATTACHMENT', id, attId }),
       reassess: (id, paused) => dispatch({ type: 'REASSESS', id, paused }),
       answer: (id, field, value) => dispatch({ type: 'ANSWER', id, field, value }),
       skip: (id, field) => dispatch({ type: 'SKIP', id, field }),

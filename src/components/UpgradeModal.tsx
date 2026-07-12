@@ -1,4 +1,5 @@
 import type { BillingStatus } from '../services/api'
+import { StarSixIcon } from '../ui/icons'
 
 // A confirmation step shown when the user taps the locked Evolve AI tier, so they
 // choose the paid plan deliberately instead of being dropped straight onto
@@ -36,7 +37,7 @@ export function UpgradeModal({
     >
       <div className="modal-card" onClick={(e) => e.stopPropagation()}>
         <div className="modal-emblem" aria-hidden>
-          ✦
+          <StarSixIcon />
         </div>
         <h2 className="modal-title" id="upgrade-title">
           {isTopup ? 'Top up your AI credit?' : 'Switch to Evolve AI?'}

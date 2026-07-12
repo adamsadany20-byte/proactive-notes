@@ -199,10 +199,7 @@ app.use(cors({ origin: true, credentials: true }))
 // to verify the signature. That route registers its own express.raw() parser.
 app.use((req, res, next) => {
   if (req.originalUrl === '/api/billing/webhook') return next()
-  // Image analysis carries a (compressed) photo, so it needs a bigger body than
-  // the small JSON everything else sends.
-  const limit = req.originalUrl.startsWith('/api/vision') ? '8mb' : '256kb'
-  express.json({ limit })(req, res, next)
+  express.json({ limit: '256kb' })(req, res, next)
 })
 
 // Supabase access tokens are HS256-signed with the project's JWT secret
@@ -841,93 +838,6 @@ app.post('/api/enrich', async (req, res) => {
   } catch (err) {
     const msg = err?.message || String(err)
     console.error(`enrich error [${resolved}]:`, msg)
-    res.status(502).json({ configured: true, error: msg })
-  }
-})
-
-// ---------------------------------------------------------------------------
-// Vision — identify what an attached image is and transcribe any text in it.
-// Runs on the knowledge model (Claude is natively multimodal). The `summary` is
-// a single note-ready line the client appends so the workspace can shape itself
-// around the photo.
-// ---------------------------------------------------------------------------
-const VISION_SCHEMA = {
-  type: 'object',
-  properties: {
-    description: {
-      type: 'string',
-      description: 'One concise sentence: what the image is / shows.',
-    },
-    kind: {
-      type: 'string',
-      description:
-        'A short label: document, handwriting, whiteboard, screenshot, timetable, receipt, diagram, photo, etc.',
-    },
-    text: {
-      type: 'string',
-      description:
-        'All legible text transcribed verbatim, preserving line breaks and list structure. Empty string if the image has no meaningful text.',
-    },
-    summary: {
-      type: 'string',
-      description:
-        'A single natural line to append to the user’s note. If the image is mostly text (a document/whiteboard/timetable), this is that text distilled into note form. If it’s a photo, a brief factual description. Never mention that it came from an image.',
-    },
-  },
-  required: ['description', 'kind', 'text', 'summary'],
-  additionalProperties: false,
-}
-
-const VISION_SYSTEM = `You analyze a single image a user attached to a personal note. Do two things:
-1) Identify what the image is — one concise sentence, plus a short kind label.
-2) Transcribe ALL legible text verbatim (OCR), keeping line breaks, dates, and list
-   structure intact. If there is no meaningful text, return an empty string for text.
-
-Then produce a "summary": one natural line the note can absorb. For a photo of
-notes, a whiteboard, a timetable, a slide, or a receipt, the summary is the useful
-content itself (key dates, topics, items) written as if the user typed it. For an
-ordinary photo with little text, the summary is a brief factual description. Do not
-say "the image shows" or mention that it's a photo — write it as note content.
-Never invent text that isn't there. Return the structured result via the respond tool.`
-
-const VISION_MIME =
-  /^data:(image\/(?:png|jpe?g|webp|gif));base64,([A-Za-z0-9+/=]+)$/
-
-app.post('/api/vision', async (req, res) => {
-  const { image = '', backend } = req.body || {}
-  const key = req.userId || req.body?.clientId
-  if (!(await hasAccess(key))) return res.status(402).json(await paywallBody(key))
-  const resolved = resolveBackend(backend)
-  if (!resolved) return res.json({ configured: false })
-
-  const m = VISION_MIME.exec(image)
-  if (!m)
-    return res.status(400).json({ configured: true, error: 'Unsupported image' })
-  const mediaType = m[1]
-  const data = m[2]
-
-  try {
-    const result = await generateJSON(resolved, {
-      model: AI_MODEL_KNOWLEDGE,
-      system: VISION_SYSTEM,
-      user: [
-        {
-          type: 'image',
-          source: { type: 'base64', media_type: mediaType, data },
-        },
-        {
-          type: 'text',
-          text: 'Analyze this image and call respond with the structured result.',
-        },
-      ],
-      schema: VISION_SCHEMA,
-      maxTokens: 1500,
-      clientId: key,
-    })
-    res.json({ configured: true, ...result })
-  } catch (err) {
-    const msg = err?.message || String(err)
-    console.error(`vision error [${resolved}]:`, msg)
     res.status(502).json({ configured: true, error: msg })
   }
 })

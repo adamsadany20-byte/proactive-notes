@@ -7,6 +7,13 @@ import { fetchServerConfig, fetchBillingStatus } from './services/api'
 import { useReminders } from './ui/useReminders'
 import { usePushSync } from './ui/usePushSync'
 import { computeGlobalStreak } from './store/streak'
+import {
+  ClockIcon,
+  DayGlyphIcon,
+  FlameIcon,
+  PageIcon,
+  QuillIcon,
+} from './ui/icons'
 
 export function App() {
   const { state, selected, setConfig, setBilling } = useStore()
@@ -75,6 +82,7 @@ export function App() {
             aria-current={mobileView === 'notes'}
             onClick={() => goto('notes')}
           >
+            <PageIcon className="mnav-ico" />
             Notes
           </button>
           <button
@@ -82,6 +90,7 @@ export function App() {
             aria-current={mobileView === 'editor'}
             onClick={() => goto('editor')}
           >
+            <QuillIcon className="mnav-ico" />
             Write
           </button>
           <button
@@ -89,13 +98,15 @@ export function App() {
             aria-current={mobileView === 'calendar'}
             onClick={() => goto('calendar')}
           >
+            <DayGlyphIcon className="mnav-ico" />
             Calendar
             {streak.current > 0 && (
               <span
                 className={`mnav-streak ${streak.atRisk ? 'at-risk' : ''}`}
                 aria-label={`${streak.current} day streak`}
               >
-                🔥{streak.current}
+                <FlameIcon className="ico" />
+                {streak.current}
               </span>
             )}
           </button>
@@ -122,7 +133,9 @@ export function App() {
 
       {toast && (
         <div className="toast" role="status">
-          <span className="toast-ico">⏰</span>
+          <span className="toast-ico">
+            <ClockIcon />
+          </span>
           <span className="toast-text">{toast}</span>
           <button className="toast-x" onClick={dismiss}>
             Dismiss

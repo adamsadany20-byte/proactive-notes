@@ -968,123 +968,6 @@ button {
   }
 }
 
-/* ---- Image attachments --------------------------------------------------- */
-
-.attachments {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  gap: 10px;
-  padding: 0 16px 14px;
-}
-.attachment {
-  position: relative;
-  margin: 0;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  overflow: hidden;
-  background: var(--panel-2);
-  box-shadow: var(--shadow-sm);
-  animation: fadeIn 0.35s ease both;
-}
-.att-thumb {
-  display: block;
-  width: 100%;
-  border: none;
-  padding: 0;
-  background: none;
-  cursor: zoom-in;
-  position: relative;
-  line-height: 0;
-}
-.att-thumb img {
-  width: 100%;
-  height: 108px;
-  object-fit: cover;
-  display: block;
-}
-.att-analyzing {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  font-size: 11.5px;
-  font-weight: 650;
-  color: #fff;
-  background: color-mix(in srgb, var(--ink) 42%, transparent);
-  backdrop-filter: blur(1px);
-}
-.att-spinner {
-  width: 13px;
-  height: 13px;
-  border-radius: 50%;
-  border: 2px solid rgba(255, 255, 255, 0.4);
-  border-top-color: #fff;
-  animation: att-spin 0.7s linear infinite;
-}
-@keyframes att-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-.att-remove {
-  position: absolute;
-  top: 5px;
-  right: 5px;
-  z-index: 2;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  border: none;
-  background: color-mix(in srgb, var(--ink) 55%, transparent);
-  color: #fff;
-  font-size: 11px;
-  line-height: 1;
-  display: grid;
-  place-items: center;
-  opacity: 0;
-  transition: opacity 0.14s ease, background 0.14s ease;
-}
-.attachment:hover .att-remove,
-.att-remove:focus-visible {
-  opacity: 1;
-}
-.att-remove:hover {
-  background: var(--goal);
-}
-.att-caption {
-  padding: 7px 9px 8px;
-  font-size: 11px;
-  line-height: 1.35;
-  color: var(--ink-soft);
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-.attachment.error .att-caption {
-  color: var(--goal);
-}
-.att-lightbox {
-  position: fixed;
-  inset: 0;
-  z-index: 200;
-  display: grid;
-  place-items: center;
-  padding: 24px;
-  background: color-mix(in srgb, var(--ink) 78%, transparent);
-  backdrop-filter: blur(6px);
-  animation: fadeIn 0.2s ease both;
-  cursor: zoom-out;
-}
-.att-lightbox img {
-  max-width: 100%;
-  max-height: 100%;
-  border-radius: 12px;
-  box-shadow: var(--shadow-lg);
-}
-
 /* ---- Contextual prompt --------------------------------------------------- */
 
 .prompt {
@@ -2217,14 +2100,14 @@ button {
 .streak-flame {
   grid-area: stack;
   align-self: start;
-  margin-top: 12px;
-  font-size: 21px;
+  margin-top: 10px;
+  font-size: 20px;
   line-height: 1;
-  filter: grayscale(0.6) opacity(0.6);
-  transition: filter 0.4s ease, transform 0.4s ease;
+  color: var(--ink-faint);
+  transition: color 0.4s ease, transform 0.4s ease;
 }
 .streak.alive .streak-flame {
-  filter: none;
+  color: var(--tint, var(--goal));
   animation: flame-flicker 2.8s ease-in-out infinite;
 }
 .streak.celebrate .streak-flame {
@@ -2354,14 +2237,14 @@ button {
 .today-flame {
   grid-area: stack;
   align-self: start;
-  margin-top: 9px;
+  margin-top: 8px;
   font-size: 17px;
   line-height: 1;
-  filter: grayscale(0.6) opacity(0.55);
-  transition: filter 0.4s ease;
+  color: var(--ink-faint);
+  transition: color 0.4s ease;
 }
 .today.alive .today-flame {
-  filter: none;
+  color: var(--streak);
   animation: flame-flicker 2.8s ease-in-out infinite;
 }
 .today.celebrate .today-flame {
@@ -3411,6 +3294,24 @@ button {
     display: block;
   }
 
+  /* The top nav already carries the brand — repeating it atop the note list
+     reads as clutter. Keep just a comfortable "new note" button, full width so
+     the primary action is unmissable. */
+  .side-head .brand {
+    display: none;
+  }
+  .side-head {
+    padding: 14px 14px 6px;
+  }
+  .side-head .icon-btn {
+    width: 100%;
+    height: 42px;
+    border-radius: var(--radius-notch-sm);
+    font-size: 19px;
+    background: var(--panel);
+    box-shadow: var(--shadow-sm);
+  }
+
   /* ---- Sticky website-style top nav ---- */
   .mnav {
     display: flex;
@@ -4296,4 +4197,300 @@ input {
   background: var(--panel-2);
   color: var(--ink);
   border-color: var(--ink-faint);
+}
+
+/* ===========================================================================
+   Modern polish pass — custom icon plumbing, tactile micro-interactions, and
+   the signature tucked-corner shape on primary actions. Appended last so it
+   wins the cascade.
+   =========================================================================== */
+
+/* ---- Icon plumbing -------------------------------------------------------- */
+
+/* Inline icons that sit inside text runs need a small optical drop. */
+.ico {
+  vertical-align: -0.14em;
+}
+/* Icons inside flex rows are already centred; just stop them shrinking. */
+.seg-ico svg,
+.cal-head .ico,
+.pc-title .ico,
+.mnav-ico,
+.rem-ico,
+.sb-ico,
+.etool-ico {
+  flex: none;
+}
+.seg-ico {
+  display: inline-flex;
+  align-items: center;
+  color: var(--tint-ink, var(--ink-soft));
+}
+.cal-head .ico {
+  color: var(--accent-ink);
+  font-size: 17px;
+}
+.pc-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.pc-title .ico {
+  color: var(--accent-ink);
+  font-size: 14px;
+}
+.sb-ico {
+  font-size: 13px;
+  color: inherit;
+}
+.rem-ico {
+  font-size: 12px;
+}
+.toast-ico {
+  display: grid;
+  place-items: center;
+  color: var(--accent-ink);
+}
+.modal-emblem svg {
+  width: 1em;
+  height: 1em;
+}
+.prompt-q .ai svg {
+  width: 12px;
+  height: 12px;
+}
+/* The streak-invite ring renders the flame glyph in the note's tint. */
+.si-ring {
+  color: var(--tint-ink, var(--accent-ink));
+}
+.streak-start-link .ico,
+.streak-editlink .ico,
+.streak-plan-target .ico,
+.today-milestone .ico,
+.today-best .ico,
+.enriched-note .ico {
+  vertical-align: -0.14em;
+}
+.ce-streak-ico .ico {
+  font-size: 11px;
+  vertical-align: -0.1em;
+}
+/* Ambient chip: icon sized to the text. */
+.ambient .ico {
+  font-size: 13px;
+}
+
+/* ---- Mobile top-nav icons ------------------------------------------------- */
+
+.mnav-ico {
+  font-size: 15px;
+  opacity: 0.85;
+}
+.mnav-streak .ico {
+  font-size: 10px;
+}
+.mnav-streak {
+  gap: 2px;
+}
+
+/* ---- Sidebar "Settings & tools" disclosure -------------------------------- */
+
+.side-tools-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  padding: 6px 2px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--ink-soft);
+  transition: color 0.15s ease;
+}
+.side-tools-toggle:hover {
+  color: var(--ink);
+}
+.side-tools-toggle .ico {
+  font-size: 14px;
+  color: var(--accent-ink);
+}
+.side-tools-toggle .chev {
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--ink-faint);
+  transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.side-tools-toggle .chev:not(.open) {
+  transform: rotate(-90deg);
+}
+/* Same grid-rows collapse the segments use — animates to content height. */
+.side-tools {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.side-tools.open {
+  grid-template-rows: 1fr;
+}
+.side-tools-inner {
+  overflow: hidden;
+  min-height: 0;
+}
+.side-tools-inner > :first-child {
+  margin-top: 8px;
+}
+
+/* ---- Voice pill: live waveform ------------------------------------------- */
+
+.etool-wave {
+  display: inline-flex;
+  align-items: center;
+  gap: 2.5px;
+  height: 14px;
+}
+.etool-wave i {
+  width: 2.5px;
+  height: 30%;
+  border-radius: 2px;
+  background: currentColor;
+  animation: wave-bar 1.05s ease-in-out infinite;
+}
+.etool-wave i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.etool-wave i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+.etool-wave i:nth-child(4) {
+  animation-delay: 0.45s;
+}
+@keyframes wave-bar {
+  0%,
+  100% {
+    height: 30%;
+  }
+  50% {
+    height: 100%;
+  }
+}
+/* The mic's listening arc breathes while dictation is live. */
+.ico-live .mic-arc {
+  animation: mic-breathe 1.6s ease-in-out infinite;
+  transform-origin: 12px 14px;
+}
+@keyframes mic-breathe {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(0.96);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.06);
+  }
+}
+
+/* ---- Signature shape on primary actions ----------------------------------- */
+
+/* The tucked corner is the brand's silhouette — primary CTAs wear it too, so
+   the most important button on any card echoes the card itself. */
+.streak-btn.go,
+.si-go,
+.pc-enable,
+.auth-primary,
+.toast-x,
+.gen-suggest,
+.modal-go {
+  border-radius: var(--radius-notch-sm);
+}
+.list-add,
+.fc-add {
+  border-radius: var(--radius-notch-sm);
+}
+
+/* ---- Tactile micro-interactions ------------------------------------------- */
+
+/* A consistent, springy press on the app's common controls. */
+.chip:active,
+.si-go:active,
+.si-no:active,
+.pc-enable:active,
+.pc-test:active,
+.pc-off:active,
+.list-add:active,
+.fc-add:active,
+.tier-opt:active,
+.se-day:active,
+.prompt-input button:active,
+.prompt-skip:active,
+.toast-x:active,
+.side-tools-toggle:active,
+.mnav-links button:active {
+  transform: scale(0.97);
+}
+.chip,
+.si-no,
+.pc-test,
+.pc-off,
+.se-day,
+.prompt-skip {
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease,
+    transform 0.1s ease, box-shadow 0.2s ease;
+}
+/* Chips lift toward the finger/cursor. */
+.chip:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Checkbox ticks land with a pop. */
+@keyframes tick-pop {
+  0% {
+    transform: scale(0.6);
+  }
+  60% {
+    transform: scale(1.15);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+.check-box.on,
+.today-item.done .ti-check,
+.trail-dot.on .td-mark {
+  animation: tick-pop 0.28s cubic-bezier(0.2, 1.2, 0.3, 1) both;
+}
+
+/* Segment headers glide their chevron; give the whole header a soft raise. */
+.seg-head:hover .seg-ico {
+  transform: translateY(-1px);
+}
+.seg-ico {
+  transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* Note rows glide slightly right on hover — a quiet "openable" affordance. */
+.note-item {
+  transition: background 0.15s ease, border-color 0.15s ease,
+    transform 0.18s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.note-item:hover {
+  transform: translateX(2px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .etool-wave i,
+  .ico-live .mic-arc,
+  .check-box.on,
+  .today-item.done .ti-check,
+  .trail-dot.on .td-mark {
+    animation: none;
+  }
+  .note-item:hover,
+  .chip:hover,
+  .seg-head:hover .seg-ico {
+    transform: none;
+  }
 }

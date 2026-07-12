@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { AgentQuestion } from '../types'
+import { StarSixIcon } from '../ui/icons'
 
 export function ContextualPrompt({
   question,
@@ -23,7 +24,9 @@ export function ContextualPrompt({
   return (
     <div className="prompt" key={question.id}>
       <div className="prompt-q">
-        <span className="ai">✦</span>
+        <span className="ai">
+          <StarSixIcon />
+        </span>
         <span>{question.text}</span>
       </div>
 

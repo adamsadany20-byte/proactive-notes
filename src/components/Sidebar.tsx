@@ -4,6 +4,7 @@ import { KIND_META } from '../ui/kindMeta'
 import { PushControls } from './PushControls'
 import { UpgradeModal } from './UpgradeModal'
 import { isSupabaseEnabled, supabase } from '../services/supabase'
+import { ChevronIcon, PlusIcon, TuneIcon, XIcon } from '../ui/icons'
 import {
   startCheckout,
   setSpendCap,
@@ -239,6 +240,13 @@ function SpendLimit() {
 export function Sidebar() {
   const { state, select, createNote, remove } = useStore()
 
+  // The footer tools (AI tier, reminders, spend cap, sign-out) read as clutter
+  // on a phone, so there they fold into one "Settings & tools" disclosure.
+  // Desktop starts open — the sidebar has room and the controls stay glanceable.
+  const [toolsOpen, setToolsOpen] = useState(
+    () => typeof window === 'undefined' || window.innerWidth > 980,
+  )
+
   const handleDelete = (e: React.MouseEvent, id: string, text: string) => {
     e.stopPropagation()
     // Only confirm when there's real content to lose.
@@ -258,7 +266,7 @@ export function Sidebar() {
           </span>
         </div>
         <button className="icon-btn" title="New note" onClick={createNote}>
-          +
+          <PlusIcon />
         </button>
       </div>
 
@@ -302,7 +310,7 @@ export function Sidebar() {
                 aria-label="Delete note"
                 onClick={(e) => handleDelete(e, n.id, n.text)}
               >
-                ✕
+                <XIcon />
               </button>
             </div>
           )
@@ -310,24 +318,37 @@ export function Sidebar() {
       </div>
 
       <div className="side-foot">
-        <AiTierSelector />
-        <PushControls />
-        <SpendLimit />
-        <p>
-          Notes evolve as you type. The local engine handles everything; Evolve
-          AI is only consulted for richer suggestions and tool generation.
-        </p>
-        {/* Mobile-only sign-out: the desktop floating pill overlaps the bottom
-            tab bar on phones, so account controls live here instead (shown via
-            CSS only under the mobile breakpoint). */}
-        {isSupabaseEnabled && (
-          <button
-            className="side-signout"
-            onClick={() => supabase?.auth.signOut()}
-          >
-            Sign out
-          </button>
-        )}
+        <button
+          className="side-tools-toggle"
+          onClick={() => setToolsOpen((o) => !o)}
+          aria-expanded={toolsOpen}
+        >
+          <TuneIcon className="ico" />
+          <span>Settings &amp; tools</span>
+          <ChevronIcon className={`chev ${toolsOpen ? 'open' : ''}`} />
+        </button>
+        <div className={`side-tools ${toolsOpen ? 'open' : ''}`}>
+          <div className="side-tools-inner">
+            <AiTierSelector />
+            <PushControls />
+            <SpendLimit />
+            <p>
+              Notes evolve as you type. The local engine handles everything;
+              Evolve AI is only consulted for richer suggestions and tool
+              generation.
+            </p>
+            {/* Mobile sign-out lives here (the desktop floating pill is hidden
+                on phones via CSS). */}
+            {isSupabaseEnabled && (
+              <button
+                className="side-signout"
+                onClick={() => supabase?.auth.signOut()}
+              >
+                Sign out
+              </button>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   )
