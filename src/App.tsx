@@ -13,18 +13,25 @@ export function App() {
   const { toast, dismiss } = useReminders()
   usePushSync()
 
-  // Mobile: only one pane is on screen at a time, chosen by the bottom tab bar.
-  // On desktop this state is inert — CSS shows all three columns regardless.
+  // Mobile: one section is shown at a time, chosen from the top nav. On desktop
+  // this state is inert — CSS shows all three columns regardless.
   const [mobileView, setMobileView] = useState<'notes' | 'editor' | 'calendar'>(
     'notes',
   )
-  // Picking (or creating) a note jumps you to the editor pane on mobile. Guard
-  // the very first render so a reload with a note already selected doesn't yank
-  // the user straight past the note list.
+  // Navigating a section scrolls back to the top of the page, so it reads like
+  // moving between pages of a site rather than swapping a native app screen.
+  const goto = (v: 'notes' | 'editor' | 'calendar') => {
+    setMobileView(v)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+  // Picking (or creating) a note jumps you to the editor on mobile. Guard the
+  // very first render so a reload with a note already selected doesn't yank the
+  // user straight past the note list.
   const prevSelectedId = useRef(selected?.id)
   useEffect(() => {
     if (selected?.id && selected.id !== prevSelectedId.current) {
       setMobileView('editor')
+      window.scrollTo({ top: 0, behavior: 'smooth' })
     }
     prevSelectedId.current = selected?.id
   }, [selected?.id])
@@ -55,6 +62,46 @@ export function App() {
 
   return (
     <div className="app" data-mobile-view={mobileView}>
+      {/* Mobile-only top navigation — a website-style header, hidden on desktop
+          via CSS (where the three columns are always visible). */}
+      <header className="mnav">
+        <div className="mnav-brand">
+          <img src="/logo.svg" alt="" className="mnav-logo" />
+          <span className="mnav-name">Evolve</span>
+        </div>
+        <nav className="mnav-links" aria-label="Sections">
+          <button
+            className={mobileView === 'notes' ? 'on' : ''}
+            aria-current={mobileView === 'notes'}
+            onClick={() => goto('notes')}
+          >
+            Notes
+          </button>
+          <button
+            className={mobileView === 'editor' ? 'on' : ''}
+            aria-current={mobileView === 'editor'}
+            onClick={() => goto('editor')}
+          >
+            Write
+          </button>
+          <button
+            className={mobileView === 'calendar' ? 'on' : ''}
+            aria-current={mobileView === 'calendar'}
+            onClick={() => goto('calendar')}
+          >
+            Calendar
+            {streak.current > 0 && (
+              <span
+                className={`mnav-streak ${streak.atRisk ? 'at-risk' : ''}`}
+                aria-label={`${streak.current} day streak`}
+              >
+                🔥{streak.current}
+              </span>
+            )}
+          </button>
+        </nav>
+      </header>
+
       <Sidebar />
 
       <div className="col col-main">
@@ -82,42 +129,6 @@ export function App() {
           </button>
         </div>
       )}
-
-      {/* Mobile-only pane switcher. Hidden on desktop via CSS. */}
-      <nav className="mobile-tabbar" aria-label="Views">
-        <button
-          className={`mtab ${mobileView === 'notes' ? 'on' : ''}`}
-          aria-current={mobileView === 'notes'}
-          onClick={() => setMobileView('notes')}
-        >
-          <span className="mtab-ico">📝</span>
-          <span className="mtab-label">Notes</span>
-        </button>
-        <button
-          className={`mtab ${mobileView === 'editor' ? 'on' : ''}`}
-          aria-current={mobileView === 'editor'}
-          onClick={() => setMobileView('editor')}
-        >
-          <span className="mtab-ico">✎</span>
-          <span className="mtab-label">Write</span>
-        </button>
-        <button
-          className={`mtab ${mobileView === 'calendar' ? 'on' : ''}`}
-          aria-current={mobileView === 'calendar'}
-          onClick={() => setMobileView('calendar')}
-        >
-          <span className="mtab-ico">📆</span>
-          <span className="mtab-label">Calendar</span>
-          {streak.current > 0 && (
-            <span
-              className={`mtab-streak ${streak.atRisk ? 'at-risk' : ''}`}
-              aria-label={`${streak.current} day streak`}
-            >
-              🔥{streak.current}
-            </span>
-          )}
-        </button>
-      </nav>
     </div>
   )
 }

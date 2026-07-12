@@ -3150,25 +3150,23 @@ button {
 
 /* ---- responsive / mobile ------------------------------------------------- */
 
-/* The bottom tab bar is a mobile-only surface — hidden entirely on desktop, where
-   all three columns are always visible side by side. */
-.mobile-tabbar {
+/* The mobile top-nav is a phone/tablet-only surface — hidden entirely on
+   desktop, where all three columns are always visible side by side. */
+.mnav {
   display: none;
 }
 
 @media (max-width: 980px) {
-  /* Phone/tablet portrait: show ONE pane at a time (chosen via the bottom tab
-     bar) instead of stacking all three columns into an endless scroll. The app
-     is a flex column that fills the viewport; the active pane scrolls inside it
-     and the tab bar is a normal flex child at the bottom (NOT position:fixed —
-     a fixed bar detaches and "floats up" mid-screen when iOS restores the page
-     from its back/forward cache after an external redirect, e.g. Stripe or
-     Google OAuth). Keeping it in flow means it always sits at the true bottom. */
+  /* Phone/tablet: read as a responsive WEB PAGE, not a native app. The whole
+     document scrolls under a sticky top nav (websites nav from the top; apps
+     tab from the bottom), one section shown at a time, content in a centred
+     fluid column that breathes. No fixed-height panes with their own scroll — it
+     should feel like scrolling a site, with momentum, not a rigid app shell. */
   .app {
-    display: flex;
-    flex-direction: column;
-    height: 100dvh;
-    overflow: hidden;
+    display: block;
+    height: auto;
+    min-height: 100dvh;
+    overflow: visible;
   }
 
   .col-side,
@@ -3186,23 +3184,22 @@ button {
     display: block;
   }
 
+  /* Each section flows in the page (no inner scroll box) and centres as a fluid
+     column. Going display:none → shown replays the fade, so switching sections
+     feels like a page transition. */
   .col {
-    flex: 1;
-    min-height: 0;
     height: auto;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-    padding-bottom: 24px;
-  }
-  .col-side {
-    border-right: none;
-  }
-  .col-cal {
-    border-left: none;
+    overflow: visible;
+    width: 100%;
+    max-width: 680px;
+    margin: 0 auto;
+    border: none;
+    background: transparent;
+    animation: page-in 0.34s cubic-bezier(0.22, 0.8, 0.28, 1) both;
   }
   .col-main {
     align-items: stretch;
-    padding: 16px 14px 32px;
+    padding: clamp(14px, 4.5vw, 30px) clamp(14px, 4.5vw, 26px) 56px;
   }
 
   /* The long editor placeholder wraps to several lines on a narrow screen; the
@@ -3225,21 +3222,21 @@ button {
     grid-template-columns: 1fr;
   }
   /* The sidebar footer (AI tier, reminders, spend limit) MUST stay reachable on
-     mobile — it lives at the bottom of the Notes pane now, not hidden away. */
+     mobile — it lives at the bottom of the Notes section now. */
   .side-foot {
     display: block;
   }
 
-  /* Sit the reminder toast above the in-flow tab bar so it never hides behind it. */
+  /* Reminder toast: a natural web-page toast near the bottom, clear of the home
+     indicator. No app tab bar to dodge anymore. */
   .toast {
-    bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+    bottom: calc(18px + env(safe-area-inset-bottom, 0px));
     left: 14px;
     right: 14px;
     transform: none;
     max-width: none;
   }
-  /* The floating sign-out pill would sit on top of the right-most tab, so on
-     mobile we hide it and expose sign-out in the Notes-pane footer instead. */
+  /* Sign-out lives in the Notes-section footer on mobile, not the floating pill. */
   .auth-signout {
     display: none;
   }
@@ -3247,36 +3244,85 @@ button {
     display: block;
   }
 
-  .mobile-tabbar {
+  /* ---- Sticky website-style top nav ---- */
+  .mnav {
     display: flex;
-    flex: none;
-    z-index: 60;
-    background: color-mix(in srgb, var(--panel) 96%, transparent);
-    backdrop-filter: saturate(1.4) blur(12px);
-    -webkit-backdrop-filter: saturate(1.4) blur(12px);
-    border-top: 1px solid var(--line);
-    padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px));
-    box-shadow: 0 -6px 22px rgba(74, 56, 28, 0.08);
-  }
-  .mtab {
-    position: relative;
-    flex: 1;
-    display: flex;
-    flex-direction: column;
     align-items: center;
-    gap: 2px;
+    gap: 12px;
+    position: sticky;
+    top: 0;
+    z-index: 60;
+    padding: 10px clamp(14px, 4.5vw, 26px);
+    padding-top: calc(10px + env(safe-area-inset-top, 0px));
+    background: color-mix(in srgb, var(--panel) 82%, transparent);
+    backdrop-filter: saturate(1.5) blur(14px);
+    -webkit-backdrop-filter: saturate(1.5) blur(14px);
+    border-bottom: 1px solid color-mix(in srgb, var(--line) 85%, transparent);
+  }
+  .mnav-brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-right: auto;
+    min-width: 0;
+  }
+  .mnav-logo {
+    width: 26px;
+    height: 26px;
+    border-radius: 7px;
+    flex: none;
+  }
+  .mnav-name {
+    font-family: var(--display);
+    font-weight: 800;
+    font-size: 16px;
+    letter-spacing: -0.02em;
+    color: var(--ink);
+  }
+  .mnav-links {
+    display: flex;
+    align-items: center;
+    gap: clamp(10px, 3.5vw, 18px);
+    flex: none;
+  }
+  .mnav-links button {
+    position: relative;
     border: none;
     background: transparent;
-    color: var(--ink-faint);
-    padding: 7px 4px;
-    border-radius: 12px;
-    transition: color 0.15s ease, background 0.15s ease;
+    font-family: inherit;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--ink-soft);
+    padding: 6px 1px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    transition: color 0.18s ease;
   }
-  /* Ambient streak badge on the Calendar tab — momentum visible from anywhere. */
-  .mtab-streak {
+  .mnav-links button::after {
+    content: '';
     position: absolute;
-    top: 0;
-    left: calc(50% + 3px);
+    left: 0;
+    right: 0;
+    bottom: -1px;
+    height: 2px;
+    border-radius: 2px;
+    background: var(--accent);
+    transform: scaleX(0);
+    transform-origin: center;
+    transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  .mnav-links button.on {
+    color: var(--accent-ink);
+  }
+  .mnav-links button.on::after {
+    transform: scaleX(1);
+  }
+  .mnav-links button:active {
+    color: var(--accent-ink);
+  }
+  /* Ambient streak badge inline on the Calendar link — momentum from anywhere. */
+  .mnav-streak {
     display: inline-flex;
     align-items: center;
     font-size: 9.5px;
@@ -3292,7 +3338,7 @@ button {
     );
     box-shadow: 0 2px 6px color-mix(in srgb, var(--goal) 40%, transparent);
   }
-  .mtab-streak.at-risk {
+  .mnav-streak.at-risk {
     animation: badge-throb 1.8s ease-in-out infinite;
   }
   @keyframes badge-throb {
@@ -3304,21 +3350,21 @@ button {
       transform: scale(1.14);
     }
   }
-  .mtab-ico {
-    font-size: 19px;
-    line-height: 1;
+}
+
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
   }
-  .mtab-label {
-    font-size: 11px;
-    font-weight: 650;
-    letter-spacing: -0.01em;
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
-  .mtab.on {
-    color: var(--accent-ink);
-    background: var(--accent-soft);
-  }
-  .mtab:active {
-    transform: scale(0.96);
+}
+@media (prefers-reduced-motion: reduce) {
+  .col {
+    animation: none;
   }
 }
 
