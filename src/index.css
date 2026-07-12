@@ -918,6 +918,173 @@ button {
   color: var(--ink-faint);
 }
 
+/* ---- Editor tools: photo + voice ----------------------------------------- */
+
+.editor-tools {
+  display: flex;
+  gap: 8px;
+  padding: 2px 16px 10px;
+  flex-wrap: wrap;
+}
+.etool {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 999px;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease,
+    transform 0.1s ease;
+}
+.etool:hover {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--line));
+  color: var(--ink);
+}
+.etool:active {
+  transform: scale(0.97);
+}
+.etool-ico {
+  font-size: 14px;
+  line-height: 1;
+}
+/* Live dictation — the mic glows and pulses. */
+.etool.recording {
+  border-color: color-mix(in srgb, var(--goal) 55%, transparent);
+  background: color-mix(in srgb, var(--goal) 12%, var(--panel));
+  color: color-mix(in srgb, var(--goal) 62%, var(--ink));
+  animation: rec-pulse 1.6s ease-in-out infinite;
+}
+@keyframes rec-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--goal) 30%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 6px transparent;
+  }
+}
+
+/* ---- Image attachments --------------------------------------------------- */
+
+.attachments {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+  padding: 0 16px 14px;
+}
+.attachment {
+  position: relative;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--panel-2);
+  box-shadow: var(--shadow-sm);
+  animation: fadeIn 0.35s ease both;
+}
+.att-thumb {
+  display: block;
+  width: 100%;
+  border: none;
+  padding: 0;
+  background: none;
+  cursor: zoom-in;
+  position: relative;
+  line-height: 0;
+}
+.att-thumb img {
+  width: 100%;
+  height: 108px;
+  object-fit: cover;
+  display: block;
+}
+.att-analyzing {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  font-size: 11.5px;
+  font-weight: 650;
+  color: #fff;
+  background: color-mix(in srgb, var(--ink) 42%, transparent);
+  backdrop-filter: blur(1px);
+}
+.att-spinner {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  border-top-color: #fff;
+  animation: att-spin 0.7s linear infinite;
+}
+@keyframes att-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.att-remove {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  z-index: 2;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: none;
+  background: color-mix(in srgb, var(--ink) 55%, transparent);
+  color: #fff;
+  font-size: 11px;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+  opacity: 0;
+  transition: opacity 0.14s ease, background 0.14s ease;
+}
+.attachment:hover .att-remove,
+.att-remove:focus-visible {
+  opacity: 1;
+}
+.att-remove:hover {
+  background: var(--goal);
+}
+.att-caption {
+  padding: 7px 9px 8px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--ink-soft);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.attachment.error .att-caption {
+  color: var(--goal);
+}
+.att-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: color-mix(in srgb, var(--ink) 78%, transparent);
+  backdrop-filter: blur(6px);
+  animation: fadeIn 0.2s ease both;
+  cursor: zoom-out;
+}
+.att-lightbox img {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 12px;
+  box-shadow: var(--shadow-lg);
+}
+
 /* ---- Contextual prompt --------------------------------------------------- */
 
 .prompt {
