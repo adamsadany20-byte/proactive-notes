@@ -1,6 +1,8 @@
 import type {
   CalendarEvent,
+  ChecklistItem,
   Entities,
+  Flashcard,
   InferenceResult,
   Note,
   NoteKind,
@@ -160,6 +162,50 @@ function noteHeadline(note: Note): string {
   return note.text.trim().split('\n')[0].slice(0, 40) || 'Event'
 }
 
+// ---- Merging user-owned lists with fresh note-derived items -----------------
+//
+// Checklists and flashcards are editable, but must ALSO keep absorbing new
+// topics as the note grows. So instead of freezing on first edit (or blowing
+// the user's edits away on refresh), we merge: keep every existing item, append
+// only the fresh items for topics not already present and not deleted by the
+// user (`dismissed`). Never removes — pulling a topic out of the note leaves any
+// item the user kept for it.
+const norm = (s: string) => s.trim().toLowerCase()
+
+function checklistKey(i: ChecklistItem): string {
+  return i.key ?? norm(i.text)
+}
+
+function mergeChecklist(
+  existing: ChecklistItem[],
+  fresh: ChecklistItem[],
+  dismissed: string[],
+): ChecklistItem[] {
+  const have = new Set(existing.map(checklistKey))
+  const dead = new Set(dismissed)
+  const adds = fresh.filter((f) => {
+    const k = checklistKey(f)
+    return !have.has(k) && !dead.has(k)
+  })
+  return adds.length ? [...existing, ...adds] : existing
+}
+
+function mergeFlashcards(
+  existing: Flashcard[],
+  fresh: Flashcard[],
+  dismissed: string[],
+): Flashcard[] {
+  // Keyed by topic: a topic is "present" if it has any card, so partially
+  // trimmed decks aren't refilled. New topics bring their whole set.
+  const have = new Set(existing.map((c) => norm(c.topic)))
+  const dead = new Set(dismissed)
+  const adds = fresh.filter((f) => {
+    const k = norm(f.topic)
+    return !have.has(k) && !dead.has(k)
+  })
+  return adds.length ? [...existing, ...adds] : existing
+}
+
 export function reconcileSegments(
   note: Note,
   result: InferenceResult,
@@ -172,6 +218,7 @@ export function reconcileSegments(
   for (const type of want) {
     const sig = signature(type, note, entities)
     const existing = note.segments.find((s) => s.type === type)
+
     if (!existing) {
       const { data, filled } = buildData(type, note, entities, calendar)
       next.push({
@@ -179,9 +226,47 @@ export function reconcileSegments(
         type,
         title: titleFor(type),
         filled,
-        data: { ...data, auto: true, sig },
+        data: { ...data, auto: true, sig, dismissed: [] },
       })
-    } else if (existing.data?.auto !== false && existing.data?.sig !== sig) {
+      continue
+    }
+
+    // Editable lists: merge rather than freeze-or-replace, so the user's edits
+    // persist AND the note keeps feeding in new topics as it grows.
+    if (type === 'checklist' || type === 'flashcards') {
+      if (existing.data?.sig === sig) {
+        next.push(existing)
+        continue
+      }
+      const { data: fresh } = buildData(type, note, entities, calendar)
+      const dismissed: string[] = existing.data?.dismissed ?? []
+      if (type === 'checklist') {
+        const items = mergeChecklist(
+          existing.data?.items ?? [],
+          fresh.items,
+          dismissed,
+        )
+        next.push({
+          ...existing,
+          filled: items.length > 0,
+          data: { ...existing.data, items, sig, dismissed },
+        })
+      } else {
+        const cards = mergeFlashcards(
+          existing.data?.cards ?? [],
+          fresh.cards,
+          dismissed,
+        )
+        next.push({
+          ...existing,
+          filled: cards.length > 0,
+          data: { ...existing.data, cards, sig, dismissed },
+        })
+      }
+      continue
+    }
+
+    if (existing.data?.auto !== false && existing.data?.sig !== sig) {
       // Still auto-managed and inputs changed → refresh, preserving id.
       const { data, filled } = buildData(type, note, entities, calendar)
       next.push({

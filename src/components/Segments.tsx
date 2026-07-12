@@ -219,23 +219,31 @@ function ChecklistSeg({ note, seg }: { note: Note; seg: Segment }) {
   const { editSegment } = useStore()
   const items: ChecklistItem[] = seg.data.items ?? []
 
-  // Ticking a box / setting a reminder leaves the list auto-managed. Editing the
-  // text, adding, or removing an item marks it user-owned (auto:false) so the
-  // reconciler stops regenerating it over the top of the user's edits.
-  const patch = (next: ChecklistItem[]) =>
+  // Edits are preserved by the reconciler's merge (it only ever appends new
+  // topics from the note) so nothing here needs to freeze the list. Deleting an
+  // item records its topic in `dismissed` so the note won't re-add it.
+  const patchItems = (next: ChecklistItem[]) =>
     editSegment(note.id, seg.id, { ...seg.data, items: next })
-  const patchOwned = (next: ChecklistItem[]) =>
-    editSegment(note.id, seg.id, { ...seg.data, items: next, auto: false })
-
   const toggle = (id: string) =>
-    patch(items.map((i) => (i.id === id ? { ...i, done: !i.done } : i)))
+    patchItems(items.map((i) => (i.id === id ? { ...i, done: !i.done } : i)))
   const setReminder = (id: string, remindAt?: string) =>
-    patch(items.map((i) => (i.id === id ? { ...i, remindAt } : i)))
+    patchItems(items.map((i) => (i.id === id ? { ...i, remindAt } : i)))
   const setText = (id: string, text: string) =>
-    patchOwned(items.map((i) => (i.id === id ? { ...i, text } : i)))
-  const removeItem = (id: string) => patchOwned(items.filter((i) => i.id !== id))
+    patchItems(items.map((i) => (i.id === id ? { ...i, text } : i)))
   const addItem = () =>
-    patchOwned([...items, { id: uid('chk'), text: '', done: false }])
+    patchItems([...items, { id: uid('chk'), text: '', done: false }])
+  const removeItem = (id: string) => {
+    const gone = items.find((i) => i.id === id)
+    const key = gone?.key ?? gone?.text.trim().toLowerCase()
+    const dismissed = key
+      ? Array.from(new Set([...(seg.data.dismissed ?? []), key]))
+      : seg.data.dismissed
+    editSegment(note.id, seg.id, {
+      ...seg.data,
+      items: items.filter((i) => i.id !== id),
+      dismissed,
+    })
+  }
 
   const done = items.filter((i) => i.done).length
 
@@ -332,18 +340,29 @@ function FlashcardSeg({ note, seg }: { note: Note; seg: Segment }) {
   const { editSegment } = useStore()
   const cards: Flashcard[] = seg.data.cards ?? []
 
-  // Any edit to the deck marks it user-owned so the reconciler stops
-  // regenerating cards over the top of the user's questions/answers.
+  // The reconciler's merge preserves edited cards and only appends cards for new
+  // topics, so edits don't need to freeze the deck. Deleting the last card of a
+  // topic records that topic in `dismissed` so the note won't refill it.
   const patchCards = (next: Flashcard[]) =>
-    editSegment(note.id, seg.id, { ...seg.data, cards: next, auto: false })
+    editSegment(note.id, seg.id, { ...seg.data, cards: next })
   const editFront = (id: string, front: string) =>
     patchCards(cards.map((c) => (c.id === id ? { ...c, front } : c)))
   const editBack = (id: string, back: string) =>
     patchCards(cards.map((c) => (c.id === id ? { ...c, back } : c)))
-  const removeCard = (id: string) => patchCards(cards.filter((c) => c.id !== id))
   const addCard = () => {
     const topic = cards[cards.length - 1]?.topic ?? note.entities?.subject ?? 'New'
     patchCards([...cards, { id: uid('fc'), topic, front: '', back: '' }])
+  }
+  const removeCard = (id: string) => {
+    const gone = cards.find((c) => c.id === id)
+    const remaining = cards.filter((c) => c.id !== id)
+    let dismissed: string[] = seg.data.dismissed ?? []
+    if (gone) {
+      const key = gone.topic.trim().toLowerCase()
+      const topicRemains = remaining.some((c) => c.topic.trim().toLowerCase() === key)
+      if (!topicRemains) dismissed = Array.from(new Set([...dismissed, key]))
+    }
+    editSegment(note.id, seg.id, { ...seg.data, cards: remaining, dismissed })
   }
 
   if (!cards.length)

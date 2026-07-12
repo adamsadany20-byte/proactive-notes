@@ -119,6 +119,10 @@ export interface ChecklistItem {
   id: string
   text: string
   done: boolean
+  // Stable topic key for auto-generated items (the source topic, normalised).
+  // Survives text edits so the reconciler can tell whether a topic is already in
+  // the list. User-added items have none.
+  key?: string
   // Optional reminder — an ISO datetime the item is due. Surfaces a due/overdue
   // badge and (while the app is open) a browser notification when it lands.
   remindAt?: string

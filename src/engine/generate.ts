@@ -49,6 +49,7 @@ export function makeFlashcards(entities: Entities): Flashcard[] {
 export function makeTopicChecklist(entities: Entities): ChecklistItem[] {
   return effectiveTopics(entities).map((t) => ({
     id: uid('chk'),
+    key: t.trim().toLowerCase(),
     text: t,
     done: false,
   }))
