@@ -1,30 +1,21 @@
-import { useState } from 'react'
+import { useReducer } from 'react'
+import { applyTheme, getTheme, type Theme } from '../services/theme'
 
 // Switches between the two full designs: "Modern" (default, floating panels +
 // editorial serif) and "Earthy" (the original — flat warm palette, tucked-corner
-// shapes, Inter headings). The choice lives on <html data-theme> and localStorage;
-// a tiny inline script in index.html applies it before first paint (no flash).
-type Theme = 'modern' | 'earthy'
-
-const STORAGE_KEY = 'evolve.theme'
-
-function currentTheme(): Theme {
-  return document.documentElement.dataset.theme === 'earthy' ? 'earthy' : 'modern'
-}
-
+// shapes, Inter headings). Lives in Settings & tools; the same choice is offered
+// up front in onboarding.
+//
+// Reads the live theme from the DOM on every render (rather than holding local
+// state) so it stays in sync even when the theme was set elsewhere — e.g. the
+// onboarding prompt.
 export function ThemeToggle() {
-  const [theme, setTheme] = useState<Theme>(currentTheme)
+  const [, force] = useReducer((n: number) => n + 1, 0)
+  const theme: Theme = getTheme()
 
   const apply = (next: Theme) => {
-    setTheme(next)
-    // "modern" is the base stylesheet, so we clear the attribute rather than set it.
-    if (next === 'modern') delete document.documentElement.dataset.theme
-    else document.documentElement.dataset.theme = next
-    try {
-      localStorage.setItem(STORAGE_KEY, next)
-    } catch {
-      /* ignore quota / privacy-mode errors */
-    }
+    applyTheme(next)
+    force()
   }
 
   return (

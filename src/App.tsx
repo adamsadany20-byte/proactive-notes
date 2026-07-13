@@ -7,6 +7,8 @@ import { fetchServerConfig, fetchBillingStatus } from './services/api'
 import { useReminders } from './ui/useReminders'
 import { usePushSync } from './ui/usePushSync'
 import { computeGlobalStreak } from './store/streak'
+import { Onboarding } from './components/Onboarding'
+import { needsOnboarding } from './services/theme'
 import {
   ClockIcon,
   DayGlyphIcon,
@@ -19,6 +21,10 @@ export function App() {
   const { state, selected, setConfig, setBilling } = useStore()
   const { toast, dismiss } = useReminders()
   usePushSync()
+
+  // First-run: prompt for a design style. Only for genuinely new users; the
+  // choice is changeable later in Settings → Design.
+  const [onboarding, setOnboarding] = useState(needsOnboarding)
 
   // Mobile: one section is shown at a time, chosen from the top nav. On desktop
   // this state is inert — CSS shows all three columns regardless.
@@ -142,6 +148,8 @@ export function App() {
           </button>
         </div>
       )}
+
+      {onboarding && <Onboarding onDone={() => setOnboarding(false)} />}
     </div>
   )
 }

@@ -4787,3 +4787,207 @@ input {
     box-shadow: none;
   }
 }
+
+/* ---- Onboarding: first-run design-style prompt --------------------------- */
+
+.onboard-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: color-mix(in srgb, var(--ink) 52%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  animation: fadeIn 0.25s ease both;
+}
+.onboard-card {
+  width: 100%;
+  max-width: 480px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-notch-note);
+  box-shadow: var(--shadow-lg);
+  padding: 30px 28px 24px;
+  text-align: center;
+  animation: onboard-rise 0.5s var(--ease-spring) both;
+}
+@keyframes onboard-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.onboard-emblem {
+  width: 48px;
+  height: 48px;
+  margin: 0 auto 14px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  font-size: 22px;
+  color: #fff;
+  background: linear-gradient(
+    150deg,
+    color-mix(in srgb, var(--accent) 78%, white),
+    var(--accent) 55%,
+    color-mix(in srgb, var(--accent) 82%, black)
+  );
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--accent) 40%, transparent);
+}
+.onboard-title {
+  font-family: var(--display);
+  font-size: 25px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: var(--ink);
+  margin: 0;
+}
+.onboard-lead {
+  margin: 8px auto 20px;
+  max-width: 340px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+.onboard-choices {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.op-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 10px 13px;
+  text-align: left;
+  border: 1.5px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel-2);
+  cursor: pointer;
+  transition: border-color 0.18s var(--ease-out), box-shadow 0.22s var(--ease-out),
+    transform 0.18s var(--ease-spring);
+}
+.op-card:hover {
+  transform: translateY(-2px);
+}
+.op-card.on {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent),
+    var(--shadow);
+}
+.op-name {
+  margin-top: 8px;
+  font-family: var(--display);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.op-desc {
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--ink-soft);
+}
+.onboard-go {
+  width: 100%;
+  border: none;
+  border-radius: 999px;
+  padding: 12px 18px;
+  font-size: 14px;
+  font-weight: 650;
+  color: #fff;
+  background: var(--accent);
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--accent) 32%, transparent);
+  transition: transform 0.18s var(--ease-spring), box-shadow 0.2s var(--ease-out),
+    filter 0.15s ease;
+}
+.onboard-go:hover {
+  filter: brightness(1.05);
+}
+.onboard-go:active {
+  transform: scale(0.98);
+}
+
+/* Mini design mockups — hardcoded per-theme so both read correctly side by side
+   regardless of which theme is currently live. */
+.op-preview {
+  height: 104px;
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  overflow: hidden;
+}
+.op-preview.modern {
+  background: #e7ddc9;
+}
+.op-preview.earthy {
+  background: #ece5d7;
+}
+.op-preview .pv-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 11px;
+}
+.op-preview.modern .pv-card {
+  background: #fdfcf7;
+  border: 1px solid #ded3ba;
+  border-radius: 14px;
+  box-shadow: 0 8px 18px rgba(64, 47, 22, 0.16);
+}
+.op-preview.earthy .pv-card {
+  background: #fbf9f3;
+  border: 1px solid #e3dac7;
+  border-radius: 13px 13px 13px 4px; /* the tucked corner */
+}
+.pv-title {
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+}
+.op-preview.modern .pv-title {
+  font-family: 'Fraunces', Georgia, serif;
+  color: #211c15;
+}
+.op-preview.earthy .pv-title {
+  font-family: 'Inter', sans-serif;
+  color: #2a2620;
+}
+.pv-line {
+  height: 5px;
+  width: 82%;
+  border-radius: 3px;
+  background: #d8ccb2;
+}
+.pv-line.short {
+  width: 56%;
+}
+.pv-pill {
+  height: 12px;
+  width: 46px;
+}
+.op-preview.modern .pv-pill {
+  border-radius: 999px;
+  background: #b04e2e;
+}
+.op-preview.earthy .pv-pill {
+  border-radius: 5px;
+  background: #b0563a;
+}
+
+@media (max-width: 480px) {
+  .onboard-card {
+    padding: 26px 20px 20px;
+  }
+  .onboard-title {
+    font-size: 22px;
+  }
+}
