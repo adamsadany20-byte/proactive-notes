@@ -4,8 +4,15 @@ import { KIND_META } from '../ui/kindMeta'
 import { PushControls } from './PushControls'
 import { ThemeToggle } from './ThemeToggle'
 import { UpgradeModal } from './UpgradeModal'
+import { SidebarStreak } from './SidebarStreak'
 import { isSupabaseEnabled, supabase } from '../services/supabase'
-import { ChevronIcon, PlusIcon, TuneIcon, XIcon } from '../ui/icons'
+import {
+  ChevronIcon,
+  PlusIcon,
+  SearchIcon,
+  TuneIcon,
+  XIcon,
+} from '../ui/icons'
 import {
   startCheckout,
   setSpendCap,
@@ -238,7 +245,7 @@ function SpendLimit() {
   )
 }
 
-export function Sidebar() {
+export function Sidebar({ onOpenCalendar }: { onOpenCalendar?: () => void }) {
   const { state, select, createNote, remove } = useStore()
 
   // The footer tools (AI tier, reminders, spend cap, sign-out) read as clutter
@@ -247,6 +254,17 @@ export function Sidebar() {
   const [toolsOpen, setToolsOpen] = useState(
     () => typeof window === 'undefined' || window.innerWidth > 980,
   )
+
+  // Live search over the note list — matches note text and its detected kind.
+  const [query, setQuery] = useState('')
+  const q = query.trim().toLowerCase()
+  const notes = q
+    ? state.notes.filter(
+        (n) =>
+          n.text.toLowerCase().includes(q) ||
+          (KIND_META[n.kind]?.label ?? '').toLowerCase().includes(q),
+      )
+    : state.notes
 
   const handleDelete = (e: React.MouseEvent, id: string, text: string) => {
     e.stopPropagation()
@@ -271,8 +289,32 @@ export function Sidebar() {
         </button>
       </div>
 
+      <SidebarStreak onOpen={onOpenCalendar} />
+
+      <div className="note-search">
+        <SearchIcon className="ns-ico" />
+        <input
+          className="ns-input"
+          type="search"
+          value={query}
+          placeholder="Search notes…"
+          aria-label="Search notes"
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        {query && (
+          <button
+            className="ns-clear"
+            title="Clear search"
+            aria-label="Clear search"
+            onClick={() => setQuery('')}
+          >
+            <XIcon />
+          </button>
+        )}
+      </div>
+
       <div className="note-list">
-        {state.notes.map((n) => {
+        {notes.map((n) => {
           const meta = KIND_META[n.kind]
           const recognised = n.kind !== 'unknown' && n.confidence >= 0.4
           return (
@@ -316,6 +358,9 @@ export function Sidebar() {
             </div>
           )
         })}
+        {q && notes.length === 0 && (
+          <div className="note-empty">No notes match “{query.trim()}”.</div>
+        )}
       </div>
 
       <div className="side-foot">

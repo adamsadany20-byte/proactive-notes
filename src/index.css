@@ -244,6 +244,188 @@ button {
   border-color: transparent;
 }
 
+/* ---- Sidebar streak strip (woven into the primary column) ---------------- */
+.side-streak {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: calc(100% - 24px);
+  margin: 2px 12px 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  border-radius: var(--radius-sm);
+  text-align: left;
+  transition: border-color 0.18s var(--ease-out), box-shadow 0.22s var(--ease-out),
+    transform 0.14s var(--ease-spring), background 0.2s ease;
+}
+.side-streak:hover {
+  border-color: color-mix(in srgb, var(--goal) 32%, var(--line));
+  box-shadow: var(--shadow-sm);
+}
+.side-streak:active {
+  transform: scale(0.99);
+}
+.side-streak.alive {
+  border-color: color-mix(in srgb, var(--goal) 34%, var(--line));
+  background: radial-gradient(
+      120% 120% at 0% 0%,
+      color-mix(in srgb, var(--goal) 12%, var(--panel-2)),
+      var(--panel-2) 70%
+    );
+}
+.side-streak.at-risk {
+  animation: today-breathe 2.6s ease-in-out infinite;
+}
+.ss-badge {
+  flex: none;
+  display: grid;
+  grid-template-areas: 'flame' 'count' 'unit';
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: var(--panel);
+  border: 1.5px solid var(--line);
+}
+.side-streak.alive .ss-badge {
+  border-color: color-mix(in srgb, var(--goal) 45%, transparent);
+  box-shadow: 0 3px 10px color-mix(in srgb, var(--goal) 22%, transparent);
+}
+.ss-flame {
+  grid-area: flame;
+  align-self: start;
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--ink-faint);
+}
+.side-streak.alive .ss-flame {
+  color: var(--goal);
+  animation: flame-flicker 2.8s ease-in-out infinite;
+}
+.ss-count {
+  grid-area: count;
+  font-family: var(--display);
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--ink);
+}
+.side-streak.alive .ss-count {
+  color: color-mix(in srgb, var(--goal) 55%, var(--ink));
+}
+.ss-unit {
+  grid-area: unit;
+  align-self: end;
+  margin-bottom: 4px;
+  font-size: 7px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+}
+.ss-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.ss-title {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--ink);
+}
+.side-streak.at-risk .ss-title {
+  color: color-mix(in srgb, var(--goal) 58%, var(--ink));
+}
+.ss-sub {
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+.ss-pips {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  align-items: flex-end;
+}
+.ss-pip {
+  width: 14px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--line);
+}
+.ss-pip.on {
+  background: var(--goal);
+}
+
+/* ---- Note search --------------------------------------------------------- */
+.note-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin: 4px 12px 2px;
+}
+.ns-ico {
+  position: absolute;
+  left: 12px;
+  font-size: 14px;
+  color: var(--ink-faint);
+  pointer-events: none;
+}
+.ns-input {
+  width: 100%;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  border-radius: 999px;
+  padding: 8px 34px 8px 34px;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  outline: none;
+  transition: border-color 0.16s ease, background 0.16s ease,
+    box-shadow 0.2s ease;
+}
+.ns-input::placeholder {
+  color: var(--ink-faint);
+}
+.ns-input:focus {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+  background: var(--panel);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+/* Hide the native search clear affordance; we render our own. */
+.ns-input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+}
+.ns-clear {
+  position: absolute;
+  right: 8px;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border: none;
+  background: transparent;
+  color: var(--ink-faint);
+  font-size: 12px;
+  border-radius: 50%;
+  transition: color 0.14s ease, background 0.14s ease;
+}
+.ns-clear:hover {
+  color: var(--ink);
+  background: var(--line-soft);
+}
+.note-empty {
+  padding: 14px 12px;
+  font-size: 12.5px;
+  color: var(--ink-faint);
+  text-align: center;
+}
+
 .note-list {
   padding: 6px 10px;
   display: flex;

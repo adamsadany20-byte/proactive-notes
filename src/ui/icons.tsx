@@ -122,6 +122,15 @@ export function PlusIcon(props: IconProps) {
   )
 }
 
+export function SearchIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="10.6" cy="10.6" r="6.4" />
+      <path d="M15.3 15.3 L20 20" />
+    </Svg>
+  )
+}
+
 // Bell with an offset ring-wave — reminders.
 export function BellIcon(props: IconProps) {
   return (

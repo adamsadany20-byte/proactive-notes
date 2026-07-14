@@ -119,7 +119,7 @@ export function App() {
         </nav>
       </header>
 
-      <Sidebar />
+      <Sidebar onOpenCalendar={() => goto('calendar')} />
 
       <div className="col col-main">
         {selected ? (
