@@ -203,11 +203,13 @@ button {
   flex-direction: column;
   line-height: 1.05;
 }
+/* The app wordmark wears Alice in both themes — a distinctive, elegant serif
+   just for the brand. (Alice ships a single 400 weight.) */
 .brand-name {
-  font-family: var(--display);
-  font-size: 21px;
-  font-weight: 650;
-  letter-spacing: -0.01em;
+  font-family: 'Alice', Georgia, serif;
+  font-size: 22px;
+  font-weight: 400;
+  letter-spacing: 0;
   color: var(--ink);
 }
 .brand-tag {
@@ -3409,7 +3411,11 @@ button {
     box-shadow: var(--shadow-sm);
   }
 
-  /* ---- Sticky website-style top nav ---- */
+  /* ---- Sticky top bar ----
+     A solid header that fills the safe-area (status-bar) zone so it reads as one
+     cohesive bar pinned to the very top — not a faint band floating in the page.
+     The panel background + bottom edge make the tabs feel intentional; the blur
+     is a bonus as content scrolls beneath. */
   .mnav {
     display: flex;
     align-items: center;
@@ -3417,12 +3423,13 @@ button {
     position: sticky;
     top: 0;
     z-index: 60;
-    padding: 10px clamp(14px, 4.5vw, 26px);
-    padding-top: calc(10px + env(safe-area-inset-top, 0px));
-    background: color-mix(in srgb, var(--panel) 82%, transparent);
-    backdrop-filter: saturate(1.5) blur(14px);
-    -webkit-backdrop-filter: saturate(1.5) blur(14px);
-    border-bottom: 1px solid color-mix(in srgb, var(--line) 85%, transparent);
+    padding: 11px clamp(16px, 5vw, 26px);
+    padding-top: calc(11px + env(safe-area-inset-top, 0px));
+    background: color-mix(in srgb, var(--panel) 96%, transparent);
+    backdrop-filter: saturate(1.5) blur(18px);
+    -webkit-backdrop-filter: saturate(1.5) blur(18px);
+    border-bottom: 1px solid var(--line);
+    box-shadow: 0 6px 20px -14px color-mix(in srgb, var(--ink) 34%, transparent);
   }
   .mnav-brand {
     display: flex;
@@ -3438,10 +3445,10 @@ button {
     flex: none;
   }
   .mnav-name {
-    font-family: var(--display);
-    font-weight: 800;
-    font-size: 16px;
-    letter-spacing: -0.02em;
+    font-family: 'Alice', Georgia, serif;
+    font-weight: 400;
+    font-size: 18px;
+    letter-spacing: 0;
     color: var(--ink);
   }
   .mnav-links {
@@ -4734,15 +4741,18 @@ input {
   width: 48px;
   height: 34px;
 }
-[data-theme='earthy'] .brand-name {
-  font-size: 19px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-}
+/* Brand stays Alice in Earthy too — just its tagline reverts. */
 [data-theme='earthy'] .brand-tag {
   font-size: 11px;
   letter-spacing: normal;
   white-space: normal;
+}
+/* Earthy's top bar is flat like its bordered columns — no lift shadow. (`.mnav`
+   is display:none on desktop, so this only shows on mobile.) */
+[data-theme='earthy'] .mnav {
+  background: color-mix(in srgb, var(--panel-2) 97%, transparent);
+  border-bottom: 1px solid var(--line);
+  box-shadow: none;
 }
 
 /* ---- Earthy: desktop-only structural reverts ----------------------------- */
