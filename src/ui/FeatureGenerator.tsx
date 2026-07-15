@@ -6,7 +6,7 @@ import {
 } from '../engine/featureSuggester'
 import { DynamicComponentRenderer } from './DynamicComponentRenderer'
 import { useStore } from '../store/appStore'
-import { startCheckout, recommendApi, type Recommendation } from '../services/api'
+import { startSubscription, recommendApi, type Recommendation } from '../services/api'
 import type { Note } from '../types'
 
 interface GeneratedFeature {
@@ -27,13 +27,15 @@ interface Props {
 export function FeatureGenerator({ note }: Props) {
   const { state, setBackend } = useStore()
   const backend = state.settings.aiBackend
-  const aiOn = backend !== 'local'
+  // The tool generator is an EVOLVE-tier feature, so it gates on broaderAi
+  // (true only for evolve) — a Classification-only plan doesn't get it.
+  const aiOn = state.settings.broaderAi
   // Paywalled only when billing is on and this client isn't subscribed. Free
   // mode (default) leaves this false so the generator stays fully usable.
   const locked = !!state.billing?.billingEnabled && !state.billing?.subscribed
 
-  const goToCheckout = async (kind: 'activate' | 'topup' = 'activate') => {
-    const { url, error } = await startCheckout(kind)
+  const goToCheckout = async () => {
+    const { url, error } = await startSubscription('evolve')
     if (url) window.location.href = url
     else if (error) alert(error)
   }
@@ -183,42 +185,26 @@ export function FeatureGenerator({ note }: Props) {
   }
 
   if (aiOn && locked) {
-    const outOfCredit = !!state.billing?.active
     const pricing = state.billing?.pricing
-    const activation = ((pricing?.activationPence ?? 1000) / 100).toFixed(0)
-    const included = ((pricing?.includedCreditPence ?? 100) / 100).toFixed(2)
-    const topupPrice = ((pricing?.topupPence ?? 400) / 100).toFixed(2)
-    const topupCredit = (
-      (pricing?.topupPence ?? 400) / (pricing?.tokenMarkup ?? 2) / 100
-    ).toFixed(2)
+    const evPrice = ((pricing?.evolvePricePence ?? 1200) / 100).toFixed(0)
+    const evAiIncl = ((pricing?.evolveAiIncludedPence ?? 500) / 100).toFixed(0)
+    const evClIncl = ((pricing?.evolveClassifierIncludedPence ?? 100) / 100).toFixed(0)
+    const markup = pricing?.overageMarkup ?? 2
     return (
       <div className="gen">
         <div className="gen-head">
           <span className="gen-title">Evolve this note</span>
         </div>
         <div className="gen-locked">
-          {outOfCredit ? (
-            <p>
-              <strong>You’ve used your AI credit.</strong> Top up £{topupPrice}{' '}
-              for £{topupCredit} more of AI usage (£
-              {pricing?.tokenMarkup ?? 2} per £1 of tokens). Your notes keep
-              working for free on the Local engine.
-            </p>
-          ) : (
-            <p>
-              <strong>Unlock AI tools — £{activation} one-time.</strong>{' '}
-              Includes £{included} of AI usage; after that, more credit costs £
-              {pricing?.tokenMarkup ?? 2} per £1 of tokens. Your notes keep
-              classifying and building their workspace for free on the Local
-              engine.
-            </p>
-          )}
+          <p>
+            <strong>Evolve AI — £{evPrice}/month.</strong> Includes £{evAiIncl} of
+            coding &amp; world knowledge and £{evClIncl} of classifier usage each
+            month (£{markup} per £1 beyond either). Your notes keep classifying and
+            building their workspace for free on the Local engine.
+          </p>
           <div className="gen-tier-actions">
-            <button
-              className="gen-build"
-              onClick={() => goToCheckout(outOfCredit ? 'topup' : 'activate')}
-            >
-              {outOfCredit ? `↻ Top up £${topupPrice}` : `✦ Unlock for £${activation}`}
+            <button className="gen-build" onClick={() => goToCheckout()}>
+              ✦ Subscribe — £{evPrice}/mo
             </button>
             <button className="gen-suggest" onClick={() => setBackend('local')}>
               Stay on Local
@@ -230,6 +216,7 @@ export function FeatureGenerator({ note }: Props) {
   }
 
   if (!aiOn) {
+    const onClassifier = state.settings.tier === 'classifier'
     return (
       <div className="gen">
         <div className="gen-head">
@@ -237,10 +224,21 @@ export function FeatureGenerator({ note }: Props) {
         </div>
         <div className="gen-locked">
           <p>
-            You’re on the <strong>Local ML</strong> tier — the note still
-            classifies, extracts dates and topics, and builds its workspace
-            offline. Switch to Evolve AI to let it suggest and build custom
-            tools (flashcards, trackers, schedules) for this note.
+            {onClassifier ? (
+              <>
+                You’re on the <strong>Classification</strong> tier — Claude sharpens
+                each note’s category, and the workspace builds offline. Upgrade to
+                Evolve AI to also suggest and build custom tools (flashcards,
+                trackers, schedules) for this note.
+              </>
+            ) : (
+              <>
+                You’re on the <strong>Local ML</strong> tier — the note still
+                classifies, extracts dates and topics, and builds its workspace
+                offline. Switch to Evolve AI to let it suggest and build custom
+                tools (flashcards, trackers, schedules) for this note.
+              </>
+            )}
           </p>
           <div className="gen-tier-actions">
             <button

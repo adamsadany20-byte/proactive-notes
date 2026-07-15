@@ -11,7 +11,7 @@ const KIND_COLOR: Record<CalendarEvent['kind'], string> = {
   study: '#7cb8ff',
   event: 'var(--event)',
   briefing: 'var(--project)',
-  reminder: 'var(--goal)',
+  reminder: 'var(--ember)',
 }
 
 const KIND_LABEL: Partial<Record<CalendarEvent['kind'], string>> = {

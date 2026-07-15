@@ -8,6 +8,7 @@ import {
   nextMilestone,
   isMilestone,
   todayIso,
+  MILESTONES,
 } from '../store/streak'
 
 // A ring of radiating sparks played when the day is completed / a milestone lands.
@@ -54,6 +55,22 @@ export function GlobalStreak() {
   const unit = g.current === 1 ? 'day' : 'days'
   const today = todayIso()
 
+  // Progress of the flame ring: how far the current streak has climbed within
+  // the segment between the last milestone reached and the next one — so the
+  // ring visibly fills and resets at each rung (a frequent, earnable win)
+  // rather than crawling toward a distant absolute total.
+  const prevMilestone = [...MILESTONES].reverse().find((m) => m <= g.current) ?? 0
+  const ringPct = !alive
+    ? 0
+    : milestone
+      ? Math.max(
+          4,
+          Math.round(
+            ((g.current - prevMilestone) / (milestone.target - prevMilestone)) * 100,
+          ),
+        )
+      : 100
+
   const head = alive ? (g.atRisk ? 'Keep it alive' : 'On a roll') : "Let's begin"
 
   const fire = () => {
@@ -88,6 +105,23 @@ export function GlobalStreak() {
       <div className="today-top">
         <div className="today-ring">
           {celebrate && <TodayBurst />}
+          <svg className="ring-prog" viewBox="0 0 100 100" aria-hidden>
+            <defs>
+              <linearGradient id="emberArc" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stopColor="var(--ember-lit)" />
+                <stop offset="1" stopColor="var(--ember-deep)" />
+              </linearGradient>
+            </defs>
+            <circle className="ring-track" cx="50" cy="50" r="45" pathLength={100} />
+            <circle
+              className="ring-arc"
+              cx="50"
+              cy="50"
+              r="45"
+              pathLength={100}
+              style={{ strokeDashoffset: 100 - ringPct }}
+            />
+          </svg>
           <span className="today-flame">
             {alive ? <FlameIcon /> : <SproutIcon />}
           </span>

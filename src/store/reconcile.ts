@@ -41,6 +41,16 @@ function desiredTypes(kind: NoteKind, entities: Entities): SegmentType[] {
       return ['checklist']
     case 'purchase':
       return ['purchase-planner']
+    // New kinds reuse the general-purpose segments: a checklist for the things
+    // to do/pack/gather, and a calendar block when the note carries a date
+    // (an appointment, a departure). They fill from list content in the note.
+    case 'health':
+    case 'travel':
+      return ['calendar', 'checklist']
+    case 'finance':
+    case 'recipe':
+    case 'media':
+      return ['checklist']
     default:
       return []
   }

@@ -87,16 +87,19 @@ export function MicIcon({ live, ...rest }: IconProps & { live?: boolean }) {
   )
 }
 
-// An asymmetric flame with a leaf-shaped core — the streak mark.
+// A full, rounded flame with a shouldered "kick" and a brighter inner tongue —
+// the streak mark. Filled (like the star mark) so it reads as fire even at the
+// ~10px nav-badge size; the inner tongue lifts to a hotter core in the ring.
+// The two paths share currentColor; the tongue sits at lower opacity so a warm
+// gradient reads without coupling the glyph to any theme variable.
 export function FlameIcon(props: IconProps) {
   return (
-    <Svg {...props}>
-      <path d="M12 3 C9.7 6.3 7 8.7 7 12.6 C7 16.4 9.2 19.2 12 19.2 C14.8 19.2 17 16.4 17 12.6 C17 10.3 16 8.4 14.5 6.7 C13.9 8.2 13.1 9 12.3 9.4 C12.9 7.3 12.7 5.1 12 3 Z" />
+    <Svg {...props} stroke="none" fill="currentColor">
+      <path d="M12.2 2.4 C13.1 5.1 12.7 7.2 11.2 9 C9.5 11 7.2 12.4 7.2 15.3 C7.2 18.6 9.4 21 12.2 21 C15.1 21 17.2 18.6 17.2 15.4 C17.2 13.2 16.3 11.5 14.8 9.8 C14.5 11.1 13.9 11.9 13 12.4 C14.3 9.2 13.9 5.9 12.2 2.4 Z" />
       <path
-        d="M12 12.4 C10.9 13.5 10.4 14.4 10.4 15.4 C10.4 16.7 11.1 17.4 12 17.4 C12.9 17.4 13.6 16.7 13.6 15.4 C13.6 14.4 13.1 13.5 12 12.4 Z"
-        fill="currentColor"
-        stroke="none"
-        opacity="0.55"
+        className="flame-core"
+        d="M12.3 12.6 C11 13.9 10.4 15 10.4 16.1 C10.4 17.6 11.2 18.5 12.3 18.5 C13.5 18.5 14.3 17.5 14.3 16.1 C14.3 15 13.6 13.9 12.3 12.6 Z"
+        opacity="0.5"
       />
     </Svg>
   )
@@ -275,6 +278,58 @@ export function TrophyIcon(props: IconProps) {
   )
 }
 
+// Heart with a small pulse notch — health & wellbeing.
+export function HeartIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M12 19 C12 19 4.5 14.4 4.5 9.4 C4.5 6.9 6.3 5.2 8.5 5.2 C10 5.2 11.3 6 12 7.3 C12.7 6 14 5.2 15.5 5.2 C17.7 5.2 19.5 6.9 19.5 9.4 C19.5 14.4 12 19 12 19 Z" />
+      <path d="M7 11.6 H9.6 L11 9.4 L13 13.4 L14.2 11.6 H17" strokeWidth={1.5} opacity="0.7" />
+    </Svg>
+  )
+}
+
+// A coin with an offset second coin — money / finance.
+export function CoinIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="10.4" cy="10.4" r="6" />
+      <path d="M10.4 7.4 V13.4 M8.7 8.9 H11.4 C12 8.9 12.4 9.3 12.4 9.9 C12.4 10.5 12 10.9 11.4 10.9 H9 M9 10.9 H11.6" strokeWidth={1.5} />
+      <path d="M15.8 15.2 A6 6 0 0 1 8.9 18.2" opacity="0.55" />
+    </Svg>
+  )
+}
+
+// A banking plane at a slight climb — travel.
+export function PlaneIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M4.5 13.4 L20 8 L18.4 12.4 C18.1 13.2 17.4 13.8 16.5 14 L6.5 16.3 L5.4 14.2 L9.5 12.6 L7.8 11.2 L5.8 11.8 Z" />
+    </Svg>
+  )
+}
+
+// A lidded pot with rising steam — recipe / cooking.
+export function PotIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M5.4 11.4 H18.6 V15.4 C18.6 17.1 17.2 18.5 15.5 18.5 H8.5 C6.8 18.5 5.4 17.1 5.4 15.4 Z" />
+      <path d="M4.2 11.4 H19.8" />
+      <path d="M9.5 8.4 C9.5 7.2 8.7 6.9 8.7 5.9 M14.5 8.4 C14.5 7.2 13.7 6.9 13.7 5.9" opacity="0.7" strokeWidth={1.5} />
+    </Svg>
+  )
+}
+
+// A film clapper — watchlist / media.
+export function FilmIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="4.3" y="9.2" width="15.4" height="10" rx="2.2" />
+      <path d="M4.7 9.2 L7.6 5.6 L11 8.2 M9.4 5 L12.8 7.7 M14.2 4.6 L17.4 7.4" strokeWidth={1.5} opacity="0.75" />
+      <path d="M11 12 L14.6 14.1 L11 16.2 Z" fill="currentColor" stroke="none" opacity="0.7" />
+    </Svg>
+  )
+}
+
 // ---------------------------------------------------------------------------
 // Maps: segment types + note kinds → their glyphs. These replace the old emoji
 // so every surface draws from the same hand.
@@ -298,5 +353,10 @@ export const KIND_ICONS: Partial<Record<NoteKind, FC<IconProps>>> = {
   goal: TargetIcon,
   tasks: ListCheckIcon,
   purchase: BasketIcon,
+  health: HeartIcon,
+  finance: CoinIcon,
+  travel: PlaneIcon,
+  recipe: PotIcon,
+  media: FilmIcon,
   general: PageIcon,
 }

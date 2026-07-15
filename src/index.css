@@ -35,12 +35,34 @@
   --project-soft: color-mix(in srgb, var(--project) 13%, var(--panel));
   --goal: #c0496a;
   --goal-soft: color-mix(in srgb, var(--goal) 13%, var(--panel));
+
+  /* Streak "ember" — a warm amber-to-terracotta fire that belongs to the same
+     earthy family as the clay accent. The flame everywhere (ring, sidebar
+     strip, nav chip) burns in these tones rather than the raspberry goal pink,
+     so it actually reads as fire while staying on-theme. --ember is the mid
+     flame, --ember-lit the bright licking tip, --ember-deep the glowing base. */
+  --ember: #d0632a;
+  --ember-lit: #eaa03f;
+  --ember-deep: #a83c1c;
+  --ember-soft: color-mix(in srgb, var(--ember) 13%, var(--panel));
   --tasks: #8268c4;
   --tasks-soft: color-mix(in srgb, var(--tasks) 13%, var(--panel));
   --general: #8a8170;
   --general-soft: color-mix(in srgb, var(--general) 13%, var(--panel));
   --purchase: #3a9aa0;
   --purchase-soft: color-mix(in srgb, var(--purchase) 13%, var(--panel));
+  /* Newer categories — kept in the same muted, earthy register as the originals
+     so the palette still reads as one family. */
+  --health: #cf6f6a;
+  --health-soft: color-mix(in srgb, var(--health) 13%, var(--panel));
+  --finance: #7d9440;
+  --finance-soft: color-mix(in srgb, var(--finance) 13%, var(--panel));
+  --travel: #c99338;
+  --travel-soft: color-mix(in srgb, var(--travel) 13%, var(--panel));
+  --recipe: #b45a3c;
+  --recipe-soft: color-mix(in srgb, var(--recipe) 13%, var(--panel));
+  --media: #a75f9c;
+  --media-soft: color-mix(in srgb, var(--media) 13%, var(--panel));
 
   /* Shape language — soft, generous, fully symmetric. Large calm radii on
      surfaces, pills on controls. (The legacy --radius-notch names are kept so
@@ -260,17 +282,17 @@ button {
     transform 0.14s var(--ease-spring), background 0.2s ease;
 }
 .side-streak:hover {
-  border-color: color-mix(in srgb, var(--goal) 32%, var(--line));
+  border-color: color-mix(in srgb, var(--ember) 32%, var(--line));
   box-shadow: var(--shadow-sm);
 }
 .side-streak:active {
   transform: scale(0.99);
 }
 .side-streak.alive {
-  border-color: color-mix(in srgb, var(--goal) 34%, var(--line));
+  border-color: color-mix(in srgb, var(--ember) 34%, var(--line));
   background: radial-gradient(
       120% 120% at 0% 0%,
-      color-mix(in srgb, var(--goal) 12%, var(--panel-2)),
+      color-mix(in srgb, var(--ember) 12%, var(--panel-2)),
       var(--panel-2) 70%
     );
 }
@@ -289,8 +311,8 @@ button {
   border: 1.5px solid var(--line);
 }
 .side-streak.alive .ss-badge {
-  border-color: color-mix(in srgb, var(--goal) 45%, transparent);
-  box-shadow: 0 3px 10px color-mix(in srgb, var(--goal) 22%, transparent);
+  border-color: color-mix(in srgb, var(--ember) 45%, transparent);
+  box-shadow: 0 3px 10px color-mix(in srgb, var(--ember) 22%, transparent);
 }
 .ss-flame {
   grid-area: flame;
@@ -301,7 +323,7 @@ button {
   color: var(--ink-faint);
 }
 .side-streak.alive .ss-flame {
-  color: var(--goal);
+  color: var(--ember);
   animation: flame-flicker 2.8s ease-in-out infinite;
 }
 .ss-count {
@@ -313,7 +335,7 @@ button {
   color: var(--ink);
 }
 .side-streak.alive .ss-count {
-  color: color-mix(in srgb, var(--goal) 55%, var(--ink));
+  color: color-mix(in srgb, var(--ember-deep) 62%, var(--ink));
 }
 .ss-unit {
   grid-area: unit;
@@ -338,7 +360,7 @@ button {
   color: var(--ink);
 }
 .side-streak.at-risk .ss-title {
-  color: color-mix(in srgb, var(--goal) 58%, var(--ink));
+  color: color-mix(in srgb, var(--ember-deep) 60%, var(--ink));
 }
 .ss-sub {
   font-size: 11px;
@@ -358,7 +380,7 @@ button {
   background: var(--line);
 }
 .ss-pip.on {
-  background: var(--goal);
+  background: linear-gradient(180deg, var(--ember-lit), var(--ember));
 }
 
 /* ---- Note search --------------------------------------------------------- */
@@ -698,6 +720,25 @@ button {
   margin-top: 6px;
   font-size: 11px;
   color: var(--ink-faint);
+  line-height: 1.3;
+}
+/* The three-tier control needs tighter chips to fit "Classification". */
+.tier-seg-3 {
+  gap: 2px;
+  padding: 2px;
+}
+.tier-seg-3 .tier-opt {
+  padding: 6px 4px;
+  font-size: 10.5px;
+  letter-spacing: -0.01em;
+}
+.ai-usage-text {
+  display: block;
+  margin-top: 4px;
+  font-size: 10.5px;
+  color: var(--ink-faint);
+  opacity: 0.85;
+  font-variant-numeric: tabular-nums;
   line-height: 1.3;
 }
 
@@ -1163,6 +1204,24 @@ button {
   border-radius: 50%;
   background: var(--tint);
   animation: pulse 1.6s ease-in-out infinite;
+}
+.ambient-topic {
+  font-weight: 700;
+  max-width: 46vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The behavioural kind, demoted to a quiet suffix behind a middot when an
+   open-ended topic is leading. */
+.ambient-kind {
+  opacity: 0.72;
+  font-weight: 550;
+}
+.ambient-kind::before {
+  content: '·';
+  margin-right: 5px;
+  opacity: 0.7;
 }
 .ambient .conf {
   opacity: 0.6;
@@ -2332,6 +2391,16 @@ button {
 
 /* ---- Streak tracker ------------------------------------------------------ */
 
+/* The streak is one identity across every note kind — always the warm ember,
+   never the per-note tint — so the flame, ring, trail dots and check-in button
+   all read the same everywhere. Re-tint the whole segment (header icon + body)
+   that contains a streak or its invite, overriding the workspace's kind tint. */
+.segment:has(.streak),
+.segment:has(.streak-invite) {
+  --tint: var(--ember);
+  --tint-soft: var(--ember-soft);
+  --tint-ink: var(--ember-deep);
+}
 .streak {
   display: flex;
   align-items: center;
@@ -2439,7 +2508,7 @@ button {
 
 /* ---- Today ritual card (the one streak, made interactive) ---------------- */
 .today {
-  --streak: var(--goal, #c0496a);
+  --streak: var(--ember, #d0632a);
   margin: 0 0 16px;
   padding: 16px;
   border: 1px solid var(--line);
@@ -2482,24 +2551,52 @@ button {
   gap: 15px;
 }
 
-/* The living flame ring — lights up only once the streak is alive. */
+/* The living flame ring — a milestone progress arc wraps the flame, filling
+   toward the next rung and lighting up only once the streak is alive. */
 .today-ring {
   position: relative;
   flex: none;
-  width: 76px;
-  height: 76px;
+  width: 84px;
+  height: 84px;
   border-radius: 50%;
   display: grid;
   place-items: center;
   grid-template-areas: 'stack';
-  background: radial-gradient(circle at 50% 36%, var(--panel), var(--panel-2));
-  border: 2px solid var(--line);
-  transition: border-color 0.4s ease, box-shadow 0.5s ease, transform 0.4s ease;
+  background: radial-gradient(circle at 50% 34%, var(--panel), var(--panel-2));
+  transition: box-shadow 0.5s ease, transform 0.4s ease;
 }
 .today.alive .today-ring {
-  border-color: color-mix(in srgb, var(--streak) 55%, transparent);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--streak) 12%, transparent),
-    0 8px 20px color-mix(in srgb, var(--streak) 24%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--streak) 14%, transparent),
+    0 8px 22px color-mix(in srgb, var(--streak) 22%, transparent);
+}
+
+/* The SVG progress ring, rotated so 0% starts at 12 o'clock. */
+.ring-prog {
+  grid-area: stack;
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+  overflow: visible;
+}
+.ring-track {
+  fill: none;
+  stroke: var(--line);
+  stroke-width: 6;
+}
+.ring-arc {
+  fill: none;
+  stroke: url(#emberArc);
+  stroke-width: 6;
+  stroke-linecap: round;
+  stroke-dasharray: 100;
+  opacity: 0;
+  transition: stroke-dashoffset 0.9s var(--ease-out), opacity 0.4s ease;
+}
+.today.alive .ring-arc {
+  opacity: 1;
+}
+.today.celebrate .ring-arc {
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--streak) 60%, transparent));
 }
 .today.celebrate .today-ring {
   animation: ring-lift 0.7s cubic-bezier(0.2, 0.9, 0.25, 1) both;
@@ -2507,8 +2604,8 @@ button {
 .today-flame {
   grid-area: stack;
   align-self: start;
-  margin-top: 8px;
-  font-size: 17px;
+  margin-top: 13px;
+  font-size: 15px;
   line-height: 1;
   color: var(--ink-faint);
   transition: color 0.4s ease;
@@ -2523,11 +2620,11 @@ button {
 .today-count {
   grid-area: stack;
   font-family: var(--display);
-  font-size: 30px;
+  font-size: 31px;
   font-weight: 800;
   letter-spacing: -0.02em;
   color: var(--ink);
-  margin-top: 6px;
+  margin-top: 9px;
   animation: count-pop 0.45s cubic-bezier(0.2, 1.4, 0.4, 1) both;
 }
 .today.alive .today-count {
@@ -2536,12 +2633,15 @@ button {
 .today-unit {
   grid-area: stack;
   align-self: end;
-  margin-bottom: 10px;
-  font-size: 9px;
+  margin-bottom: 13px;
+  font-size: 8.5px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--ink-faint);
+}
+.today.alive .today-unit {
+  color: color-mix(in srgb, var(--streak) 46%, var(--ink-faint));
 }
 
 .today-headline {
@@ -2771,6 +2871,9 @@ button {
   .tb-spark,
   .tb-pulse {
     animation: none;
+  }
+  .ring-arc {
+    transition: opacity 0.3s ease;
   }
 }
 .streak-best {
@@ -3530,7 +3633,15 @@ button {
   }
   .col-main {
     align-items: stretch;
-    padding: clamp(14px, 4.5vw, 30px) clamp(14px, 4.5vw, 26px) 56px;
+    padding: clamp(14px, 4.5vw, 30px) clamp(14px, 4.5vw, 26px)
+      calc(56px + env(safe-area-inset-bottom, 0px));
+  }
+  /* The notes list and calendar sections flow in the page; give them a floor
+     that clears the home indicator so the last card is never cut off by the
+     phone's rounded bottom / gesture bar. */
+  .col-side,
+  .col-cal {
+    padding-bottom: calc(28px + env(safe-area-inset-bottom, 0px));
   }
 
   /* The long editor placeholder wraps to several lines on a narrow screen; the
@@ -3607,6 +3718,9 @@ button {
     z-index: 60;
     padding: 11px clamp(16px, 5vw, 26px);
     padding-top: calc(11px + env(safe-area-inset-top, 0px));
+    /* Landscape notch: keep the bar's contents out from under the cutout. */
+    padding-left: max(clamp(16px, 5vw, 26px), env(safe-area-inset-left, 0px));
+    padding-right: max(clamp(16px, 5vw, 26px), env(safe-area-inset-right, 0px));
     background: color-mix(in srgb, var(--panel) 96%, transparent);
     backdrop-filter: saturate(1.5) blur(18px);
     -webkit-backdrop-filter: saturate(1.5) blur(18px);
@@ -3647,7 +3761,8 @@ button {
     font-size: 13.5px;
     font-weight: 600;
     color: var(--ink-soft);
-    padding: 6px 1px;
+    padding: 9px 2px;
+    min-height: 40px;
     display: inline-flex;
     align-items: center;
     gap: 5px;
@@ -3675,22 +3790,36 @@ button {
   .mnav-links button:active {
     color: var(--accent-ink);
   }
-  /* Ambient streak badge inline on the Calendar link — momentum from anywhere. */
+  /* Standalone ambient streak chip on the far right of the header — the flame
+     is always in view (momentum from anywhere) and taps through to the
+     calendar, without crowding the Calendar tab or its active underline. */
   .mnav-streak {
+    flex: none;
+    margin-left: 4px;
     display: inline-flex;
     align-items: center;
-    font-size: 9.5px;
-    font-weight: 800;
-    line-height: 1;
-    padding: 2px 5px;
+    gap: 3px;
+    height: 30px;
+    padding: 0 10px 0 8px;
+    border: none;
     border-radius: 999px;
     color: #fff;
-    background: linear-gradient(
-      150deg,
-      color-mix(in srgb, var(--goal) 88%, white),
-      var(--goal)
-    );
-    box-shadow: 0 2px 6px color-mix(in srgb, var(--goal) 40%, transparent);
+    background: linear-gradient(150deg, var(--ember-lit), var(--ember-deep));
+    box-shadow: 0 2px 8px color-mix(in srgb, var(--ember) 42%, transparent);
+    transition: transform 0.14s var(--ease-spring), box-shadow 0.2s ease;
+  }
+  .mnav-streak .ico {
+    font-size: 15px;
+    line-height: 1;
+  }
+  .mnav-streak-n {
+    font-family: var(--display);
+    font-size: 14px;
+    font-weight: 800;
+    line-height: 1;
+  }
+  .mnav-streak:active {
+    transform: scale(0.93);
   }
   .mnav-streak.at-risk {
     animation: badge-throb 1.8s ease-in-out infinite;
@@ -3699,9 +3828,20 @@ button {
     0%,
     100% {
       transform: scale(1);
+      box-shadow: 0 2px 8px color-mix(in srgb, var(--ember) 42%, transparent);
     }
     50% {
-      transform: scale(1.14);
+      transform: scale(1.08);
+      box-shadow: 0 3px 14px color-mix(in srgb, var(--ember) 60%, transparent);
+    }
+  }
+
+  /* Narrow phones: the wordmark, three labelled tabs and the streak chip can't
+     all fit one row without colliding. Drop the wordmark (the star logo still
+     carries the brand) so the tabs and streak breathe. Tablets keep it. */
+  @media (max-width: 540px) {
+    .mnav-name {
+      display: none;
     }
   }
 }

@@ -14,83 +14,117 @@ import {
   XIcon,
 } from '../ui/icons'
 import {
-  startCheckout,
+  startSubscription,
   setSpendCap,
   fetchBillingStatus,
-  type AiBackend,
 } from '../services/api'
+import type { Tier } from '../store/appStore'
 
 function preview(text: string): string {
   const first = text.trim().split('\n')[0]
   return first || 'New note'
 }
 
-const TIERS: { id: AiBackend; label: string; short: string }[] = [
-  { id: 'local', label: 'Local ML', short: 'ML' },
-  { id: 'haiku', label: 'Evolve AI', short: 'AI' },
+const TIERS: { id: Tier; label: string }[] = [
+  { id: 'free', label: 'Free' },
+  { id: 'classifier', label: 'Classification' },
+  { id: 'evolve', label: 'Evolve AI' },
 ]
 
+const gbp = (pence: number | undefined, fallback: number): string =>
+  `£${((pence ?? fallback) / 100).toFixed(pence != null && pence % 100 ? 2 : 0)}`
+
 function AiTierSelector() {
-  const { state, setBackend } = useStore()
-  const active = state.settings.aiBackend
+  const { state, setTier } = useStore()
+  const active = state.settings.tier
   const cfg = state.config
   const billing = state.billing
+  const p = billing?.pricing
 
-  // Claude is paywalled only when billing is switched on AND this client can't
-  // use it (not activated, or credit used up). In free mode (the default)
-  // `locked` is always false, so the tier works normally.
-  const locked = !!billing?.billingEnabled && !billing?.subscribed
-  const outOfCredit = locked && !!billing?.active
-  const credit = ((billing?.creditPence ?? 0) / 100).toFixed(2)
-  const activationFee = ((billing?.pricing?.activationPence ?? 1000) / 100).toFixed(0)
-  const includedCredit = (
-    (billing?.pricing?.includedCreditPence ?? 500) / 100
-  ).toFixed(2)
+  // With billing on, a paid tier is locked until the user SUBSCRIBES to it.
+  // Lock state keys off the plan, not off hasClassifier/hasEvolve — those go
+  // false when a subscriber hits their spend limit, and a capped subscriber
+  // should see "limit reached", not a padlock offering to sell them the plan
+  // they already own. Free mode (the default) leaves everything unlocked.
+  const billingOn = !!billing?.billingEnabled
+  const plan = billing?.plan ?? 'none'
+  const lockedFor = (id: Tier): boolean => {
+    if (!billingOn) return false
+    if (id === 'classifier') return plan === 'none'
+    if (id === 'evolve') return plan !== 'evolve'
+    return false
+  }
+  // Subscribed but stopped at their own beyond-plan spending limit.
+  const capped =
+    billingOn &&
+    plan !== 'none' &&
+    (billing?.capPence ?? 0) > 0 &&
+    (billing?.overagePence ?? 0) >= (billing?.capPence ?? 0)
+  const unconfigured = (id: Tier): boolean =>
+    id !== 'free' && cfg?.haikuConfigured === false
 
-  // Per-tier availability + status line.
-  const status = (id: AiBackend): string => {
-    if (id === 'local') return 'Free — deterministic engine, no network'
-    if (outOfCredit) return 'AI credit used up — top up to continue'
-    if (locked)
-      return `Unlock for £${activationFee} — includes £${includedCredit} of AI credit`
-    if (cfg?.haikuConfigured === false) return 'AI not configured on server'
-    return billing?.billingEnabled && billing?.active
-      ? `AI tools · £${credit} credit left`
-      : 'AI for suggestions & tools'
+  const classPrice = gbp(p?.classifierPricePence, 200)
+  const classIncl = gbp(p?.classifierIncludedPence, 100)
+  const evPrice = gbp(p?.evolvePricePence, 1200)
+  const evAiIncl = gbp(p?.evolveAiIncludedPence, 500)
+  const evClIncl = gbp(p?.evolveClassifierIncludedPence, 100)
+
+  const status = (id: Tier): string => {
+    if (id === 'free') return 'Free — deterministic engine, no network'
+    if (unconfigured(id)) return 'AI not configured on server'
+    if (capped && !lockedFor(id))
+      return 'Spending limit reached — raise it below to continue'
+    if (id === 'classifier')
+      return lockedFor(id)
+        ? `${classPrice}/mo — includes ${classIncl} of classifier usage`
+        : 'Cloud classification when the local engine is unsure'
+    return lockedFor(id)
+      ? `${evPrice}/mo — ${evAiIncl} tools + ${evClIncl} classifier included`
+      : 'Everything: classification + suggestions & tools'
   }
 
-  const unconfigured = (id: AiBackend): boolean =>
-    id === 'haiku' && cfg?.haikuConfigured === false
-
-  // When the locked AI tier is tapped we don't jump straight to Stripe — we open
-  // a confirmation modal first so the user chooses the paid plan deliberately.
-  const [showUpgrade, setShowUpgrade] = useState(false)
+  // Tapping a locked paid tier opens a confirmation modal (chosen plan) rather
+  // than jumping straight to Stripe.
+  const [upgradePlan, setUpgradePlan] = useState<'classifier' | 'evolve' | null>(null)
   const [checkoutBusy, setCheckoutBusy] = useState(false)
 
-  const onPick = (id: AiBackend) => {
-    if (id === 'haiku' && locked) {
-      setShowUpgrade(true)
+  const onPick = (id: Tier) => {
+    if (id !== 'free' && lockedFor(id)) {
+      setUpgradePlan(id)
       return
     }
-    setBackend(id)
+    setTier(id)
   }
 
   const goToCheckout = async () => {
+    if (!upgradePlan) return
     setCheckoutBusy(true)
-    const { url, error } = await startCheckout(outOfCredit ? 'topup' : 'activate')
+    const { url, error } = await startSubscription(upgradePlan)
     if (url) {
       window.location.href = url
       return
     }
     setCheckoutBusy(false)
-    setShowUpgrade(false)
+    setUpgradePlan(null)
     if (error) alert(error)
   }
+
+  // Live usage readout for an active paid plan (per-pool, this cycle). All pool
+  // figures arrive in pence.
+  const pools = billing?.pools
+  const poolStr = (pool: { usedPence: number; includedPence: number }) =>
+    `£${(pool.usedPence / 100).toFixed(2)} / £${(pool.includedPence / 100).toFixed(0)}`
+  const usageLine =
+    billingOn && billing?.plan && billing.plan !== 'none' && pools
+      ? billing.plan === 'evolve'
+        ? `This cycle · tools ${poolStr(pools.ai)} · classifier ${poolStr(pools.classifier)}`
+        : `This cycle · classifier ${poolStr(pools.classifier)}`
+      : null
 
   return (
     <div className="ai-toggle">
       <strong className="ai-tier-label">AI tier</strong>
-      <div className="tier-seg" role="radiogroup" aria-label="AI tier">
+      <div className="tier-seg tier-seg-3" role="radiogroup" aria-label="AI tier">
         {TIERS.map((t) => (
           <button
             key={t.id}
@@ -101,22 +135,23 @@ function AiTierSelector() {
             onClick={() => onPick(t.id)}
           >
             {t.label}
-            {t.id === 'haiku' && locked && <span className="tier-lock"> 🔒</span>}
+            {lockedFor(t.id) && <span className="tier-lock"> 🔒</span>}
             {unconfigured(t.id) && <span className="tier-warn"> ·!</span>}
           </button>
         ))}
       </div>
       <span className="ai-toggle-text">{status(active)}</span>
+      {usageLine && <span className="ai-usage-text">{usageLine}</span>}
 
-      {showUpgrade && (
+      {upgradePlan && (
         <UpgradeModal
-          kind={outOfCredit ? 'topup' : 'activate'}
-          pricing={billing?.pricing}
+          plan={upgradePlan}
+          pricing={p}
           busy={checkoutBusy}
           onConfirm={goToCheckout}
           onStayFree={() => {
-            setShowUpgrade(false)
-            setBackend('local')
+            setUpgradePlan(null)
+            setTier('free')
           }}
         />
       )}
@@ -124,9 +159,11 @@ function AiTierSelector() {
   )
 }
 
-// A user-set spending cap for how much extra they'll spend on AI usage ON TOP OF
-// the one-time activation. Server-enforced at top-up checkout. Shown only once
-// the user has paid (activated) — before that there's nothing to cap.
+// A user-set cap on OVERAGE — usage charged beyond the plan's included pools.
+// The monthly plan fee itself never counts toward it. Server-enforced on every
+// paid call (not just at checkout), so usage stops at the limit rather than
+// billing past it. Shown only once a plan is live — before that there's nothing
+// to cap.
 function SpendLimit() {
   const { state, setBilling } = useStore()
   const billing = state.billing
@@ -138,13 +175,10 @@ function SpendLimit() {
   if (!billing?.billingEnabled || !billing?.active) return null
 
   const capPence = billing.capPence ?? 0
-  // Spend that counts against the limit is what's been paid ON TOP OF the
-  // activation fee (i.e. top-ups) — the activation itself doesn't eat the cap.
-  const activationPence = billing.pricing?.activationPence ?? 1000
-  const paidPence = billing.paidPence ?? 0
-  const topupPence = Math.max(0, paidPence - activationPence)
+  // What beyond-plan usage has cost this cycle — the figure the cap limits.
+  const overagePence = billing.overagePence ?? 0
   const capPounds = (capPence / 100).toFixed(2)
-  const topupPounds = (topupPence / 100).toFixed(2)
+  const overagePounds = (overagePence / 100).toFixed(2)
 
   const save = async (pounds: string) => {
     const pence = Math.max(0, Math.round(parseFloat(pounds || '0') * 100))
@@ -186,14 +220,14 @@ function SpendLimit() {
             setValue(capPence > 0 ? (capPence / 100).toString() : '')
             setEditing(true)
           }}
-          title="A cap on AI usage you buy on top of your plan — the £10 activation doesn't count toward it"
+          title="A cap on usage charged beyond your plan's included allowance — your monthly plan fee doesn't count toward it"
         >
           {capPence > 0 ? (
             <>
-              £{capPounds} on top-ups · £{topupPounds} used
+              £{capPounds} beyond your plan · £{overagePounds} used
             </>
           ) : (
-            <>No limit on extra usage — tap to set one</>
+            <>No limit on beyond-plan usage — tap to set one</>
           )}
         </button>
       ) : (
@@ -235,8 +269,9 @@ function SpendLimit() {
 
       {editing && (
         <p className="sl-hint">
-          A cap on AI usage you buy <strong>on top of</strong> your plan. Your £
-          {(activationPence / 100).toFixed(0)} activation doesn’t count toward it.
+          A cap on usage charged <strong>beyond</strong> your plan’s included
+          allowance. Your monthly plan fee doesn’t count toward it — set £0 for no
+          limit.
         </p>
       )}
 
@@ -255,13 +290,15 @@ export function Sidebar({ onOpenCalendar }: { onOpenCalendar?: () => void }) {
     () => typeof window === 'undefined' || window.innerWidth > 980,
   )
 
-  // Live search over the note list — matches note text and its detected kind.
+  // Live search over the note list — matches note text, its open-ended topic,
+  // and its detected kind.
   const [query, setQuery] = useState('')
   const q = query.trim().toLowerCase()
   const notes = q
     ? state.notes.filter(
         (n) =>
           n.text.toLowerCase().includes(q) ||
+          (n.topic ?? '').toLowerCase().includes(q) ||
           (KIND_META[n.kind]?.label ?? '').toLowerCase().includes(q),
       )
     : state.notes
@@ -340,7 +377,9 @@ export function Sidebar({ onOpenCalendar }: { onOpenCalendar?: () => void }) {
                       color: meta.tintInk,
                     }}
                   >
-                    {meta.label}
+                    {/* The note's open-ended topic reads as its category here;
+                        the kind label is the fallback before a topic emerges. */}
+                    {n.topic || meta.label}
                   </span>
                 ) : (
                   <span className="ni-draft">Draft</span>

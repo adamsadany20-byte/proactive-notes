@@ -113,74 +113,109 @@ Notes:
 
 ---
 
-## Billing (Stripe — credit model)
+## Billing (Stripe — recurring subscriptions)
 
-**The billing infrastructure is already built and wired up.** It gates the
-Claude AI tools (`/api/suggest`, `/api/recommend`, `/api/generate-feature`,
-`/api/enrich`) — but only when you turn it on. While `BILLING_ENABLED=false`
-(the default) everything is free and nothing is gated, so you can keep building
-and testing without paying.
+**The billing infrastructure is already built and wired up.** While
+`BILLING_ENABLED=false` (the default) everything is free and nothing is gated, so
+you can keep building and testing without paying.
 
-### The commercial model
-- **£10 one-time activation** unlocks the Claude tools and includes **£5 of AI
-  token credit** (real token value).
-- **Users can set their own spending limit** (a max lifetime spend). Once they
-  hit it, checkout is blocked so they can't be charged more than they chose.
-- Every Claude call meters its **actual Anthropic cost** (tokens + web
-  searches, converted to GBP pence) and deducts it from the credit balance.
-- When credit runs out, more is bought at **£2 per £1 of tokens** (default
-  top-up: £4 → £2 of credit). All knobs are env vars — see `server/.env.example`.
+> **Replaced the one-time credit model (2026-07-14).** Billing is now two
+> **recurring monthly subscriptions**. The old `activate`/`topup` one-time
+> endpoints still exist so pre-existing credit accounts keep working, but new
+> purchases go through subscriptions.
+
+### The commercial model — three tiers
+
+| Tier | Price | Included each month | Beyond that |
+|---|---|---|---|
+| **Free** | £0 | Local engine only, no network | — |
+| **Classification** | **£2/mo** | **£1** of classifier usage | £2 per £1 (2p per 1p) |
+| **Evolve AI** | **£12/mo** | **£5** coding + world knowledge **and £1** classifier — **two separate pools** | £2 per £1, **per pool** |
+
+- Evolve's two pools are metered **independently**: burning through the £5 tools
+  pool does not touch the £1 classifier pool, and each overages on its own.
+- Every Claude call meters its **actual Anthropic cost** (tokens + web searches,
+  converted to GBP pence) into the pool it belongs to.
+- **Users can set their own spending limit** on beyond-plan usage. The monthly
+  plan fee never counts toward it. Once the limit is hit, paid calls stop with a
+  402 (`cap_reached`) rather than billing past what they chose.
+- All knobs are env vars — see "New env vars" below.
+
+### Cost reality check
+Classification is Haiku with no web search: **~0.12p per call** (measured), i.e.
+roughly **800 classifications per £1**. It only fires when the local classifier
+is unsure (confidence < 0.72), so most notes never hit it. The expensive routes
+are the web-search ones (`/api/recommend` ~20p) — see the world-knowledge notes.
 
 ### What's implemented
 - **Master switch:** `BILLING_ENABLED` env var. `false` = free mode (default);
   `true` = enforce the paywall.
-- **Billing identity:** the Supabase user id when the client is logged in, else
-  a stable anonymous `clientId` (localStorage `evolve.clientId`). The server
-  verifies the Supabase token (see `SUPABASE_JWT_SECRET`) before trusting the id.
-- **Balance store** (`server/entitlementStore.js`): with
-  `SUPABASE_SERVICE_ROLE_KEY` set, balances live in the Supabase `entitlements`
-  table (survives redeploys — use this in production). Without it, they fall back
-  to `server/.subscriptions.json` (dev-grade flat file that resets on redeploy).
-- **Owner bypass:** `FREE_CLIENT_IDS` — a comma-separated list of clientIds that
-  are never billed. Put your own browser's id there so you can test a deployed
-  app for free even with billing on.
+- **Billing identity:** the Supabase user id when logged in, else a stable
+  anonymous `clientId` (localStorage `evolve.clientId`). The server verifies the
+  Supabase token (`SUPABASE_JWT_SECRET`) before trusting the id.
+- **Store** (`server/entitlementStore.js`): per key — `plan`
+  (`none|classifier|evolve`), `aiUsedPence` + `classifierUsedPence` (this
+  cycle's two pools), `periodStart`/`periodEnd`, `subscriptionId`, `capPence`.
+  With `SUPABASE_SERVICE_ROLE_KEY` set this lives in the Supabase `entitlements`
+  table (survives redeploys — **required in production**); otherwise it falls
+  back to `server/.subscriptions.json` (dev-grade, resets on redeploy).
+- **Owner bypass:** `FREE_CLIENT_IDS` — comma-separated clientIds never billed.
 - **Endpoints** (`server/index.js`):
-  - `GET /api/billing/status?clientId=…` → `{ billingEnabled, freeMode,
-    subscribed, active, creditPence, usedPence, pricing }`.
-  - `POST /api/billing/checkout` `{ clientId, kind: 'activate' | 'topup' }` →
-    Stripe Checkout URL (inline `price_data`, no Price objects needed).
-  - `POST /api/billing/webhook` → source of truth; on
-    `checkout.session.completed` it activates the account (+£5 credit) or adds
-    top-up credit (raw-body signature verification).
-- **Backend gate (the real one):** the AI routes return **402** unless
-  `hasAccess(clientId)` — active AND credit remaining — with a `reason`
-  (`not_activated` / `no_credit`) so the UI shows the right CTA.
-- **Metering:** every call's real cost (model tokens at Anthropic's USD prices
-  × `USD_TO_GBP`, plus $0.01/web search) is deducted server-side. Usage is
-  recorded even in free mode, so `usedPence` shows what users would cost you.
-- **Frontend:** when billing is on, the Claude tier shows 🔒 → activation
-  checkout (or a top-up when credit is spent), and the sidebar shows the live
-  credit balance. In free mode none of this appears.
+  - `GET /api/billing/status?clientId=…` → `{ billingEnabled, freeMode, plan,
+    hasClassifier, hasEvolve, pools: { ai, classifier }, overagePence, capPence,
+    periodEnd, pricing }`.
+  - `POST /api/billing/checkout` `{ clientId, kind: 'classifier' | 'evolve' }` →
+    Stripe Checkout URL, `mode: 'subscription'` with inline recurring
+    `price_data` (**no Price objects to create**). `kind: 'activate' | 'topup'`
+    still serves legacy one-time credit.
+  - `POST /api/billing/webhook` → source of truth (raw-body signature verified).
+- **Webhook events handled:**
+  - `checkout.session.completed` — starts the plan, sets the billing window.
+  - `invoice.paid` (`billing_reason: 'subscription_cycle'`) — bills the ENDING
+    cycle's overage as a Stripe invoice item, then **resets both pools** and
+    advances the period. (Overage is therefore billed one cycle in arrears.)
+  - `customer.subscription.deleted` — downgrades to free.
+- **Backend gate (the real one):** `/api/classify` needs **Classification or
+  Evolve**; `/api/suggest`, `/api/recommend`, `/api/generate-feature`,
+  `/api/enrich` need **Evolve**. Both also stop at the user's spend limit.
+  402s carry a `reason` (`no_plan` / `cap_reached` / `no_credit`) so the UI
+  shows the right CTA.
+- **Frontend:** the sidebar AI-tier control shows three tiers; locked ones show
+  🔒 and open a plan-specific confirm modal before Stripe. Subscribers see live
+  per-pool usage for the cycle and a beyond-plan spending limit.
 
 ### Turning it on
 1. **Stripe account** → copy the secret key (`sk_test_…` / `sk_live_…`).
-   No Products/Prices to create — Checkout uses inline `price_data`.
+   No Products/Prices to create — Checkout uses inline recurring `price_data`.
 2. Set in `server/.env`: `BILLING_ENABLED=true`, `STRIPE_SECRET_KEY`,
    `STRIPE_WEBHOOK_SECRET`.
 3. **Webhook:** in the Stripe dashboard (or `stripe listen --forward-to
-   localhost:8787/api/billing/webhook` for local) point it at
-   `/api/billing/webhook` and subscribe to `checkout.session.completed`.
-4. Restart the server. The startup log prints the billing state.
+   localhost:8787/api/billing/webhook` locally) point it at
+   `/api/billing/webhook` and subscribe to **`checkout.session.completed`,
+   `invoice.paid`, and `customer.subscription.deleted`**.
+4. **Run the entitlements migration** (see the Accounts section — the
+   subscription columns are required).
+5. Restart the server. The startup log prints the billing state.
+
+### New env vars (all optional — these are the defaults)
+```bash
+CLASSIFIER_PRICE_PENCE=200            # Classification plan: £2/mo
+CLASSIFIER_INCLUDED_PENCE=100         #   includes £1 of classifier usage
+EVOLVE_PRICE_PENCE=1200               # Evolve AI plan: £12/mo
+EVOLVE_AI_INCLUDED_PENCE=500          #   includes £5 coding + world knowledge
+EVOLVE_CLASSIFIER_INCLUDED_PENCE=100  #   includes £1 classifier
+OVERAGE_MARKUP=2                      # charge £2 per £1 of beyond-plan usage
+```
 
 ### Before charging real money: the checklist
-This is now wired up — you just need to set the env vars:
 1. **Accounts** (so a subscription follows the person, not the browser): enable
-   Supabase Auth (see the Accounts section below). When logged in, the billing
-   key is the Supabase user id, so paid credit works across devices.
-2. **Persistent balances:** set `SUPABASE_SERVICE_ROLE_KEY` so credit lives in
-   the Supabase `entitlements` table instead of the flat file (which resets on
-   redeploy and would wipe customers' credit).
-3. **Verified tokens:** set `SUPABASE_JWT_SECRET` so a forged token can't
+   Supabase Auth (see below). When logged in, the billing key is the Supabase
+   user id, so a plan works across devices.
+2. **Persistent store:** set `SUPABASE_SERVICE_ROLE_KEY` so plans live in the
+   Supabase `entitlements` table instead of the flat file (which resets on
+   redeploy and would wipe paying customers' plans).
+3. **Run the subscription-columns migration** on `entitlements` (below).
+4. **Verified tokens:** set `SUPABASE_JWT_SECRET` so a forged token can't
    impersonate another user's account.
 
 The startup log prints which entitlement backend and auth mode are active — check
@@ -226,17 +261,25 @@ alter table reminders enable row level security;
 create policy "own reminders" on reminders
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
--- Billing entitlements (paid credit). Keyed by the billing key: the Supabase
+-- Billing entitlements (subscriptions). Keyed by the billing key: the Supabase
 -- user id when logged in, else an anonymous clientId. RLS is ON with NO policy,
--- so the browser can never read or grant itself credit — only the server's
+-- so the browser can never read or grant itself a plan — only the server's
 -- service_role key (which bypasses RLS) touches this table.
 create table entitlements (
   key text primary key,
   status text not null default 'none',
-  credit_pence double precision not null default 0,
-  used_pence double precision not null default 0,
+  -- Recurring-subscription model:
+  plan text not null default 'none',                        -- none | classifier | evolve
+  ai_used_pence double precision not null default 0,         -- coding + world-knowledge pool, THIS cycle
+  classifier_used_pence double precision not null default 0, -- classifier pool, THIS cycle
+  period_start timestamptz,                                  -- current billing-cycle window
+  period_end timestamptz,
+  subscription_id text,                                      -- Stripe subscription id
+  -- Shared / legacy:
+  credit_pence double precision not null default 0,          -- legacy one-time credit model
+  used_pence double precision not null default 0,            -- lifetime usage (all pools)
   paid_pence double precision not null default 0,
-  cap_pence double precision not null default 0,   -- user's own spend limit (0 = none)
+  cap_pence double precision not null default 0,   -- user's limit on BEYOND-PLAN usage (0 = none)
   customer_id text,
   updated_at timestamptz not null default now()
 );
@@ -257,11 +300,21 @@ create table push_targets (
 alter table push_targets enable row level security;
 ```
 
-> **Already created the `entitlements` table earlier (without `cap_pence`)?**
-> Just add the column:
+> ### ⚠️ Migration: already created `entitlements` before 2026-07-14?
+> The recurring-subscription model added columns. **Run this before enabling
+> billing** — without it, every subscription write to Supabase fails:
 > ```sql
+> alter table entitlements add column if not exists plan text not null default 'none';
+> alter table entitlements add column if not exists ai_used_pence double precision not null default 0;
+> alter table entitlements add column if not exists classifier_used_pence double precision not null default 0;
+> alter table entitlements add column if not exists period_start timestamptz;
+> alter table entitlements add column if not exists period_end timestamptz;
+> alter table entitlements add column if not exists subscription_id text;
+> -- from an earlier migration, harmless to re-run:
 > alter table entitlements add column if not exists cap_pence double precision not null default 0;
 > ```
+> Existing rows keep their legacy `credit_pence` and default to `plan='none'`, so
+> old credit accounts keep working until they subscribe.
 
 > **Push works without Supabase too.** With no `SUPABASE_SERVICE_ROLE_KEY`, push
 > targets fall back to a flat file (`server/.push.json`) — fine for local dev,
@@ -329,8 +382,15 @@ This prints a signing secret (`whsec_...`). Copy it.
 **Production (after you deploy):**
 1. In the Stripe dashboard, go to **Developers → Webhooks** → **Add endpoint**.
 2. Endpoint URL: `https://your-app.onrender.com/api/billing/webhook`
-3. Select events: `checkout.session.completed`
+3. Select events — **all three are required for subscriptions**:
+   - `checkout.session.completed` — starts the plan
+   - `invoice.paid` — bills last cycle's overage, then resets the usage pools
+   - `customer.subscription.deleted` — downgrades to free on cancellation
 4. Reveal the signing secret and copy it.
+
+> **No Products or Prices to create.** Checkout builds the £2/mo and £12/mo plans
+> from inline recurring `price_data`, so there's nothing to configure in the
+> Stripe product catalogue.
 
 ### Step 3: Configure the server
 Add to `server/.env`:
@@ -338,18 +398,21 @@ Add to `server/.env`:
 BILLING_ENABLED=true
 STRIPE_SECRET_KEY=sk_test_...       # from Step 1
 STRIPE_WEBHOOK_SECRET=whsec_...      # from Step 2
-# Persist paid credit + verify users (both from Supabase → Settings → API):
+# Persist plans + verify users (both from Supabase → Settings → API):
 SUPABASE_URL=https://xxxx.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=eyJhbGc...   # service_role key — server-only, secret
 SUPABASE_JWT_SECRET=...                # JWT Secret — verifies user tokens
 ```
+Pricing knobs are optional (defaults shown in the Billing section above).
 
-> **Why the two Supabase keys matter for billing:** paid credit is stored in the
-> Supabase `entitlements` table (created in the Accounts SQL above) so it
-> **survives redeploys**. Without `SUPABASE_SERVICE_ROLE_KEY` the server falls
-> back to a local flat file (`server/.subscriptions.json`) that resets whenever
-> the host restarts — fine for testing, but it would **wipe customers' paid
-> credit** in production. The startup log tells you which backend is active. On
+> **Why the two Supabase keys matter for billing:** plans + cycle usage are
+> stored in the Supabase `entitlements` table (created in the Accounts SQL above)
+> so they **survive redeploys**. Without `SUPABASE_SERVICE_ROLE_KEY` the server
+> falls back to a local flat file (`server/.subscriptions.json`) that resets
+> whenever the host restarts — fine for testing, but it would **wipe paying
+> customers' subscriptions** in production. The startup log tells you which
+> backend is active. Also make sure you've run the **subscription-columns
+> migration** in the Accounts section, or Supabase writes will fail. On
 > Render you only need to add `SUPABASE_SERVICE_ROLE_KEY` + `SUPABASE_JWT_SECRET`
 > (the URL is already there via `VITE_SUPABASE_URL`); set `SUPABASE_URL` too for
 > local testing since Vite's root env isn't loaded into the server process.

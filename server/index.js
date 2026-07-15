@@ -15,6 +15,12 @@ import {
   addCredit,
   recordUsage,
   setCap,
+  planOf,
+  hasClassifier,
+  hasEvolve,
+  setSubscription,
+  resetCycle,
+  cancelSubscription,
   entitlementsBackend,
 } from './entitlementStore.js'
 import {
@@ -119,6 +125,52 @@ const TOPUP_PRICE_PENCE = Number(process.env.TOPUP_PRICE_PENCE || 400) // defaul
 // Anthropic bills in USD; credit is in GBP pence. Fixed conversion, env-tunable.
 const USD_TO_GBP = Number(process.env.USD_TO_GBP || 0.78)
 
+// ---------------------------------------------------------------------------
+// Recurring subscription plans (the current model). Two tiers, each billed
+// monthly with independently-metered included usage pools; overage bills at
+// OVERAGE_MARKUP pence per 1p of token value beyond a pool's allowance.
+//   • classifier — £2/mo, includes £1 of classifier usage.
+//   • evolve     — £12/mo, includes £5 of coding+world-knowledge ('ai' pool)
+//                  AND £1 of classifier usage.
+// All values in pence, env-tunable.
+// ---------------------------------------------------------------------------
+const CLASSIFIER_PRICE_PENCE = Number(process.env.CLASSIFIER_PRICE_PENCE || 200) // £2/mo
+const CLASSIFIER_INCLUDED_PENCE = Number(process.env.CLASSIFIER_INCLUDED_PENCE || 100) // £1 classifier
+const EVOLVE_PRICE_PENCE = Number(process.env.EVOLVE_PRICE_PENCE || 1200) // £12/mo
+const EVOLVE_AI_INCLUDED_PENCE = Number(process.env.EVOLVE_AI_INCLUDED_PENCE || 500) // £5 coding+knowledge
+const EVOLVE_CLASSIFIER_INCLUDED_PENCE = Number(
+  process.env.EVOLVE_CLASSIFIER_INCLUDED_PENCE || 100,
+) // £1 classifier
+const OVERAGE_MARKUP = Number(process.env.OVERAGE_MARKUP || 2) // charge £2 per £1 of overage
+
+// What a plan includes for a given usage pool ('ai' | 'classifier'), in pence.
+function includedFor(plan, pool) {
+  if (plan === 'classifier') return pool === 'classifier' ? CLASSIFIER_INCLUDED_PENCE : 0
+  if (plan === 'evolve')
+    return pool === 'classifier' ? EVOLVE_CLASSIFIER_INCLUDED_PENCE : EVOLVE_AI_INCLUDED_PENCE
+  return 0
+}
+const planPrice = (plan) =>
+  plan === 'evolve' ? EVOLVE_PRICE_PENCE : plan === 'classifier' ? CLASSIFIER_PRICE_PENCE : 0
+
+// What the user would be CHARGED for usage beyond their plan this cycle: each
+// pool's spill past its allowance, at the markup. This is the number the user's
+// spend limit caps — the plan fee itself never counts toward it.
+function overageChargePence(ent) {
+  if (!ent || ent.plan === 'none') return 0
+  return (
+    Math.max(0, (ent.aiUsedPence || 0) - includedFor(ent.plan, 'ai')) * OVERAGE_MARKUP +
+    Math.max(0, (ent.classifierUsedPence || 0) - includedFor(ent.plan, 'classifier')) *
+      OVERAGE_MARKUP
+  )
+}
+
+// A subscriber who set a limit stops at it, rather than being billed past what
+// they chose to spend. (cap 0 = no limit.)
+function capReached(ent) {
+  return !!ent && ent.capPence > 0 && overageChargePence(ent) >= ent.capPence
+}
+
 // Comma-separated clientIds that are never billed — put your own browser's
 // `evolve.clientId` (localStorage) here so YOU can keep testing a deployed app
 // for free even with billing enabled for everyone else.
@@ -134,19 +186,66 @@ const FREE_CLIENT_IDS = new Set(
 async function hasAccess(clientId) {
   if (!BILLING_ENABLED) return true
   if (clientId && FREE_CLIENT_IDS.has(clientId)) return true
+  // New model: the Evolve subscription unlocks the coding/world-knowledge
+  // features — unless the user's own spend limit has been reached.
+  if (await hasEvolve(clientId)) {
+    return !capReached(await getEntitlement(clientId))
+  }
+  // Legacy one-time credit, still honoured for pre-subscription accounts.
   return (await isActive(clientId)) && (await hasCredit(clientId))
 }
 
-// 402 payload that tells the frontend WHY (buy activation vs top up credit).
-async function paywallBody(clientId, extra = {}) {
+// Classification is unlocked by EITHER paid plan (classifier or evolve), and
+// stops at the user's spend limit like everything else.
+async function hasClassifyAccess(clientId) {
+  if (!BILLING_ENABLED) return true
+  if (clientId && FREE_CLIENT_IDS.has(clientId)) return true
+  if (!(await hasClassifier(clientId))) return false
+  return !capReached(await getEntitlement(clientId))
+}
+
+// 402 payload that tells the frontend WHY: which plan is needed, or that the
+// user's own spend limit stopped them. `need` is the capability the route wants.
+async function paywallBody(clientId, extra = {}, need = 'evolve') {
+  const ent = await getEntitlement(clientId)
+  const money = (p) => `£${(p / 100).toFixed(2)}`
+
+  // Subscribed, but they've hit the limit they set on beyond-plan usage.
+  if (capReached(ent)) {
+    return {
+      configured: true,
+      subscribed: false,
+      reason: 'cap_reached',
+      error:
+        `You've reached the ${money(ent.capPence)} limit you set for usage beyond ` +
+        `your plan. Raise or remove it to continue.`,
+      ...extra,
+    }
+  }
+
+  if (need === 'classifier') {
+    return {
+      configured: true,
+      subscribed: false,
+      reason: 'no_plan',
+      error:
+        `Sharper classification is part of the Classification ` +
+        `(${money(CLASSIFIER_PRICE_PENCE)}/mo) and Evolve AI ` +
+        `(${money(EVOLVE_PRICE_PENCE)}/mo) plans.`,
+      ...extra,
+    }
+  }
+
+  // Evolve features. Legacy credit accounts get the old top-up message.
   const active = await isActive(clientId)
+  const legacyCredit = active && (ent?.plan || 'none') === 'none'
   return {
     configured: true,
     subscribed: false,
-    reason: active ? 'no_credit' : 'not_activated',
-    error: active
+    reason: legacyCredit ? 'no_credit' : 'no_plan',
+    error: legacyCredit
       ? 'AI credit used up — top up to continue.'
-      : 'Unlock the AI tools with a one-time £10 activation.',
+      : `The AI tools are part of Evolve AI (${money(EVOLVE_PRICE_PENCE)}/mo).`,
     ...extra,
   }
 }
@@ -179,12 +278,14 @@ function usageCostPence(usage, model) {
   return usd * USD_TO_GBP * 100
 }
 
-// Deduct a call's cost from the client's credit. Metered even in free mode so
-// `usedPence` shows what your users would have cost you.
-async function meterUsage(clientId, costPence) {
+// Deduct a call's cost from the client's usage. `pool` says which allowance it
+// draws from — 'ai' (coding + world knowledge) or 'classifier' — so the Evolve
+// plan can meter its two included pots independently. Metered even in free mode
+// so `usedPence` shows what your users would have cost you.
+async function meterUsage(clientId, costPence, pool = 'ai') {
   if (!clientId || !(costPence > 0)) return
   try {
-    await recordUsage(clientId, costPence)
+    await recordUsage(clientId, costPence, pool)
   } catch (err) {
     console.error('metering error:', err?.message || err)
   }
@@ -307,23 +408,53 @@ app.get('/api/billing/status', async (req, res) => {
   // Prefer userId (from Supabase JWT); fall back to clientId (legacy, for local-only)
   const key = req.userId || req.clientId
   const pricing = {
+    // New subscription tiers.
+    classifierPricePence: CLASSIFIER_PRICE_PENCE,
+    classifierIncludedPence: CLASSIFIER_INCLUDED_PENCE,
+    evolvePricePence: EVOLVE_PRICE_PENCE,
+    evolveAiIncludedPence: EVOLVE_AI_INCLUDED_PENCE,
+    evolveClassifierIncludedPence: EVOLVE_CLASSIFIER_INCLUDED_PENCE,
+    overageMarkup: OVERAGE_MARKUP, // £ charged per £1 of usage beyond a pool's allowance
+    // Legacy one-time credit model (kept for old accounts / back-compat).
     activationPence: ACTIVATION_PRICE_PENCE,
     includedCreditPence: ACTIVATION_CREDIT_PENCE,
     topupPence: TOPUP_PRICE_PENCE,
-    tokenMarkup: TOKEN_MARKUP, // £ paid per £1 of tokens after the included credit
+    tokenMarkup: TOKEN_MARKUP,
   }
   try {
-    const [e, subscribed, active] = await Promise.all([
+    const [e, subscribed, active, classifier, evolve] = await Promise.all([
       getEntitlement(key),
       hasAccess(key),
       isActive(key),
+      hasClassifyAccess(key),
+      hasEvolve(key),
     ])
+    const plan = e?.plan || 'none'
+    const freeBypass = !!(key && FREE_CLIENT_IDS.has(key))
     res.json({
       billingEnabled: BILLING_ENABLED,
       billingConfigured: billingConfigured(),
       freeMode: !BILLING_ENABLED,
       subscribed,
-      active: active || !!(key && FREE_CLIENT_IDS.has(key)),
+      active: active || freeBypass,
+      // Subscription state + the two metered pools this cycle.
+      plan,
+      hasClassifier: classifier || freeBypass || !BILLING_ENABLED,
+      hasEvolve: evolve || freeBypass || !BILLING_ENABLED,
+      pools: {
+        ai: {
+          usedPence: e ? Math.round(e.aiUsedPence * 100) / 100 : 0,
+          includedPence: includedFor(plan, 'ai'),
+        },
+        classifier: {
+          usedPence: e ? Math.round(e.classifierUsedPence * 100) / 100 : 0,
+          includedPence: includedFor(plan, 'classifier'),
+        },
+      },
+      periodEnd: e?.periodEnd || 0,
+      // What beyond-plan usage would cost this cycle — the figure the user's
+      // spend limit caps.
+      overagePence: e ? Math.round(overageChargePence(e) * 100) / 100 : 0,
       creditPence: e ? Math.max(0, Math.round(e.creditPence * 100) / 100) : 0,
       usedPence: e ? Math.round(e.usedPence * 100) / 100 : 0,
       paidPence: e ? Math.round(e.paidPence) : 0,
@@ -360,6 +491,50 @@ app.post('/api/billing/checkout', async (req, res) => {
   const key = req.userId || req.body?.clientId
   const { kind = 'activate' } = req.body || {}
   if (!key) return res.status(400).json({ error: 'Missing auth or clientId' })
+
+  // New model: recurring subscription plans. `kind` is the plan id.
+  if (kind === 'classifier' || kind === 'evolve') {
+    const plan = kind
+    const amount = planPrice(plan)
+    const name =
+      plan === 'evolve'
+        ? `Evolve AI — £${(EVOLVE_PRICE_PENCE / 100).toFixed(0)}/mo (incl. £${(
+            EVOLVE_AI_INCLUDED_PENCE / 100
+          ).toFixed(0)} coding & world knowledge + £${(
+            EVOLVE_CLASSIFIER_INCLUDED_PENCE / 100
+          ).toFixed(0)} classifier)`
+        : `Classification — £${(CLASSIFIER_PRICE_PENCE / 100).toFixed(0)}/mo (incl. £${(
+            CLASSIFIER_INCLUDED_PENCE / 100
+          ).toFixed(0)} classifier usage)`
+    try {
+      const stripe = await getStripe()
+      const session = await stripe.checkout.sessions.create({
+        mode: 'subscription',
+        line_items: [
+          {
+            price_data: {
+              currency: 'gbp',
+              product_data: { name },
+              unit_amount: amount,
+              recurring: { interval: 'month' },
+            },
+            quantity: 1,
+          },
+        ],
+        client_reference_id: key,
+        metadata: { key, plan },
+        // Copy the key+plan onto the subscription so invoice/subscription
+        // webhooks (which don't carry the checkout session) can resolve them.
+        subscription_data: { metadata: { key, plan } },
+        success_url: `${APP_ORIGIN}/?billing=success`,
+        cancel_url: `${APP_ORIGIN}/?billing=cancel`,
+      })
+      return res.json({ url: session.url })
+    } catch (err) {
+      console.error('subscription checkout error:', err?.message || err)
+      return res.status(502).json({ error: 'checkout_failed' })
+    }
+  }
 
   const isTopup = kind === 'topup'
   const amount = isTopup ? TOPUP_PRICE_PENCE : ACTIVATION_PRICE_PENCE
@@ -473,6 +648,7 @@ app.post(
     }
 
     try {
+      const stripe = await getStripe()
       switch (event.type) {
         case 'checkout.session.completed': {
           const s = event.data.object
@@ -480,8 +656,21 @@ app.post(
           // billing key (Supabase userId, or anonymous clientId).
           const clientId = s.client_reference_id || s.metadata?.key
           if (!clientId) break
+          // New: subscription checkouts start a plan and set its billing window.
+          if (s.mode === 'subscription' && s.metadata?.plan) {
+            const sub = s.subscription ? await stripe.subscriptions.retrieve(s.subscription) : null
+            await setSubscription(clientId, {
+              plan: s.metadata.plan,
+              subscriptionId: s.subscription ?? null,
+              customerId: s.customer ?? null,
+              periodStart: sub ? sub.current_period_start * 1000 : Date.now(),
+              periodEnd: sub ? sub.current_period_end * 1000 : null,
+              paidPence: s.amount_total ?? planPrice(s.metadata.plan),
+            })
+            break
+          }
+          // Legacy one-time credit model.
           if (s.metadata?.kind === 'topup') {
-            // Paid amount converts to token credit at the markup ratio.
             const credit = Math.floor((s.amount_total ?? 0) / TOKEN_MARKUP)
             await addCredit(clientId, credit, s.amount_total ?? 0)
           } else {
@@ -491,6 +680,32 @@ app.post(
               paidPence: s.amount_total ?? ACTIVATION_PRICE_PENCE,
             })
           }
+          break
+        }
+        // A renewal payment. Bill the just-ended cycle's overage (one cycle in
+        // arrears, via an invoice item on the next invoice), then reset pools.
+        case 'invoice.paid': {
+          const inv = event.data.object
+          if (inv.billing_reason !== 'subscription_cycle') break // create handled above
+          const clientId = inv.subscription_details?.metadata?.key || inv.metadata?.key
+          if (!clientId) break
+          const ent = await getEntitlement(clientId)
+          if (!ent || ent.plan === 'none') break
+          await billOverage(stripe, ent, inv.customer)
+          const sub = inv.subscription
+            ? await stripe.subscriptions.retrieve(inv.subscription)
+            : null
+          await resetCycle(clientId, {
+            periodStart: sub ? sub.current_period_start * 1000 : Date.now(),
+            periodEnd: sub ? sub.current_period_end * 1000 : null,
+            paidPence: inv.amount_paid ?? 0,
+          })
+          break
+        }
+        case 'customer.subscription.deleted': {
+          const sub = event.data.object
+          const clientId = sub.metadata?.key
+          if (clientId) await cancelSubscription(clientId)
           break
         }
         default:
@@ -503,6 +718,30 @@ app.post(
     }
   },
 )
+
+// Compute a subscriber's overage for the ending cycle (each pool beyond its
+// included allowance, charged at OVERAGE_MARKUP) and add it as an invoice item
+// on the customer, so it lands on the upcoming invoice. No-op when nothing's owed.
+async function billOverage(stripe, ent, customerId) {
+  if (!customerId) return
+  const pools = [
+    { pool: 'ai', used: ent.aiUsedPence || 0 },
+    { pool: 'classifier', used: ent.classifierUsedPence || 0 },
+  ]
+  let overagePence = 0
+  for (const { pool, used } of pools) {
+    const over = Math.max(0, used - includedFor(ent.plan, pool))
+    overagePence += over * OVERAGE_MARKUP
+  }
+  overagePence = Math.round(overagePence)
+  if (overagePence <= 0) return
+  await stripe.invoiceItems.create({
+    customer: customerId,
+    currency: 'gbp',
+    amount: overagePence,
+    description: `AI usage over your plan's included allowance (£${(overagePence / 100).toFixed(2)})`,
+  })
+}
 
 // ---------------------------------------------------------------------------
 // Web Push — closed-app reminder notifications.
@@ -707,6 +946,7 @@ async function callClaude({
   webSearch,
   maxSearches,
   clientId,
+  pool = 'ai',
 }) {
   const anthropic = await getAnthropic()
   const useSearch = !!webSearch && WEB_SEARCH
@@ -757,7 +997,7 @@ async function callClaude({
     }
     throw new Error('model did not finish after several continuations')
   } finally {
-    await meterUsage(clientId, costPence)
+    await meterUsage(clientId, costPence, pool)
   }
 }
 
@@ -839,6 +1079,99 @@ app.post('/api/enrich', async (req, res) => {
     const msg = err?.message || String(err)
     console.error(`enrich error [${resolved}]:`, msg)
     res.status(502).json({ configured: true, error: msg })
+  }
+})
+
+// ---------------------------------------------------------------------------
+// Classification — the paid upgrade over the local keyword classifier. Fires
+// ONLY when the local engine is uncertain (see useRemoteClassify on the client),
+// so most notes never reach it. Cheap: Haiku, no web search — well under 1p a
+// call. Meters into the 'classifier' pool so it bills separately from the
+// coding/world-knowledge features.
+// ---------------------------------------------------------------------------
+const NOTE_KINDS = [
+  'academic',
+  'event',
+  'project',
+  'goal',
+  'tasks',
+  'purchase',
+  'health',
+  'finance',
+  'travel',
+  'recipe',
+  'media',
+  'general',
+]
+
+const CLASSIFY_SCHEMA = {
+  type: 'object',
+  properties: {
+    kind: { type: 'string', enum: NOTE_KINDS },
+    topic: { type: 'string' },
+    confidence: { type: 'number' },
+  },
+  required: ['kind', 'topic', 'confidence'],
+  additionalProperties: false,
+}
+
+const CLASSIFY_SYSTEM = `You classify a short personal note by the user's INTENT — what they want to DO with it —
+not by world knowledge. Pick exactly ONE kind from this fixed set, choosing by what the note is
+FOR:
+- academic: studying for a test/exam, revising a subject, coursework.
+- event: a dated thing to attend or watch — concert, match, wedding, meeting, appointment with a time.
+- project: something to BUILD, make, or prepare — an app, a website, a work presentation, a deliverable.
+- goal: a personal habit or ongoing goal — exercise, meditate, read more, save regularly.
+- tasks: a to-do list / checklist / errands — several things to get done.
+- purchase: deciding on or researching a specific product to BUY.
+- health: medical / wellbeing — doctor or dentist appointments, medication, symptoms, treatment.
+- finance: money admin — bills, rent, tax, statements, budgeting chores.
+- travel: a TRIP to plan — itinerary, flights, hotels, packing, a place you're going.
+- recipe: a meal to cook — ingredients and steps.
+- media: things to watch / read / listen to — a watchlist, reading list.
+- general: a plain note that fits none of the above.
+
+Guidance:
+- Judge by the dominant intent. "work presentation" is something you PREPARE → project, NOT academic.
+  "trip to Oman" is a place you're going → travel, NOT a generic event. "dentist Friday 2pm" → health.
+- A single strong cue is enough; you don't need many words.
+- Also return "topic": a short 1-3 word label (Title Case) naming what the note is ABOUT
+  (e.g. "Oman", "Work Presentation", "Sourdough Bread"). Keep it concrete and specific.
+- "confidence" is your genuine certainty (0..1).
+Return JSON only.`
+
+app.post('/api/classify', async (req, res) => {
+  const { text = '', localKind = '', localConfidence = 0, backend } = req.body || {}
+  const key = req.userId || req.body?.clientId
+  if (!(await hasClassifyAccess(key)))
+    return res.status(402).json(await paywallBody(key, { classified: false }, 'classifier'))
+  const resolved = resolveBackend(backend)
+  if (!resolved) return res.json({ configured: false })
+  if (text.trim().length < 3) return res.json({ configured: true, classified: false })
+
+  try {
+    const data = await generateJSON(resolved, {
+      model: AI_MODEL_CODE,
+      system: CLASSIFY_SYSTEM,
+      user: `Note:\n"""\n${text}\n"""\n\nThe local classifier guessed "${localKind}" at ${Math.round(
+        Number(localConfidence) * 100,
+      )}% confidence, but it was unsure. Decide the correct kind yourself.`,
+      schema: CLASSIFY_SCHEMA,
+      maxTokens: 256,
+      clientId: key,
+      pool: 'classifier',
+    })
+    res.json({
+      configured: true,
+      classified: true,
+      kind: data.kind,
+      topic: data.topic,
+      confidence: data.confidence,
+    })
+  } catch (err) {
+    const msg = err?.message || String(err)
+    console.error(`classify error [${resolved}]:`, msg)
+    res.status(502).json({ configured: true, classified: false, error: msg })
   }
 })
 

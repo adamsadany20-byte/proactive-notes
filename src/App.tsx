@@ -106,17 +106,20 @@ export function App() {
           >
             <DayGlyphIcon className="mnav-ico" />
             Calendar
-            {streak.current > 0 && (
-              <span
-                className={`mnav-streak ${streak.atRisk ? 'at-risk' : ''}`}
-                aria-label={`${streak.current} day streak`}
-              >
-                <FlameIcon className="ico" />
-                {streak.current}
-              </span>
-            )}
           </button>
         </nav>
+        {streak.current > 0 && (
+          <button
+            type="button"
+            className={`mnav-streak ${streak.atRisk ? 'at-risk' : ''}`}
+            aria-label={`${streak.current} day streak — open calendar`}
+            title="Your streak"
+            onClick={() => goto('calendar')}
+          >
+            <FlameIcon className="ico" />
+            <span className="mnav-streak-n">{streak.current}</span>
+          </button>
+        )}
       </header>
 
       <Sidebar onOpenCalendar={() => goto('calendar')} />

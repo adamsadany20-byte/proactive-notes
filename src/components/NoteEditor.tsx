@@ -3,6 +3,7 @@ import type { Note } from '../types'
 import { useStore } from '../store/appStore'
 import { useInference } from '../ui/useInference'
 import { useWorldKnowledge } from '../ui/useWorldKnowledge'
+import { useRemoteClassify } from '../ui/useRemoteClassify'
 import { useVoiceInput } from '../ui/useVoiceInput'
 import { KIND_META, tintVars } from '../ui/kindMeta'
 import { ContextualPrompt } from './ContextualPrompt'
@@ -17,6 +18,7 @@ export function NoteEditor({ note }: { note: Note }) {
   const { state, setText, answer, skip, appendText } = useStore()
   const result = useInference(note)
   useWorldKnowledge(note, result)
+  useRemoteClassify(note, result)
   const taRef = useRef<HTMLTextAreaElement>(null)
 
   // Voice-memo dictation → appended to the note's current text. Runs entirely
@@ -80,7 +82,9 @@ export function NoteEditor({ note }: { note: Note }) {
         className={`note-card ${recognised ? 'tinted' : ''}`}
         style={tintVars(result.kind)}
       >
-        {(recognised && meta.label) || note.enrichment?.status === 'pending' ? (
+        {(recognised && meta.label) ||
+        note.enrichment?.status === 'pending' ||
+        note.classification?.status === 'pending' ? (
           <div className="editor-top">
             {recognised && meta.label && (
               <span className="ambient">
@@ -89,7 +93,11 @@ export function NoteEditor({ note }: { note: Note }) {
                   const KindIcon = KIND_ICONS[result.kind]
                   return KindIcon ? <KindIcon className="ico" /> : null
                 })()}
-                {meta.label}
+                {/* Lead with the open-ended topic (what it's about); keep the
+                    behavioural kind as a quiet suffix. Falls back to the kind
+                    label alone when nothing salient has been written yet. */}
+                <span className="ambient-topic">{result.topic || meta.label}</span>
+                {result.topic && <span className="ambient-kind">{meta.label}</span>}
                 <span className="conf">
                   {Math.round(result.confidence * 100)}%
                 </span>
@@ -99,6 +107,12 @@ export function NoteEditor({ note }: { note: Note }) {
               <span className="ambient world">
                 <span className="pulse" />
                 <StarSixIcon className="ico" /> looking into that…
+              </span>
+            )}
+            {note.classification?.status === 'pending' && (
+              <span className="ambient world">
+                <span className="pulse" />
+                <StarSixIcon className="ico" /> refining…
               </span>
             )}
           </div>

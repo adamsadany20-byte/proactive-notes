@@ -36,8 +36,8 @@ const SIGNALS: Record<Exclude<NoteKind, 'unknown' | 'general'>, RegExp[]> = {
     /\b(memori[sz]e|learn for|prepare for (the|my)? ?(test|exam)|chapter \d+|unit \d+|professor|lecturer|teacher|classmate|grade \d+)\b/,
   ],
   event: [
-    /\b(wwdc|gdc|ces|comic ?con|sxsw|coachella|glastonbury|olympics|world cup|euros|wimbledon|nba finals|keynote|conference|convention|concert|gig|festival|match|fixture|game|race|grand prix|f1|super bowl|premiere|launch event|expo|summit|wedding|engagement|party|birthday|anniversary|meetup|gala|ceremony|graduation|reunion|recital|screening|exhibition|opening|hackathon|retreat|webinar|workshop|showcase|show|musical|play|theatre|theater|tournament|playoffs?|finals?|derby|interview|appointment|doctor'?s? appointment|dentist|flight|train|trip|holiday|vacation|getaway)\b/,
-    /\b(watch|watching|attend|attending|going to|go to|tickets?|rsvp|livestream|stream|streaming|book(ed)?|reserve|reservation|catch the)\b/,
+    /\b(wwdc|gdc|ces|comic ?con|sxsw|coachella|glastonbury|olympics|world cup|euros|wimbledon|nba finals|keynote|conference|convention|concert|gig|festival|match|fixture|game|race|grand prix|f1|super bowl|premiere|launch event|expo|summit|wedding|engagement|party|birthday|anniversary|meetup|gala|ceremony|graduation|reunion|recital|screening|exhibition|opening|hackathon|retreat|webinar|workshop|showcase|musical|play|theatre|theater|tournament|playoffs?|derby)\b/,
+    /\b(attend|attending|going to|go to|tickets?|rsvp|livestream|reserve|reservation|catch the)\b/,
   ],
   project: [
     /\b(app|application|website|web ?app|site|platform|tool|build|building|develop|developing|create|creating|prototype|poc|mvp|startup|saas|side project|hobby project|game|api|sdk|cli|extension|plugin|bot|dashboard|landing page|portfolio|redesign|rebuild|refactor|migration|integration|backend|frontend|fullstack|database|schema|infra|infrastructure|pipeline|ml model|ai model|model|library|package|module|component|feature|microservice)\b/,
@@ -57,6 +57,31 @@ const SIGNALS: Record<Exclude<NoteKind, 'unknown' | 'general'>, RegExp[]> = {
   purchase: [
     /\b(thinking of (buying|getting)|looking to buy|want to buy|wanna buy|need to buy|planning to buy|in the market for|shopping for|should i (buy|get)|deciding (between|on)|upgrade (my|to)|treat myself to|splurge on|invest in a|buy(ing)? (a|an|the|some|new|myself)|get(ting)? (a|an|the|a new|myself a)|new (phone|laptop|car|tv|headphones|camera|console|watch|bike|mattress|desk|chair|monitor|tablet|fridge|sofa|gpu|pc))\b/,
     /\b(budget|price|prices|pricing|cost|deal|deals|discount|on sale|review|reviews|rating|ratings|warranty|brand|model|specs?|compare|comparison|refurbished|second-?hand|cheaper|worth it|value for money|vs)\b/,
+  ],
+  // Health & wellbeing — clinical/medical, distinct from a fitness *habit* (goal).
+  health: [
+    /\b(doctor|doctor'?s|dr\.?|gp|dentist|dentist'?s|clinic|hospital|a&e|checkup|check-?up|physio|physiotherapy|therapist|therapy|counsell?ing|prescription|medication|meds|pills?|tablets?|dose|dosage|vaccine|vaccination|jab|blood test|blood pressure|scan|x-?ray|mri|ultrasound|symptoms?|diagnosis|surgery|operation|recovery|injury|migraine|allerg(y|ies)|mental health|anxiety|wellbeing|cholesterol)\b/,
+    /\b(health|healthy|medical|patient|nhs|referral|specialist|consultant|nurse|pharmacy|refill|appointment|appt|sick|unwell|ill|feeling|pain|sore)\b/,
+  ],
+  // Money admin — bills, tax, statements. A savings *habit* stays a goal.
+  finance: [
+    /\b(bill|bills|invoice|rent|mortgage|loan|repayment|instal?ments?|tax|taxes|hmrc|vat|refund|isa|pension|401k|payslip|paycheck|salary|expenses?|subscription|direct debit|standing order|overdraft|credit card|bank statement|statement|reimburse(ment)?|utilities|council tax)\b/,
+    /\b(money|cash|pay(ing|ment)?|owe|owed|afford|financ(e|es|ial)|account|balance|spending|due|renew(al)?|premium|quote|insurance)\b/,
+  ],
+  // A trip to plan — itinerary + packing. Trips route here, not to `event`.
+  travel: [
+    /\b(trip|holiday|vacation|getaway|flight|flights|fly(ing)?|itinerary|airbnb|hotel|hostel|check-?in|layover|passport|visa|road ?trip|backpacking|cruise|excursion|sightseeing|destination|abroad|overseas|weekend away)\b/,
+    /\b(travel|travell?ing|book(ed)? (a )?(flight|hotel|room|trip)|departure|arrival|boarding|terminal|luggage|suitcase|currency|jet ?lag|tour|guidebook|packing)\b/,
+  ],
+  // A recipe / meal to cook — ingredients + steps.
+  recipe: [
+    /\b(recipe|cook|cooking|bake|baking|roast|grill|fry(ing)?|saute|simmer|braise|meal prep|dish|cuisine|ingredients?|marinade|sauce|dough|batter|preheat|oven|serves \d|prep time|cook time|leftovers)\b/,
+    /\b(flour|sugar|butter|eggs?|garlic|onion|tomato|chicken|beef|pork|pasta|rice|curry|soup|stew|cake|bread|salad|tablespoons?|teaspoons?|grams?|\bml\b|\bcups?\b|pinch of|cloves?|fillet|dinner|lunch|breakfast)\b/,
+  ],
+  // A watch / read / listen list.
+  media: [
+    /\b(watchlist|watch list|binge|rewatch|movie|movies|film|films|tv series|series|tv show|episode|season|netflix|disney\+?|prime video|hbo|documentary|anime|reading list|novel|audiobook|podcast|album|playlist)\b/,
+    /\b(to watch|to read|to listen|watching|reading|listening|queue|backlog|recommend(ed|ation)?|must-?watch|must-?read|chapter|author|director|genre|trailer|soundtrack)\b/,
   ],
 }
 
@@ -88,10 +113,14 @@ export function classify(
   // People / locations lean towards something happening (an event/meeting).
   if (entities.people?.length && hasSignal(scores, 'event')) bump(scores, 'event', 0.5)
   if (entities.locations?.length && hasSignal(scores, 'event')) bump(scores, 'event', 0.5)
-  // Money cues lean towards a purchase decision, then goals (budget/save), then
-  // tasks (pay/buy). A price next to buying language is a strong purchase signal.
+  // A place cue strongly reinforces a trip once travel language is present.
+  if (entities.locations?.length && hasSignal(scores, 'travel')) bump(scores, 'travel', 1)
+  // Money cues lean towards a purchase decision, then money admin (finance),
+  // then goals (budget/save), then tasks (pay/buy). A price next to buying
+  // language is a strong purchase signal.
   if (entities.amounts?.length) {
     if (hasSignal(scores, 'purchase')) bump(scores, 'purchase', 1)
+    else if (hasSignal(scores, 'finance')) bump(scores, 'finance', 1)
     else if (hasSignal(scores, 'goal')) bump(scores, 'goal', 0.5)
     else bump(scores, 'tasks', 0.5)
   }

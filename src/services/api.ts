@@ -59,12 +59,36 @@ export interface BillingStatus {
   // Lifetime amount actually paid, and the user's self-set spend limit (0 = none).
   paidPence?: number
   capPence?: number
-  pricing?: {
-    activationPence: number
-    includedCreditPence: number
-    topupPence: number
-    tokenMarkup: number
+  // Recurring-subscription model: which plan is live and the two metered pools.
+  plan?: 'none' | 'classifier' | 'evolve'
+  hasClassifier?: boolean
+  hasEvolve?: boolean
+  pools?: {
+    ai: { usedPence: number; includedPence: number }
+    classifier: { usedPence: number; includedPence: number }
   }
+  periodEnd?: number
+  // What beyond-plan usage would cost this cycle (pence) — what capPence caps.
+  overagePence?: number
+  pricing?: {
+    // Subscription pricing.
+    classifierPricePence?: number
+    classifierIncludedPence?: number
+    evolvePricePence?: number
+    evolveAiIncludedPence?: number
+    evolveClassifierIncludedPence?: number
+    overageMarkup?: number
+    // Legacy credit-model pricing.
+    activationPence?: number
+    includedCreditPence?: number
+    topupPence?: number
+    tokenMarkup?: number
+  }
+}
+
+// Subscribe to a recurring plan ('classifier' £2/mo or 'evolve' £12/mo).
+export function startSubscription(plan: 'classifier' | 'evolve') {
+  return startCheckout(plan)
 }
 
 export function fetchBillingStatus() {
@@ -79,7 +103,7 @@ export function fetchBillingStatus() {
 // £1 of AI credit) or 'topup' (more credit at the markup rate). Returns a
 // Stripe URL to redirect to, or an error/freeMode hint.
 export async function startCheckout(
-  kind: 'activate' | 'topup' = 'activate',
+  kind: 'activate' | 'topup' | 'classifier' | 'evolve' = 'activate',
 ): Promise<{
   url?: string
   freeMode?: boolean
@@ -174,6 +198,36 @@ export function enrich(text: string, candidate: string, backend?: AiBackend) {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ text, candidate, backend, clientId: getClientId() }),
+  })
+}
+
+export interface ClassifyResult {
+  configured: boolean
+  classified?: boolean
+  kind?: string
+  topic?: string
+  confidence?: number
+  error?: string
+}
+
+// Cloud classification (paid tiers). Sends the local guess so the model knows
+// what it's overriding. Always routes to the cloud backend — the capability gate
+// is the user's plan, not the local/haiku toggle.
+export function classifyRemote(
+  text: string,
+  localKind: string,
+  localConfidence: number,
+) {
+  return safeJson<ClassifyResult>(API_BASE + '/api/classify', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      text,
+      localKind,
+      localConfidence,
+      backend: 'haiku',
+      clientId: getClientId(),
+    }),
   })
 }
 

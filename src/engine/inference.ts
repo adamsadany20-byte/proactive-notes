@@ -1,6 +1,7 @@
 import type { Entities, InferenceResult, Note, NoteKind, Stage } from '../types'
 import { extractDate, extractEntities, topicsFromAnswer } from './entities'
 import { classify } from './classify'
+import { deriveTopic } from './topics'
 import { nextQuestion } from './questions'
 
 // Fold answers the user gave (via chips / free text) back into the entity set,
@@ -145,12 +146,20 @@ export function infer(note: Note, opts: InferOptions): InferenceResult {
   const rawEntities = extractEntities(note.text)
   const base = classify(note.text, rawEntities)
   const entities = mergeAnswers(rawEntities, note)
-  const { kind, confidence } = applyEnrichment(
-    note,
-    base.kind,
-    base.confidence,
-    entities,
-  )
+  const enriched = applyEnrichment(note, base.kind, base.confidence, entities)
+  let kind = enriched.kind
+  let confidence = enriched.confidence
+
+  // Paid cloud classification (Classification/Evolve tiers) is the most accurate
+  // signal — let it override the local guess. Only when it was computed for the
+  // CURRENT note text, so a result from earlier text never mis-labels the note.
+  const rc = note.classification
+  const rcActive = rc?.status === 'done' && rc.forText === note.text && !!rc.kind
+  if (rcActive && rc?.kind) {
+    kind = rc.kind
+    confidence = Math.max(confidence, rc.confidence ?? 0.9)
+  }
+
   const q =
     kind === 'unknown' || confidence < 0.4
       ? undefined
@@ -163,5 +172,12 @@ export function infer(note: Note, opts: InferOptions): InferenceResult {
     opts.paused,
     !!q,
   )
-  return { kind, confidence, entities, nextQuestion: q, stage }
+  // The open-ended label for what this note is about. Derived locally from the
+  // text + entities — independent of the bounded `kind`, so it isn't limited to
+  // a fixed set (and never needs the LLM).
+  const topic =
+    kind === 'unknown' || confidence < 0.4
+      ? undefined
+      : (rcActive && rc?.topic) || deriveTopic(note.text, entities, kind)
+  return { kind, topic, confidence, entities, nextQuestion: q, stage }
 }

@@ -1,5 +1,32 @@
 # Proactive Notes Codebase Guide
 
+## Where things stand (14 Jul 2026)
+
+The app is **live on Render** (auto-deploys from `main`), with Supabase accounts +
+Stripe on a **live key**, but it hasn't been advertised — so there are **no real
+customers yet**. `BILLING_ENABLED=true` in production; it defaults to `false`
+everywhere else (free mode = nothing gated).
+
+Most recent session, in order:
+1. **Mobile + streak redesign** — the ember palette, an SVG progress ring, a
+   drawn `FlameIcon`, a solid top bar, and notch/home-indicator safe areas.
+   (See "Visual Design" + "UI Patterns → Mobile".)
+2. **Open-ended categories** — kinds went 7 → 12, and a *second, unbounded*
+   `topic` layer was added. (See "Two-layer classification".)
+3. **Cloud classification** — the local keyword classifier was mislabelling
+   ("work presentation" → academic, "trip to oman" → event); Claude now
+   re-classifies **only when the local engine is unsure**. (See "Cloud
+   classification".)
+4. **Billing switched from one-time credit → two recurring subscriptions**
+   (Classification £2/mo, Evolve AI £12/mo with two metered pools), and the spend
+   cap was rewired to limit **overage** instead of a dead top-up path. (See
+   "Billing".)
+
+**Before charging anyone:** the Stripe subscription path has never run against
+real Stripe — see "Known Limitations". The `entitlements` subscription-columns
+migration has been applied, and the webhook must subscribe to
+`checkout.session.completed`, `invoice.paid`, and `customer.subscription.deleted`.
+
 ## Recent Work (Jul 2026)
 
 ### Local pattern recognition (free tier, no network)
@@ -25,24 +52,78 @@ Deterministic on-device intelligence surfaced as a quiet strip under the editor
   de-dupes within an hour, capped at 60; persisted to localStorage, never synced
   to Supabase). "Plan this shop" appends a timestamp.
 
-### Billing: credit model (replaces subscriptions)
+### Two-layer classification: bounded `kind` + open-ended `topic`
 
-`BILLING_ENABLED=false` (default) = everything free, nothing gated. When on:
-£10 one-time activation includes £5 of AI token credit; every Claude call
-meters its real Anthropic cost (server-side, `usageCostPence` in
-`server/index.js`) and deducts it; more credit is bought at £2 per £1 of tokens
-(`kind: 'topup'` checkout). Checkout uses inline `price_data` (no Stripe Price
-IDs). Tapping the locked Evolve AI tier opens a confirmation modal
-(`UpgradeModal.tsx`) — pay vs stay free — instead of jumping straight to Stripe.
-Users can set a spend cap (`capPence`) that limits **top-up** spend **on top of**
-the activation fee (the £10 activation never counts toward it): enforced only on
-`kind:'topup'` checkout against `paidPence - ACTIVATION_PRICE_PENCE`
-(`POST /api/billing/cap`; UI in `Sidebar.tsx` → `SpendLimit`, shown only once
-activated). `FREE_CLIENT_IDS` env = never-billed clientIds (owner bypass for
-testing a live deploy). Store: `server/entitlementStore.js` — Supabase-backed when
-`SUPABASE_SERVICE_ROLE_KEY` is set (survives redeploys), else a local flat file;
-`{status, creditPence, usedPence, paidPence, capPence}` per billing key (Supabase
-user id when logged in, else anonymous clientId).
+`NoteKind` must stay bounded — it decides which **tools** get built
+(`desiredTypes()` in [reconcile.ts](src/store/reconcile.ts)), and someone has to
+have written each tool. So "unlimited categories" is a **second layer**:
+`Note.topic` is an **unbounded**, locally-derived label for what a note is
+*about* ("Oman", "Sourdough Bread", "Work Presentation").
+[engine/topics.ts](src/engine/topics.ts) `deriveTopic(text, entities, kind)` does
+lightweight keyword extraction — drop stopwords + intent verbs ("want to buy…"),
+score the rest by frequency, proper-noun-ness, a domain lexicon and position,
+prefer adjacent pairs and keep proper-noun runs whole ("Dune Part Two"). Pure,
+deterministic, no network. The topic **leads** the editor chip (`Oman · Travel
+95%`) and the note-list rows; note search matches it too.
+
+Kinds grew from 7 → 12: added **health, finance, travel, recipe, media** (each
+with lexicons in `classify.ts`, colours in `index.css`, glyphs in `icons.tsx`,
+labels in `kindMeta.ts`, tools in `reconcile.ts` — they reuse `calendar` +
+`checklist`, which fill from list content and degrade to hidden when empty).
+Trips moved out of `event` → `travel`.
+
+### Cloud classification (paid) — the fix for weak local classification
+
+The keyword classifier mislabels ("work presentation" → academic, "trip to oman"
+→ event). `POST /api/classify` (Haiku, **no web search, ~0.12p/call**) returns
+`{kind, topic, confidence}` over the full kind enum.
+[useRemoteClassify.ts](src/ui/useRemoteClassify.ts) (mirrors `useWorldKnowledge`)
+escalates **only when local confidence < 0.72**, debounced 900ms, deduped, and
+pins the result to the exact text (`RemoteClassification.forText`) so a stale
+result never mislabels an edited note. `infer()` folds it in after
+`applyEnrichment`, overriding kind/confidence/topic. Most notes never touch the
+network.
+
+### Billing: two recurring subscriptions (replaces the credit model)
+
+`BILLING_ENABLED=false` (default) = everything free, nothing gated. When on,
+three tiers:
+- **Free** — local engine only.
+- **Classification £2/mo** — includes **£1** classifier usage.
+- **Evolve AI £12/mo** — **two independently-metered pools**: **£5** coding +
+  world knowledge (`ai`) **and £1** classifier. Includes everything.
+
+Each pool overages at **£2 per £1** (`OVERAGE_MARKUP`) beyond its allowance.
+Checkout is `mode:'subscription'` with inline recurring `price_data` (no Stripe
+Price IDs). Webhooks: `checkout.session.completed` (start plan + window),
+`invoice.paid` on `subscription_cycle` (bill the ENDING cycle's overage as an
+invoice item — **one cycle in arrears** — then reset both pools),
+`customer.subscription.deleted` (downgrade). Every Claude call meters its real
+Anthropic cost (`usageCostPence`) into its pool via `meterUsage(id, cost, pool)`.
+
+Route gating: `/api/classify` needs **classifier-or-evolve**; suggest / recommend
+/ generate-feature / enrich need **evolve**. 402s carry `reason`
+(`no_plan` | `cap_reached` | `no_credit`).
+
+Spend cap (`capPence`) now limits **overage** — the plan fee never counts toward
+it — and is enforced on **every paid call** (`capReached()`), not just checkout,
+so usage stops rather than billing past what the user chose. Note the tier UI
+locks off `plan`, NOT `hasClassifier`/`hasEvolve` (those go false when capped, and
+a capped subscriber must not be shown a padlock selling them the plan they own).
+
+Store: `server/entitlementStore.js` — Supabase-backed when
+`SUPABASE_SERVICE_ROLE_KEY` is set (**needs the subscription columns — see
+DEPLOYMENT.md migration**), else a local flat file. Per billing key:
+`{status, plan, aiUsedPence, classifierUsedPence, periodStart, periodEnd,
+subscriptionId, paidPence, capPence}` (+ legacy `creditPence`; the old
+`activate`/`topup` one-time paths still work for pre-existing accounts).
+`FREE_CLIENT_IDS` env = never-billed clientIds (owner bypass).
+
+Client tier state: `settings.tier: 'free' | 'classifier' | 'evolve'` is the source
+of truth; `aiBackend` ('local'/'haiku') and `broaderAi` are **derived**
+(`settingsForTier()`). `broaderAi` is true ONLY for evolve — it's what gates the
+Evolve-only features (world-knowledge escalation, FeatureGenerator), so a
+Classification-only plan doesn't trigger them.
 
 ### Closed-app reminders (Web Push)
 
@@ -173,10 +254,22 @@ The gating is on `candidateOccurrenceCount()`: only offers when >1 occurrence ex
 
 #### Visual Design
 
+**The ember palette** — the streak has its OWN colour, not the `goal` raspberry.
+`--ember` / `--ember-lit` / `--ember-deep` / `--ember-soft` (index.css) are a warm
+amber→terracotta fire range that still reads as the earthy theme. Everything
+streak-flavoured pulls from it: `.today`, the sidebar streak, trail pips, the
+`reminder` calendar kind (`KIND_COLOR` in CalendarPanel), and per-note streak
+segments (`.segment:has(.streak)` re-tints the whole segment so trail dots don't
+inherit the workspace `--tint`).
+
 **Streak Ring** (center)
-- Flame icon (🔥 lit / 🌱 unlit)
-- Count (0-N)
-- Unit label (days / sessions)
+- `FlameIcon` — a filled two-path flame (outer body + inner core at 50%), drawn
+  in `ui/icons.tsx`. Not an emoji.
+- An **SVG progress ring** (`.ring-prog`) around the count: `stroke-dasharray`
+  with `pathLength={100}`, filling toward the next MILESTONE (arc uses the
+  `emberArc` gradient, lit → deep). Only visible when the streak is alive; muted
+  under `prefers-reduced-motion`.
+- Count (0-N) + unit label (days / sessions)
 - Warm halo & shadow (only when alive)
 - Celebration burst (12 radiating sparks + ring pulse) when streak extended
 
@@ -218,10 +311,13 @@ Nudges fire via `useReminders` (20-second poll). Copy is streak-aware: *"keep yo
 ## Existing Features (Pre-Jul)
 
 ### Notes & Inference
-- Local ML classification (goal, academic, event, project, task, purchase, general)
+- Local keyword classification — now 12 kinds (goal, academic, event, project,
+  tasks, purchase, health, finance, travel, recipe, media, general), plus an
+  unbounded `topic` label (see "Two-layer classification" above)
 - Entity extraction (dates, topics, time, subject, people, locations, amounts, duration, priority)
 - Multi-stage inference (classify → prompt → emerge → workspace)
 - World knowledge escalation (LLM enrichment via Claude API)
+- Cloud classification escalation on low local confidence (paid tiers)
 
 ### Segments
 - Calendar (test dates, study schedules, events)
@@ -267,6 +363,18 @@ Nudges fire via `useReminders` (20-second poll). Copy is streak-aware: *"keep yo
 - Conditional rendering on `filled` (skeleton vs. real)
 - Inline editing (segment data lives in store, editable via actions)
 
+**Mobile (it's a web app, not a native one — respect the hardware)**
+- **Safe areas**: the top bar (`.mnav`) pads with `max(..., env(safe-area-inset-left/right))`
+  so a landscape notch never clips it; `.col-main` / `.col-side` / `.col-cal` pad
+  their bottoms with `calc(… + env(safe-area-inset-bottom))` so the home indicator
+  never sits on content.
+- **Top bar**: a real solid header. The streak is a standalone `.mnav-streak`
+  button pinned right (not nested inside the Calendar button), and the wordmark
+  `.mnav-name` is hidden below 540px — at 375px it used to paint over the Notes
+  icon. Nav buttons are ≥40px tall for tap targets.
+- Verified at 375×812; the AI-tier control gets a tighter 3-up variant
+  (`.tier-seg-3`) so "Classification" fits.
+
 ---
 
 ## Known Limitations & TODOs
@@ -274,5 +382,21 @@ Nudges fire via `useReminders` (20-second poll). Copy is streak-aware: *"keep yo
 - Recurring reminders: no snooze / postponement UI yet
 - Sessions: can't manually reorder or skip ahead
 - Google Calendar: sync is read-only (can't create events remotely)
-- Mobile: layout tested, but touch interactions could be smoother
+- Mobile: safe areas + top bar done (see UI Patterns); touch interactions could
+  still be smoother
 - Performance: large note collections (100+) untested
+- **Billing: the Stripe subscription path is NOT yet verified against real
+  Stripe.** Verified by test: 402 gating, per-pool metering, cap math +
+  enforcement, the status payload. NOT verified end-to-end: subscription
+  checkout, webhook signatures for the new events, and `invoice.paid` → pool
+  reset → `stripe.invoiceItems.create` (which creates a REAL charge). Run the
+  flow in Stripe **test** mode (`stripe listen --forward-to
+  localhost:8787/api/billing/webhook`) before relying on it. Overage bills **one
+  cycle in arrears**, so a mistake wouldn't surface for a month.
+- Billing: the legacy one-time credit path (`activate`/`topup`) is still in the
+  code for pre-subscription accounts. There are no such accounts in practice —
+  it can probably be deleted.
+- Billing: `capPence` stops usage at the limit, but Stripe has no hard cap of its
+  own — the cap is only enforced by our own `capReached()` on each call.
+- `deriveTopic` is heuristic. It degrades to `undefined` (no label) rather than
+  nonsense, and the paid classifier's topic overrides it when it fires.

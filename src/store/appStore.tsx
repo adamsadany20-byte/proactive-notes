@@ -9,6 +9,7 @@ import {
 import type {
   CalendarEvent,
   Enrichment,
+  RemoteClassification,
   InferenceResult,
   Note,
   Reminder,
@@ -26,12 +27,31 @@ import { seedCalendar } from './calendar'
 import { buildOwnedEvents, reconcileSegments } from './reconcile'
 import { computeStreak, reminderFromNote } from './streak'
 
+// The three product tiers. `tier` is the source of truth; `aiBackend` and
+// `broaderAi` are derived from it so existing consumers keep working:
+//   • free       — local engine only, no network.
+//   • classifier — cloud CLASSIFICATION only (aiBackend 'haiku', broaderAi off).
+//   • evolve     — everything: classification + suggestions/tools/knowledge.
+export type Tier = 'free' | 'classifier' | 'evolve'
+
 interface Settings {
-  // Which AI tier is active. 'local' = deterministic engine only, no network.
+  tier: Tier
+  // Derived from tier. 'local' = no network; 'haiku' = cloud on (classifier or
+  // evolve). Sent as the `backend` param and gates "is any cloud on".
   aiBackend: AiBackend
-  // Derived master switch kept in sync with aiBackend: true for any cloud tier.
-  // Existing consumers (world-knowledge escalation, etc.) gate on this.
+  // Derived from tier: true ONLY for evolve — the master switch the world-
+  // knowledge escalation + tool generator gate on (so a classifier-only plan
+  // doesn't trigger the paid Evolve features).
   broaderAi: boolean
+}
+
+// Fan a chosen tier out into the derived settings fields.
+function settingsForTier(tier: Tier): Settings {
+  return {
+    tier,
+    aiBackend: tier === 'free' ? 'local' : 'haiku',
+    broaderAi: tier === 'evolve',
+  }
 }
 
 // Locally-learned behavioural signals the deterministic engine uses to
@@ -71,9 +91,11 @@ type Action =
   | { type: 'SKIP'; id: string; field: string }
   | { type: 'EDIT_SEGMENT'; id: string; segmentId: string; data: any }
   | { type: 'SET_BACKEND'; backend: AiBackend }
+  | { type: 'SET_TIER'; tier: Tier }
   | { type: 'SET_CONFIG'; config: ServerConfig }
   | { type: 'SET_BILLING'; billing: BillingStatus }
   | { type: 'SET_ENRICHMENT'; id: string; enrichment: Enrichment }
+  | { type: 'SET_CLASSIFICATION'; id: string; classification: RemoteClassification }
   | { type: 'SET_EXTERNAL_EVENTS'; events: ExternalEvent[] }
   | { type: 'TOGGLE_OCCURRENCE'; reminderId: string; iso: string }
   | { type: 'UPDATE_REMINDER'; reminderId: string; patch: Partial<Reminder> }
@@ -106,7 +128,7 @@ function freshState(): State {
     calendar: seedCalendar(),
     reminders: [],
     selectedId: first.id,
-    settings: { aiBackend: 'local', broaderAi: false },
+    settings: settingsForTier('free'),
     config: null,
     billing: null,
     habits: { shoppingLog: [] },
@@ -123,12 +145,13 @@ function load(): State {
     // Re-seed the fixed calendar each load so relative demo dates stay current,
     // and keep note-owned events. Google events are refetched, not persisted.
     const owned = parsed.calendar.filter((e) => e.noteId)
-    // Migrate older saves: pre-tier state only had `broaderAi`, and earlier
-    // versions persisted now-removed 'gemini'/'groq' tiers — collapse those to
-    // the Claude tier so the only valid values are 'local' and 'haiku'.
+    // Migrate older saves to the three-tier model. Prefer a stored `tier`; else
+    // derive from the old aiBackend/broaderAi (a saved cloud tier was the full
+    // Evolve experience, so it maps to 'evolve').
+    const savedTier: Tier | undefined = (parsed.settings as any)?.tier
     const saved =
       parsed.settings?.aiBackend ?? (parsed.settings?.broaderAi ? 'haiku' : 'local')
-    const backend: AiBackend = saved === 'local' ? 'local' : 'haiku'
+    const tier: Tier = savedTier ?? (saved === 'local' ? 'free' : 'evolve')
     return {
       ...parsed,
       calendar: [...seedCalendar(), ...owned],
@@ -139,7 +162,7 @@ function load(): State {
         weekdays: r.weekdays ?? [0, 1, 2, 3, 4, 5, 6],
         bestStreak: r.bestStreak ?? 0,
       })),
-      settings: { aiBackend: backend, broaderAi: backend !== 'local' },
+      settings: settingsForTier(tier),
       config: null,
       billing: null,
       habits: { shoppingLog: parsed.habits?.shoppingLog ?? [] },
@@ -170,6 +193,7 @@ function reassess(state: State, note: Note, paused: boolean): State {
   const updated: Note = {
     ...note,
     kind: result.kind,
+    topic: result.topic,
     confidence: result.confidence,
     entities: result.entities,
     segments,
@@ -320,14 +344,14 @@ function reducer(state: State, action: Action): State {
       return { ...state, notes }
     }
     case 'SET_BACKEND':
+      // Legacy entry point (local/haiku). Map onto the tier model: 'local' →
+      // free, 'haiku' → the full Evolve tier.
       return {
         ...state,
-        settings: {
-          ...state.settings,
-          aiBackend: action.backend,
-          broaderAi: action.backend !== 'local',
-        },
+        settings: settingsForTier(action.backend === 'local' ? 'free' : 'evolve'),
       }
+    case 'SET_TIER':
+      return { ...state, settings: settingsForTier(action.tier) }
     case 'SET_CONFIG':
       return { ...state, config: action.config }
     case 'SET_BILLING':
@@ -432,6 +456,17 @@ function reducer(state: State, action: Action): State {
         true,
       )
     }
+    case 'SET_CLASSIFICATION': {
+      const note = state.notes.find((n) => n.id === action.id)
+      if (!note) return state
+      const updated: Note = { ...note, classification: action.classification }
+      // Re-run inference so the corrected kind reshapes the workspace.
+      return reassess(
+        { ...state, notes: state.notes.map((n) => (n.id === note.id ? updated : n)) },
+        updated,
+        true,
+      )
+    }
     default:
       return state
   }
@@ -450,9 +485,11 @@ interface StoreApi {
   skip: (id: string, field: string) => void
   editSegment: (id: string, segmentId: string, data: any) => void
   setBackend: (backend: AiBackend) => void
+  setTier: (tier: Tier) => void
   setConfig: (config: ServerConfig) => void
   setBilling: (billing: BillingStatus) => void
   setEnrichment: (id: string, enrichment: Enrichment) => void
+  setClassification: (id: string, classification: RemoteClassification) => void
   setExternalEvents: (events: ExternalEvent[]) => void
   toggleOccurrence: (reminderId: string, iso: string) => void
   updateReminder: (reminderId: string, patch: Partial<Reminder>) => void
@@ -646,10 +683,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       editSegment: (id, segmentId, data) =>
         dispatch({ type: 'EDIT_SEGMENT', id, segmentId, data }),
       setBackend: (backend) => dispatch({ type: 'SET_BACKEND', backend }),
+      setTier: (tier) => dispatch({ type: 'SET_TIER', tier }),
       setConfig: (config) => dispatch({ type: 'SET_CONFIG', config }),
       setBilling: (billing) => dispatch({ type: 'SET_BILLING', billing }),
       setEnrichment: (id, enrichment) =>
         dispatch({ type: 'SET_ENRICHMENT', id, enrichment }),
+      setClassification: (id, classification) =>
+        dispatch({ type: 'SET_CLASSIFICATION', id, classification }),
       setExternalEvents: (events) =>
         dispatch({ type: 'SET_EXTERNAL_EVENTS', events }),
       toggleOccurrence: (reminderId, iso) =>

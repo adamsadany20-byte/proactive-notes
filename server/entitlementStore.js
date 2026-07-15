@@ -42,14 +42,28 @@ const sbHeaders = {
 }
 
 // ---- Shared shape -----------------------------------------------------------
+// The model is now recurring SUBSCRIPTIONS with two independently-metered usage
+// pools, reset each billing cycle:
+//   • plan 'classifier' — £2/mo, includes £1 of classifier usage.
+//   • plan 'evolve'     — £12/mo, includes £5 of coding+world-knowledge ('ai'
+//     pool) AND £1 of classifier usage, metered separately.
+// Each pool bills overage at 2p per 1p beyond its included allowance. The
+// included amounts live server-side (index.js); the store only tracks usage.
+// Legacy credit fields (creditPence) are kept for back-compat but unused here.
 function blank(clientId) {
   return {
     clientId,
-    status: 'none', // 'none' | 'active'
-    creditPence: 0, // remaining token credit, in pence of TOKEN VALUE
-    usedPence: 0, // lifetime token value consumed
+    status: 'none', // 'none' | 'active' — active whenever a plan is live
+    plan: 'none', // 'none' | 'classifier' | 'evolve'
+    aiUsedPence: 0, // coding + world-knowledge usage THIS cycle (token value)
+    classifierUsedPence: 0, // classifier usage THIS cycle (token value)
+    periodStart: 0, // current billing-cycle start (ms)
+    periodEnd: 0, // current billing-cycle end (ms)
+    subscriptionId: null, // Stripe subscription id
+    creditPence: 0, // legacy (one-time credit model) — unused under subscriptions
+    usedPence: 0, // lifetime token value consumed (all pools)
     paidPence: 0, // lifetime amount actually paid
-    capPence: 0, // user-set lifetime spend limit (0 = no limit)
+    capPence: 0, // user-set spend limit on overage (0 = no limit)
     customerId: null,
     updatedAt: Date.now(),
   }
@@ -61,6 +75,12 @@ function fromRow(row) {
   return {
     clientId: row.key,
     status: row.status || 'none',
+    plan: row.plan || 'none',
+    aiUsedPence: Number(row.ai_used_pence) || 0,
+    classifierUsedPence: Number(row.classifier_used_pence) || 0,
+    periodStart: row.period_start ? Date.parse(row.period_start) : 0,
+    periodEnd: row.period_end ? Date.parse(row.period_end) : 0,
+    subscriptionId: row.subscription_id ?? null,
     creditPence: Number(row.credit_pence) || 0,
     usedPence: Number(row.used_pence) || 0,
     paidPence: Number(row.paid_pence) || 0,
@@ -96,6 +116,12 @@ async function sbWrite(rec) {
   const row = {
     key: rec.clientId,
     status: rec.status,
+    plan: rec.plan,
+    ai_used_pence: rec.aiUsedPence,
+    classifier_used_pence: rec.classifierUsedPence,
+    period_start: rec.periodStart ? new Date(rec.periodStart).toISOString() : null,
+    period_end: rec.periodEnd ? new Date(rec.periodEnd).toISOString() : null,
+    subscription_id: rec.subscriptionId,
     credit_pence: rec.creditPence,
     used_pence: rec.usedPence,
     paid_pence: rec.paidPence,
@@ -129,6 +155,20 @@ export async function isActive(clientId) {
 export async function hasCredit(clientId) {
   const e = await getEntitlement(clientId)
   return !!e && e.creditPence > 0
+}
+
+// ---- Subscription capability checks -----------------------------------------
+// Which plan (if any) is live. Evolve includes the classifier capability.
+export async function planOf(clientId) {
+  const e = await getEntitlement(clientId)
+  return e?.plan || 'none'
+}
+export async function hasClassifier(clientId) {
+  const p = await planOf(clientId)
+  return p === 'classifier' || p === 'evolve'
+}
+export async function hasEvolve(clientId) {
+  return (await planOf(clientId)) === 'evolve'
 }
 
 // Read-modify-write. Per-user concurrency is effectively serial (a user waits
@@ -172,12 +212,53 @@ export function addCredit(clientId, creditPence, paidPence = 0) {
   }))
 }
 
-// Meter one Claude call. Records lifetime usage always; the credit balance can
-// dip slightly negative on the call that exhausts it — the next call is blocked.
-export function recordUsage(clientId, costPence) {
+// Meter one Claude call into a pool ('ai' or 'classifier'). Accumulates this
+// cycle's pool usage (what overage is computed from at renewal) and the lifetime
+// total. Also decrements the legacy credit balance so the old one-time model
+// keeps working if a record still has credit.
+export function recordUsage(clientId, costPence, pool = 'ai') {
   if (!clientId || !(costPence > 0)) return Promise.resolve(null)
+  const field = pool === 'classifier' ? 'classifierUsedPence' : 'aiUsedPence'
   return mutate(clientId, (rec) => ({
     usedPence: rec.usedPence + costPence,
     creditPence: rec.creditPence - costPence,
+    [field]: (rec[field] || 0) + costPence,
   }))
+}
+
+// ---- Subscription lifecycle -------------------------------------------------
+// Start (or switch) a plan. Sets the billing-cycle window and zeroes both pools
+// for the fresh cycle.
+export function setSubscription(
+  clientId,
+  { plan, subscriptionId, customerId, periodStart, periodEnd, paidPence },
+) {
+  return mutate(clientId, (rec) => ({
+    status: plan && plan !== 'none' ? 'active' : 'none',
+    plan: plan || 'none',
+    subscriptionId: subscriptionId ?? rec.subscriptionId,
+    customerId: customerId ?? rec.customerId,
+    periodStart: periodStart ?? rec.periodStart,
+    periodEnd: periodEnd ?? rec.periodEnd,
+    aiUsedPence: 0,
+    classifierUsedPence: 0,
+    paidPence: rec.paidPence + (paidPence ?? 0),
+  }))
+}
+
+// Renew: advance the billing window and reset the metered pools for the new
+// cycle. (Overage for the ENDING cycle is computed by the caller before this.)
+export function resetCycle(clientId, { periodStart, periodEnd, paidPence } = {}) {
+  return mutate(clientId, (rec) => ({
+    periodStart: periodStart ?? rec.periodEnd,
+    periodEnd: periodEnd ?? rec.periodEnd,
+    aiUsedPence: 0,
+    classifierUsedPence: 0,
+    paidPence: rec.paidPence + (paidPence ?? 0),
+  }))
+}
+
+// Subscription ended (cancelled / payment failed to the point of cancellation).
+export function cancelSubscription(clientId) {
+  return mutate(clientId, () => ({ status: 'none', plan: 'none', subscriptionId: null }))
 }

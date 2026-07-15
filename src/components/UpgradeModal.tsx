@@ -1,31 +1,35 @@
 import type { BillingStatus } from '../services/api'
 import { StarSixIcon } from '../ui/icons'
 
-// A confirmation step shown when the user taps the locked Evolve AI tier, so they
-// choose the paid plan deliberately instead of being dropped straight onto
-// Stripe. Two paths: continue to payment, or stay on the free Local ML tier.
+// A confirmation step shown when the user taps a locked paid tier, so they
+// choose the plan deliberately instead of being dropped straight onto Stripe.
+// Two paths: continue to the monthly subscription, or stay on the free tier.
 export function UpgradeModal({
-  kind,
+  plan,
   pricing,
   busy,
   onConfirm,
   onStayFree,
 }: {
-  kind: 'activate' | 'topup'
+  plan: 'classifier' | 'evolve'
   pricing?: BillingStatus['pricing']
   busy: boolean
   onConfirm: () => void
   onStayFree: () => void
 }) {
-  const activation = ((pricing?.activationPence ?? 1000) / 100).toFixed(0)
-  const included = ((pricing?.includedCreditPence ?? 500) / 100).toFixed(2)
-  const topup = ((pricing?.topupPence ?? 400) / 100).toFixed(2)
-  const topupCredit = (
-    (pricing?.topupPence ?? 400) /
-    (pricing?.tokenMarkup ?? 2) /
-    100
-  ).toFixed(2)
-  const isTopup = kind === 'topup'
+  const gbp = (pence: number | undefined, fallback: number) =>
+    `£${((pence ?? fallback) / 100).toFixed(0)}`
+  const markup = pricing?.overageMarkup ?? 2
+  const isEvolve = plan === 'evolve'
+
+  const price = isEvolve
+    ? gbp(pricing?.evolvePricePence, 1200)
+    : gbp(pricing?.classifierPricePence, 200)
+  const classIncl = gbp(
+    isEvolve ? pricing?.evolveClassifierIncludedPence : pricing?.classifierIncludedPence,
+    100,
+  )
+  const aiIncl = gbp(pricing?.evolveAiIncludedPence, 500)
 
   return (
     <div
@@ -40,46 +44,49 @@ export function UpgradeModal({
           <StarSixIcon />
         </div>
         <h2 className="modal-title" id="upgrade-title">
-          {isTopup ? 'Top up your AI credit?' : 'Switch to Evolve AI?'}
+          {isEvolve ? 'Subscribe to Evolve AI?' : 'Subscribe to Classification?'}
         </h2>
 
-        {isTopup ? (
+        {isEvolve ? (
           <p className="modal-lead">
-            You’ve used up your included AI credit. Add more to keep using Evolve
-            AI for suggestions, world knowledge and tool generation.
+            Everything Evolve does: cloud classification when the local engine is
+            unsure, plus smarter suggestions, live world knowledge, and on-the-fly
+            tool generation — billed monthly.
           </p>
         ) : (
           <p className="modal-lead">
-            Evolve AI adds smarter suggestions, live world knowledge, and on-the-fly
-            tool generation — on top of everything the free engine already does.
+            When the on-device classifier isn’t sure, Claude steps in to label the
+            note accurately. Just classification — nothing else changes.
           </p>
         )}
 
         <ul className="modal-points">
-          {isTopup ? (
-            <li>
-              <strong>£{topup}</strong> adds <strong>£{topupCredit}</strong> of AI
-              usage
-            </li>
+          {isEvolve ? (
+            <>
+              <li>
+                <strong>{price}/month</strong> — includes <strong>{aiIncl}</strong> of
+                coding &amp; world knowledge and <strong>{classIncl}</strong> of
+                classifier usage
+              </li>
+              <li>
+                Each pool is metered separately; beyond it, £{markup} per £1 of usage
+              </li>
+            </>
           ) : (
             <>
               <li>
-                <strong>£{activation}</strong> one-time — includes{' '}
-                <strong>£{included}</strong> of AI usage
+                <strong>{price}/month</strong> — includes <strong>{classIncl}</strong>{' '}
+                of classifier usage
               </li>
-              <li>Top up later only if you want more — never automatic</li>
+              <li>Beyond that, £{markup} per £1 of usage — only if you go over</li>
             </>
           )}
-          <li>Set a spending limit anytime so you’re always in control</li>
+          <li>Cancel anytime — the free Local ML engine keeps working</li>
         </ul>
 
         <div className="modal-actions">
           <button className="modal-primary" onClick={onConfirm} disabled={busy}>
-            {busy
-              ? 'Opening secure checkout…'
-              : isTopup
-                ? `Continue — £${topup}`
-                : `Continue — £${activation}`}
+            {busy ? 'Opening secure checkout…' : `Subscribe — ${price}/mo`}
           </button>
           <button className="modal-secondary" onClick={onStayFree} disabled={busy}>
             Stay on the free tier
@@ -87,8 +94,8 @@ export function UpgradeModal({
         </div>
 
         <p className="modal-fineprint">
-          Secure payment by Stripe. The free Local ML engine keeps working either
-          way — it runs entirely on your device.
+          Secure recurring payment by Stripe. The free Local ML engine runs entirely
+          on your device and keeps working either way.
         </p>
       </div>
     </div>

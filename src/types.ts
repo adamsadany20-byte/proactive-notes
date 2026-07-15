@@ -10,6 +10,11 @@ export type NoteKind =
   | 'goal' // a personal goal / habit
   | 'tasks' // a checklist / todo list
   | 'purchase' // a product / thing the user is deciding to buy
+  | 'health' // health / wellbeing (appointments, meds, symptoms)
+  | 'finance' // money admin (bills, budget, savings tasks)
+  | 'travel' // a trip to plan (itinerary + packing)
+  | 'recipe' // a recipe / meal to cook (ingredients + steps)
+  | 'media' // a watch / read / listen list
   | 'general' // plain note, no special flow
 
 // The four evolution stages described in the spec.
@@ -73,6 +78,18 @@ export interface Enrichment {
   category?: string
   summary?: string
   highlights?: string[]
+  confidence?: number
+}
+
+// A cloud classification result (paid Classification/Evolve tiers). Fired only
+// when the local keyword classifier is uncertain; overrides the local kind/topic
+// when done. `forText` pins it to the exact note text it was computed for, so a
+// stale result never applies after the note is edited.
+export interface RemoteClassification {
+  forText: string
+  status: 'pending' | 'done' | 'error'
+  kind?: NoteKind
+  topic?: string
   confidence?: number
 }
 
@@ -220,6 +237,9 @@ export interface Note {
   id: string
   text: string
   kind: NoteKind
+  // The open-ended, locally-derived label for what the note is *about*
+  // (unbounded — unlike `kind`). Undefined until something salient is written.
+  topic?: string
   confidence: number // 0..1
   createdAt: number
   updatedAt: number
@@ -232,6 +252,9 @@ export interface Note {
   entities?: Entities
   // World-knowledge enrichment from the LLM, when the local engine escalated.
   enrichment?: Enrichment
+  // Cloud classification result, when the local classifier was uncertain and a
+  // paid tier escalated it.
+  classification?: RemoteClassification
   // True once the user has declined the "start a streak?" offer for this goal,
   // so we stop asking (they can still opt in from the tracker later).
   streakDeclined?: boolean
@@ -239,6 +262,8 @@ export interface Note {
 
 export interface InferenceResult {
   kind: NoteKind
+  // Open-ended topic label (see Note.topic).
+  topic?: string
   confidence: number
   entities: Entities
   // The single next question to ask, if any.

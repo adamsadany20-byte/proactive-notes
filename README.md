@@ -24,21 +24,44 @@ npm start            # http://localhost:8787
 `npm run build` produces a static bundle in `dist/`. With no backend running, the
 app stays fully on the local engine and the simulated calendar — nothing breaks.
 
-## Local engine vs. broader AI
+## Categories: a bounded `kind` + an open-ended `topic`
 
-The app is built so **the local engine handles almost everything**, and the LLM
-is consulted **only when the local engine decides it needs world knowledge it
-doesn't have.** There's a toggle in the sidebar ("Broader AI"):
+Every note gets **two** labels:
 
-- **Off** (default) — 100% local. No network calls ever.
-- **On** — still local for almost everything. Before each note settles, the
-  engine runs an *escalation check* (`src/engine/worldKnowledge.ts`): only if the
-  note contains a salient term it can't place (an unknown acronym or proper noun)
-  *and* its own confidence is low does it call the backend `/api/enrich`, which
-  asks Claude (`claude-opus-4-8` by default) what the term is. The result is
-  folded back into the same pipeline (category, summary, highlights).
+- **`kind`** — one of 12 behavioural categories (academic, event, project, goal,
+  tasks, purchase, health, finance, travel, recipe, media, general). It's a fixed
+  set on purpose: the kind decides **which tools get built** (flashcards, streak,
+  calendar, checklist…), and each tool has to exist.
+- **`topic`** — an **unbounded** label for what the note is actually *about*:
+  "Oman", "Sourdough Bread", "Work Presentation". Derived on-device by
+  `src/engine/topics.ts` with lightweight keyword extraction (stopword/intent-verb
+  removal, then scoring by frequency, proper-noun-ness, a domain lexicon and
+  position). No fixed list, no network, no LLM.
 
-Measured behavior of the gate (6 of 7 stay local):
+The topic leads the UI — the editor chip reads `Oman · Travel 95%`, and note rows
+show the topic in the kind's colour.
+
+## Tiers: local engine vs. cloud AI
+
+**The local engine handles almost everything.** Claude is consulted only where it
+earns its keep. Three tiers (sidebar → Settings & tools → AI tier):
+
+| Tier | Price | What it adds |
+|---|---|---|
+| **Free** | £0 | 100% local. No network calls, ever. |
+| **Classification** | £2/mo | Claude re-classifies a note **only when the local engine is unsure** (confidence < 0.72). Includes £1/mo of usage. |
+| **Evolve AI** | £12/mo | Everything: classification **plus** suggestions, live world knowledge, and on-the-fly tool generation. Includes £5/mo tools + £1/mo classifier, metered as two separate pools. |
+
+Two independent escalations, both gated behind confidence so most notes never
+touch the network:
+
+- **Classification** (`/api/classify`, Haiku, ~0.12p a call → ~800 per £1) — fires
+  when the local keyword classifier is unsure. Fixes cases like "work
+  presentation" (was *academic*) → **project**, "trip to oman" (was *event*) →
+  **travel**.
+- **World knowledge** (`/api/enrich`) — fires only when a note contains a salient
+  term the local engine can't place (an unknown acronym or proper noun) *and* its
+  confidence is low. Measured: 6 of 7 notes stay local.
 
 | Note | Local kind | Escalates to AI? |
 |------|-----------|------------------|
@@ -49,9 +72,10 @@ Measured behavior of the gate (6 of 7 stay local):
 | `Dinner with Sam` | general | no — common words filtered |
 | `Vivatech` | unknown | **yes** — unknown proper noun |
 
-Set `ANTHROPIC_API_KEY` in `server/.env` to enable it (without a key the toggle
-shows "no API key on server" and the app stays local). Use `ENRICH_MODEL` to pick
-a faster/cheaper model (e.g. `claude-haiku-4-5`) for these lookups.
+Set `ANTHROPIC_API_KEY` in `server/.env` to enable the cloud tiers (without a key
+they show "AI not configured on server" and the app stays local). Billing is
+**off by default** (`BILLING_ENABLED=false`) — every tier is unlocked while you
+build. See [DEPLOYMENT.md](DEPLOYMENT.md) for the billing/subscription setup.
 
 ## Google Calendar
 
