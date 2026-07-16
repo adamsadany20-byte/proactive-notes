@@ -104,6 +104,15 @@ export interface AgentQuestion {
   placeholder?: string
 }
 
+// Cloud-tailored basic questions (Classifier/Evolve tiers). The LLM writes 2-3
+// questions specific to THIS note's topic; they're asked one at a time through
+// the same prompt flow as the local ones, and answered into note.answers.
+export interface TailoredQuestions {
+  forText: string
+  status: 'pending' | 'done' | 'error'
+  questions?: AgentQuestion[]
+}
+
 // ---- Generated feature segments ----------------------------------------------
 
 export type SegmentType =
@@ -255,6 +264,8 @@ export interface Note {
   // Cloud classification result, when the local classifier was uncertain and a
   // paid tier escalated it.
   classification?: RemoteClassification
+  // Cloud-tailored basic questions for this note (Classifier/Evolve tiers).
+  tailoredQuestions?: TailoredQuestions
   // True once the user has declined the "start a streak?" offer for this goal,
   // so we stop asking (they can still opt in from the tracker later).
   streakDeclined?: boolean

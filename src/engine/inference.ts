@@ -1,4 +1,4 @@
-import type { Entities, InferenceResult, Note, NoteKind, Stage } from '../types'
+import type { AgentQuestion, Entities, InferenceResult, Note, NoteKind, Stage } from '../types'
 import { extractDate, extractEntities, topicsFromAnswer } from './entities'
 import { classify } from './classify'
 import { hasStarterScaffold } from './generate'
@@ -149,6 +149,17 @@ function applyEnrichment(
   return { kind: e.kind, confidence: Math.max(confidence, e.confidence ?? 0.85) }
 }
 
+// The next cloud-tailored question to ask: the first one (pinned to the current
+// text) the user hasn't answered or skipped. Undefined when there are none, the
+// result is stale, or all are handled — the caller then falls back to local ones.
+function nextTailoredQuestion(note: Note): AgentQuestion | undefined {
+  const tq = note.tailoredQuestions
+  if (!tq || tq.status !== 'done' || tq.forText !== note.text || !tq.questions)
+    return undefined
+  const handled = new Set([...note.askedFields, ...Object.keys(note.answers)])
+  return tq.questions.find((q) => !handled.has(q.field))
+}
+
 export function infer(note: Note, opts: InferOptions): InferenceResult {
   const rawEntities = extractEntities(note.text)
   const base = classify(note.text, rawEntities)
@@ -167,10 +178,13 @@ export function infer(note: Note, opts: InferOptions): InferenceResult {
     confidence = Math.max(confidence, rc.confidence ?? 0.9)
   }
 
+  // On the paid tiers the cloud writes basic questions tailored to the note's
+  // topic; ask those first (that's what the user is paying the classifier for),
+  // then fall back to the local per-kind questions.
   const q =
     kind === 'unknown' || confidence < 0.4
       ? undefined
-      : nextQuestion(note, kind, entities)
+      : nextTailoredQuestion(note) ?? nextQuestion(note, kind, entities)
   const stage = computeStage(
     kind,
     confidence,

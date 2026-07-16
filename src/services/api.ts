@@ -232,6 +232,42 @@ export function classifyRemote(
 }
 
 
+// Cloud-tailored basic questions (paid tiers). Given a classified note, the
+// server returns 2-3 questions specific to its topic. Always routes to the cloud
+// backend — the gate is the user's plan (classifier or evolve).
+export interface TailoredQuestionDTO {
+  text: string
+  chips?: string[]
+}
+
+export async function fetchTailoredQuestions(
+  text: string,
+  kind: string,
+  topic: string | undefined,
+): Promise<{ configured: boolean; questions: TailoredQuestionDTO[]; error?: string }> {
+  const r = await safeJson<{
+    configured: boolean
+    questions?: TailoredQuestionDTO[]
+    error?: string
+  }>(API_BASE + '/api/questions', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      text,
+      kind,
+      topic: topic ?? '',
+      backend: 'haiku',
+      clientId: getClientId(),
+    }),
+  })
+  if (!r) return { configured: false, questions: [] }
+  return {
+    configured: r.configured !== false,
+    questions: (r.questions ?? []).filter((q) => q?.text),
+    error: r.error,
+  }
+}
+
 export interface FeatureSuggestion {
   label: string
   icon: string
@@ -272,24 +308,39 @@ export interface Recommendation {
   detail: string
 }
 
+// A concrete next step to take — a thing to DO (distinct from Recommendation,
+// which is a thing to look at).
+export interface ActionRec {
+  action: string
+  detail: string
+}
+
 export async function recommendApi(
   text: string,
   backend?: AiBackend,
-): Promise<{ heading: string; recommendations: Recommendation[]; error?: string }> {
+): Promise<{
+  heading: string
+  recommendations: Recommendation[]
+  actions: ActionRec[]
+  error?: string
+}> {
   const r = await safeJson<{
     configured: boolean
     heading?: string
     recommendations?: Recommendation[]
+    actions?: ActionRec[]
     error?: string
   }>(API_BASE + '/api/recommend', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ text, backend, clientId: getClientId() }),
   })
-  if (!r || r.configured === false) return { heading: '', recommendations: [] }
+  if (!r || r.configured === false)
+    return { heading: '', recommendations: [], actions: [] }
   return {
     heading: r.heading ?? 'Worth a look',
     recommendations: (r.recommendations ?? []).filter((x) => x?.name && x?.detail),
+    actions: (r.actions ?? []).filter((x) => x?.action && x?.detail),
     error: r.error,
   }
 }

@@ -4,6 +4,7 @@ import { useStore } from '../store/appStore'
 import { useInference } from '../ui/useInference'
 import { useWorldKnowledge } from '../ui/useWorldKnowledge'
 import { useRemoteClassify } from '../ui/useRemoteClassify'
+import { useTailoredQuestions } from '../ui/useTailoredQuestions'
 import { useVoiceInput } from '../ui/useVoiceInput'
 import { KIND_META, tintVars } from '../ui/kindMeta'
 import { ContextualPrompt } from './ContextualPrompt'
@@ -19,6 +20,7 @@ export function NoteEditor({ note }: { note: Note }) {
   const result = useInference(note)
   useWorldKnowledge(note, result)
   useRemoteClassify(note, result)
+  useTailoredQuestions(note, result)
   const taRef = useRef<HTMLTextAreaElement>(null)
 
   // Voice-memo dictation → appended to the note's current text. Runs entirely

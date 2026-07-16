@@ -1176,6 +1176,77 @@ app.post('/api/classify', async (req, res) => {
 })
 
 // ---------------------------------------------------------------------------
+// Tailored basic questions (Classifier + Evolve tiers). Cheap Haiku call, no
+// web search. Given a classified note, write 2-3 basic clarifying questions
+// specific to its topic — the thing that makes the paid classifier feel like it
+// actually engages with the note rather than only labelling it.
+// ---------------------------------------------------------------------------
+const QUESTIONS_SCHEMA = {
+  type: 'object',
+  properties: {
+    questions: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          text: { type: 'string' },
+          chips: { type: 'array', items: { type: 'string' } },
+        },
+        required: ['text'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['questions'],
+  additionalProperties: false,
+}
+
+const QUESTIONS_SYSTEM = `You help a notes app ask a person a few BASIC clarifying questions about a note
+they just wrote, tailored to what it's specifically about.
+
+Rules:
+- Return 2-3 questions, most useful first. Never more than 3.
+- Each must be BASIC and concrete — the obvious things you'd need to know to help
+  with THIS note ("When are you travelling?", "How many days in Oman?",
+  "Who's going with you?"). Never abstract, open-ended, or essay-style.
+- Tailor to the note's actual topic: reference the real place / subject / product
+  where it reads naturally.
+- Give 2-4 short tappable answer "chips" when the answer is likely one of a few
+  options (durations, yes/no, budgets, counts). Omit "chips" for genuinely open
+  questions (names, free text).
+- Keep each question under ~8 words. Friendly, plain language. No preamble.
+Return JSON only.`
+
+app.post('/api/questions', async (req, res) => {
+  const { text = '', kind = '', topic = '', backend } = req.body || {}
+  const key = req.userId || req.body?.clientId
+  if (!(await hasClassifyAccess(key)))
+    return res.status(402).json(await paywallBody(key, { questions: [] }, 'classifier'))
+  const resolved = resolveBackend(backend)
+  if (!resolved) return res.json({ configured: false, questions: [] })
+  if (text.trim().length < 3) return res.json({ configured: true, questions: [] })
+
+  try {
+    const data = await generateJSON(resolved, {
+      model: AI_MODEL_CODE,
+      system: QUESTIONS_SYSTEM,
+      user: `Note:\n"""\n${text}\n"""\n\nDetected category: ${
+        kind || 'unknown'
+      }${topic ? `; topic: ${topic}` : ''}.\nWrite the 2-3 basic questions.`,
+      schema: QUESTIONS_SCHEMA,
+      maxTokens: 400,
+      clientId: key,
+      pool: 'classifier',
+    })
+    res.json({ configured: true, questions: (data.questions ?? []).slice(0, 3) })
+  } catch (err) {
+    const msg = err?.message || String(err)
+    console.error(`questions error [${resolved}]:`, msg)
+    res.status(502).json({ configured: true, error: msg, questions: [] })
+  }
+})
+
+// ---------------------------------------------------------------------------
 // Tool suggestion + generation — the "evolve with you" engine. Both run on the
 // same Claude model and only fire when the user has Broader AI enabled.
 // ---------------------------------------------------------------------------
@@ -1278,8 +1349,21 @@ const RECOMMEND_SCHEMA = {
         additionalProperties: false,
       },
     },
+    // Concrete next steps to take — things to DO, not things to look at.
+    actions: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          action: { type: 'string' }, // short imperative step
+          detail: { type: 'string' }, // one line on how / why / when
+        },
+        required: ['action', 'detail'],
+        additionalProperties: false,
+      },
+    },
   },
-  required: ['heading', 'recommendations'],
+  required: ['heading', 'recommendations', 'actions'],
   additionalProperties: false,
 }
 
@@ -1311,7 +1395,18 @@ Rules:
   verifiable options over obscure ones you're unsure exist.
 - "heading" is a short, friendly title tailored to the note
   (e.g. "iPhones to consider", "Spots to check out in Lisbon", "Reads on habit-building").
-Examples:
+
+Also return "actions": 3-5 concrete NEXT STEPS the person should take to move this
+note forward — things to DO, distinct from the "things worth a look" above.
+- Each is a short imperative "action" (under ~8 words) plus a one-line "detail" on
+  how, why, or when. Tailor to the note's specifics and be genuinely useful.
+- Order best-first (the highest-leverage next step is #1). Concrete and doable, not
+  vague ("Book flights 6-8 weeks out" not "Plan your trip").
+- Examples: "buying a laptop" -> "Set a hard budget", "Check for student discount",
+  "Compare 2-3 shortlisted models". "trip to Oman" -> "Check visa requirements for
+  your passport", "Book flights 6-8 weeks ahead", "Pack for 35°C+ heat".
+
+Examples of recommendations:
 - "buying a budget laptop for uni" -> heading "Laptops worth a look"; specific current models spanning price tiers, each with its tradeoff.
 - "weekend in Lisbon" -> heading "Spots to check out"; real neighbourhoods, landmarks, and a signature dish.
 - "learning to cook Thai food" -> heading "Where to start"; real dishes, a classic named cookbook, key pantry ingredients.`
@@ -1344,11 +1439,12 @@ app.post('/api/recommend', async (req, res) => {
       configured: true,
       heading: data.heading ?? 'Worth a look',
       recommendations: data.recommendations ?? [],
+      actions: data.actions ?? [],
     })
   } catch (err) {
     const msg = err?.message || String(err)
     console.error(`recommend error [${resolved}]:`, msg)
-    res.status(502).json({ configured: true, error: msg, recommendations: [] })
+    res.status(502).json({ configured: true, error: msg, recommendations: [], actions: [] })
   }
 })
 

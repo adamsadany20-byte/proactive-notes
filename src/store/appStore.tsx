@@ -10,6 +10,7 @@ import type {
   CalendarEvent,
   Enrichment,
   RemoteClassification,
+  TailoredQuestions,
   InferenceResult,
   Note,
   Reminder,
@@ -96,6 +97,7 @@ type Action =
   | { type: 'SET_BILLING'; billing: BillingStatus }
   | { type: 'SET_ENRICHMENT'; id: string; enrichment: Enrichment }
   | { type: 'SET_CLASSIFICATION'; id: string; classification: RemoteClassification }
+  | { type: 'SET_TAILORED_QUESTIONS'; id: string; tailoredQuestions: TailoredQuestions }
   | { type: 'SET_EXTERNAL_EVENTS'; events: ExternalEvent[] }
   | { type: 'TOGGLE_OCCURRENCE'; reminderId: string; iso: string }
   | { type: 'UPDATE_REMINDER'; reminderId: string; patch: Partial<Reminder> }
@@ -467,6 +469,17 @@ function reducer(state: State, action: Action): State {
         true,
       )
     }
+    case 'SET_TAILORED_QUESTIONS': {
+      const note = state.notes.find((n) => n.id === action.id)
+      if (!note) return state
+      const updated: Note = { ...note, tailoredQuestions: action.tailoredQuestions }
+      // Re-run inference so a newly arrived question surfaces in the prompt.
+      return reassess(
+        { ...state, notes: state.notes.map((n) => (n.id === note.id ? updated : n)) },
+        updated,
+        true,
+      )
+    }
     default:
       return state
   }
@@ -490,6 +503,7 @@ interface StoreApi {
   setBilling: (billing: BillingStatus) => void
   setEnrichment: (id: string, enrichment: Enrichment) => void
   setClassification: (id: string, classification: RemoteClassification) => void
+  setTailoredQuestions: (id: string, tailoredQuestions: TailoredQuestions) => void
   setExternalEvents: (events: ExternalEvent[]) => void
   toggleOccurrence: (reminderId: string, iso: string) => void
   updateReminder: (reminderId: string, patch: Partial<Reminder>) => void
@@ -690,6 +704,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         dispatch({ type: 'SET_ENRICHMENT', id, enrichment }),
       setClassification: (id, classification) =>
         dispatch({ type: 'SET_CLASSIFICATION', id, classification }),
+      setTailoredQuestions: (id, tailoredQuestions) =>
+        dispatch({ type: 'SET_TAILORED_QUESTIONS', id, tailoredQuestions }),
       setExternalEvents: (events) =>
         dispatch({ type: 'SET_EXTERNAL_EVENTS', events }),
       toggleOccurrence: (reminderId, iso) =>

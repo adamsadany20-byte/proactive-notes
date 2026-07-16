@@ -6,7 +6,12 @@ import {
 } from '../engine/featureSuggester'
 import { DynamicComponentRenderer } from './DynamicComponentRenderer'
 import { useStore } from '../store/appStore'
-import { startSubscription, recommendApi, type Recommendation } from '../services/api'
+import {
+  startSubscription,
+  recommendApi,
+  type Recommendation,
+  type ActionRec,
+} from '../services/api'
 import type { Note } from '../types'
 
 interface GeneratedFeature {
@@ -79,10 +84,14 @@ export function FeatureGenerator({ note }: Props) {
   }, [note.text, aiOn, aiConfigured, locked, backend, backendLabel])
 
   // Real-world recommendations — the AI reaching beyond the note to name actual
-  // products, places, books, tools worth knowing about. Same seamless pattern.
+  // products, places, books, tools worth knowing about — AND concrete next steps
+  // to take (actions). Both come from the same recommend call. Same seamless
+  // pattern.
   const [recs, setRecs] = useState<Recommendation[]>([])
   const [recHeading, setRecHeading] = useState('')
   const [recsOpen, setRecsOpen] = useState(true)
+  const [actions, setActions] = useState<ActionRec[]>([])
+  const [actionsOpen, setActionsOpen] = useState(true)
   const recReqId = useRef(0)
   const lastRecText = useRef('')
   useEffect(() => {
@@ -93,10 +102,11 @@ export function FeatureGenerator({ note }: Props) {
       const myId = ++recReqId.current
       lastRecText.current = text
       try {
-        const { heading, recommendations } = await recommendApi(text, backend)
+        const { heading, recommendations, actions } = await recommendApi(text, backend)
         if (myId !== recReqId.current) return
         setRecHeading(heading)
         setRecs(recommendations)
+        setActions(actions)
       } catch {
         /* recommendations are a bonus; stay quiet on failure */
       }
@@ -307,6 +317,41 @@ export function FeatureGenerator({ note }: Props) {
               </button>
             ))}
           </div>
+        </div>
+      )}
+
+      {actions.length > 0 && (
+        <div className="gen-recs gen-actions">
+          <button
+            className="gen-recs-toggle"
+            onClick={() => setActionsOpen((o) => !o)}
+            aria-expanded={actionsOpen}
+          >
+            <span className="gen-sub">Next steps to take</span>
+            <span className="gen-recs-count">{actions.length}</span>
+            <span className={`gen-recs-chevron ${actionsOpen ? 'open' : ''}`}>
+              ⌄
+            </span>
+          </button>
+          {actionsOpen && (
+            <ul className="act-list">
+              {actions.map((a, i) => (
+                <li
+                  className="act-item"
+                  key={`${a.action}-${i}`}
+                  style={{ animationDelay: `${i * 0.06}s` }}
+                >
+                  <span className="act-check" aria-hidden>
+                    →
+                  </span>
+                  <div className="act-body">
+                    <span className="act-name">{a.action}</span>
+                    <span className="act-detail">{a.detail}</span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
 
