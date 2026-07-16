@@ -1,4 +1,5 @@
 import type { AgentQuestion, Entities, Note, NoteKind } from '../types'
+import { isSoftwareProject } from './classify'
 import { SUBJECT_TOPICS } from './entities'
 
 // Decide the single next question to ask for a note, given what we already
@@ -82,7 +83,10 @@ export function nextQuestion(
     }
 
     case 'project': {
-      if (!has('stack')) {
+      const software = isSoftwareProject(note.text)
+      // The stack question only makes sense for a software build. A presentation
+      // or an SEO push is a project too — it just skips straight to scoping.
+      if (software && !has('stack')) {
         return {
           id: 'q-stack',
           field: 'stack',
@@ -112,7 +116,9 @@ export function nextQuestion(
           id: 'q-goal',
           field: 'goal',
           text: "What's the main goal?",
-          chips: ['Learn', 'Ship to users', 'Portfolio piece', 'Make money'],
+          chips: software
+            ? ['Learn', 'Ship to users', 'Portfolio piece', 'Make money']
+            : ['Get it done', 'Make it great', 'Hit a deadline'],
           placeholder: 'One line is fine',
         }
       }

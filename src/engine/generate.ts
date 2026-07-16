@@ -3,12 +3,14 @@ import type {
   Flashcard,
   Milestone,
   Note,
+  NoteKind,
   ProjectTask,
   PurchaseOption,
   Segment,
   StudySession,
   ChecklistItem,
 } from '../types'
+import { isSoftwareProject } from './classify'
 import { SUBJECT_TOPICS } from './entities'
 
 let counter = 0
@@ -46,13 +48,59 @@ export function makeFlashcards(entities: Entities): Flashcard[] {
 
 // ---- Topic checklist --------------------------------------------------------
 
-export function makeTopicChecklist(entities: Entities): ChecklistItem[] {
-  return effectiveTopics(entities).map((t) => ({
+// Starter checklists per kind. These make classification pay off on its own: a
+// note the local engine recognises as (say) travel gets a sensible trip plan
+// immediately, instead of an empty box waiting for the user to type a list.
+// Purely local + deterministic — no network, no tokens. When the note also names
+// explicit topics, those lead and these are appended (see mergeChecklist).
+const STARTER_CHECKLISTS: Partial<Record<NoteKind, string[]>> = {
+  travel: [
+    'Book transport',
+    'Book accommodation',
+    'Check passport & visa',
+    'Sort travel insurance',
+    'Plan the itinerary',
+    'Pack essentials',
+  ],
+  health: [
+    'Book the appointment',
+    'Note symptoms & questions',
+    'Bring ID & insurance details',
+    'List current medications',
+  ],
+  finance: [
+    'Gather statements & bills',
+    'Check amounts & due dates',
+    'Set up or confirm payment',
+    'File for your records',
+  ],
+  recipe: ['Gather ingredients', 'Prep & measure', 'Cook the dish', 'Plate & serve'],
+}
+
+// A kind whose classification alone yields a useful starter workspace (the
+// checklist above). Used by the stage machine to reveal the workspace on
+// classification rather than waiting for an extracted date/topic that a bare
+// note like "trip to oman" never produces.
+export function hasStarterScaffold(kind: NoteKind): boolean {
+  return kind in STARTER_CHECKLISTS
+}
+
+export function makeTopicChecklist(
+  entities: Entities,
+  kind?: NoteKind,
+): ChecklistItem[] {
+  const mk = (text: string): ChecklistItem => ({
     id: uid('chk'),
-    key: t.trim().toLowerCase(),
-    text: t,
+    key: text.trim().toLowerCase(),
+    text,
     done: false,
-  }))
+  })
+  const topics = effectiveTopics(entities)
+  if (topics.length) return topics.map(mk)
+  // No explicit topics in the note — fall back to the kind's starter plan so a
+  // freshly classified note still opens with something useful.
+  const starter = kind ? STARTER_CHECKLISTS[kind] : undefined
+  return starter ? starter.map(mk) : []
 }
 
 // ---- Study schedule ---------------------------------------------------------
@@ -100,14 +148,25 @@ export function makeStudySchedule(entities: Entities): StudySession[] {
 
 export function makeProjectTasks(note: Note): ProjectTask[] {
   const stack = note.answers['stack'] || 'your stack'
-  const base: string[] = [
-    'Define core feature set',
-    `Scaffold project (${stack})`,
-    'Design data model',
-    'Build main UI flow',
-    'Wire up persistence',
-    'Polish & test',
-  ]
+  // Software builds get the dev backlog; any other project (a presentation, an
+  // SEO push, a campaign) gets generic phases that read sensibly for all of them.
+  const base: string[] = isSoftwareProject(note.text)
+    ? [
+        'Define core feature set',
+        `Scaffold project (${stack})`,
+        'Design data model',
+        'Build main UI flow',
+        'Wire up persistence',
+        'Polish & test',
+      ]
+    : [
+        'Define scope & goals',
+        'Research & gather inputs',
+        'Outline the plan',
+        'Do the core work',
+        'Review & refine',
+        'Wrap up & share',
+      ]
   return base.map((title, i) => ({
     id: uid('task'),
     title,
@@ -117,7 +176,9 @@ export function makeProjectTasks(note: Note): ProjectTask[] {
 
 export function makeMilestones(note: Note): Milestone[] {
   const timeline = note.answers['timeline'] || ''
-  const titles = ['Prototype working', 'Core features done', 'First release']
+  const titles = isSoftwareProject(note.text)
+    ? ['Prototype working', 'Core features done', 'First release']
+    : ['Plan set', 'Main work done', 'Delivered']
   return titles.map((title, i) => ({
     id: uid('ms'),
     title,

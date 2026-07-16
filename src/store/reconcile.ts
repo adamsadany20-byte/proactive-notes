@@ -19,6 +19,7 @@ import {
   makeTopicChecklist,
   uid,
 } from '../engine/generate'
+import { isSoftwareProject } from '../engine/classify'
 import { findConflicts } from './calendar'
 
 // Which segment types a kind wants, given current data. The streak tracker
@@ -41,12 +42,14 @@ function desiredTypes(kind: NoteKind, entities: Entities): SegmentType[] {
       return ['checklist']
     case 'purchase':
       return ['purchase-planner']
-    // New kinds reuse the general-purpose segments: a checklist for the things
-    // to do/pack/gather, and a calendar block when the note carries a date
-    // (an appointment, a departure). They fill from list content in the note.
+    // These reuse the general-purpose segments: a checklist for the things to
+    // do/pack/gather (now seeded with a starter plan on classification), plus a
+    // calendar block ONLY once the note carries a date. Without that guard a
+    // dateless "trip to oman" showed an empty "forming" calendar skeleton next
+    // to the useful checklist — noise, not information.
     case 'health':
     case 'travel':
-      return ['calendar', 'checklist']
+      return entities.date ? ['calendar', 'checklist'] : ['checklist']
     case 'finance':
     case 'recipe':
     case 'media':
@@ -56,12 +59,27 @@ function desiredTypes(kind: NoteKind, entities: Entities): SegmentType[] {
   }
 }
 
-function titleFor(type: SegmentType): string {
+function titleFor(type: SegmentType, kind?: NoteKind): string {
   switch (type) {
     case 'calendar':
       return 'Calendar'
     case 'checklist':
-      return 'Topic checklist'
+      // The checklist is reused across kinds — name it for what it holds so the
+      // menu reads as purpose-built rather than a generic "topic" list.
+      switch (kind) {
+        case 'travel':
+          return 'Trip checklist'
+        case 'health':
+          return 'Health checklist'
+        case 'finance':
+          return 'Money to sort'
+        case 'recipe':
+          return 'Recipe steps'
+        case 'media':
+          return 'Your list'
+        default:
+          return 'Topic checklist'
+      }
     case 'flashcards':
       return 'Flashcards'
     case 'schedule':
@@ -109,6 +127,7 @@ function buildData(
   note: Note,
   entities: Entities,
   calendar: CalendarEvent[],
+  kind: NoteKind,
 ): { data: any; filled: boolean } {
   switch (type) {
     case 'flashcards': {
@@ -116,7 +135,7 @@ function buildData(
       return { data: { cards }, filled: cards.length > 0 }
     }
     case 'checklist': {
-      const items = makeTopicChecklist(entities)
+      const items = makeTopicChecklist(entities, kind)
       return { data: { items }, filled: items.length > 0 }
     }
     case 'schedule': {
@@ -132,9 +151,15 @@ function buildData(
     case 'project-board': {
       const tasks = makeProjectTasks(note)
       const milestones = makeMilestones(note)
+      // "Filled" = the user has given the defining detail. For a software build
+      // that's the stack; a non-software project skips that question, so key off
+      // its first real answer instead — otherwise the board is stuck "forming".
+      const filled = isSoftwareProject(note.text)
+        ? 'stack' in note.answers
+        : 'timeline' in note.answers || 'goal' in note.answers
       return {
         data: { tasks, milestones },
-        filled: 'stack' in note.answers,
+        filled,
       }
     }
     case 'streak-tracker': {
@@ -230,11 +255,11 @@ export function reconcileSegments(
     const existing = note.segments.find((s) => s.type === type)
 
     if (!existing) {
-      const { data, filled } = buildData(type, note, entities, calendar)
+      const { data, filled } = buildData(type, note, entities, calendar, kind)
       next.push({
         id: uid('seg'),
         type,
-        title: titleFor(type),
+        title: titleFor(type, kind),
         filled,
         data: { ...data, auto: true, sig, dismissed: [] },
       })
@@ -248,7 +273,7 @@ export function reconcileSegments(
         next.push(existing)
         continue
       }
-      const { data: fresh } = buildData(type, note, entities, calendar)
+      const { data: fresh } = buildData(type, note, entities, calendar, kind)
       const dismissed: string[] = existing.data?.dismissed ?? []
       if (type === 'checklist') {
         const items = mergeChecklist(
@@ -278,7 +303,7 @@ export function reconcileSegments(
 
     if (existing.data?.auto !== false && existing.data?.sig !== sig) {
       // Still auto-managed and inputs changed → refresh, preserving id.
-      const { data, filled } = buildData(type, note, entities, calendar)
+      const { data, filled } = buildData(type, note, entities, calendar, kind)
       next.push({
         ...existing,
         filled,

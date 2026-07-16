@@ -1,6 +1,7 @@
 import type { Entities, InferenceResult, Note, NoteKind, Stage } from '../types'
 import { extractDate, extractEntities, topicsFromAnswer } from './entities'
 import { classify } from './classify'
+import { hasStarterScaffold } from './generate'
 import { deriveTopic } from './topics'
 import { nextQuestion } from './questions'
 
@@ -96,8 +97,14 @@ function computeStage(
   if (kind === 'unknown' || confidence < 0.4) return 'idle'
 
   // A purchase is actionable the instant it's recognised — the product itself is
-  // the seed, so we don't gate it behind an extracted date/topic like other kinds.
-  const ready = kind === 'purchase' ? true : featureReady(note, entities)
+  // the seed. The same holds for kinds with a starter scaffold (travel, health,
+  // finance, recipe): classification alone yields a useful checklist, so reveal
+  // the workspace immediately instead of waiting for a date/topic a bare note
+  // ("trip to oman") never produces.
+  const ready =
+    kind === 'purchase' || hasStarterScaffold(kind)
+      ? true
+      : featureReady(note, entities)
   const essential = essentialPending(kind, note, entities)
   const filled = allSegmentsFilled(kind, note, entities)
 

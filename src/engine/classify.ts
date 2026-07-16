@@ -85,6 +85,20 @@ const SIGNALS: Record<Exclude<NoteKind, 'unknown' | 'general'>, RegExp[]> = {
   ],
 }
 
+// The `project` kind is deliberately broad — the classifier treats any
+// deliverable to build or prepare as a project (an app, but equally a work
+// presentation, a marketing push, an SEO audit). Only SOFTWARE projects should
+// get the dev-flavoured scaffolding (the "what's the stack" question, a
+// scaffold/data-model/persistence backlog). This spots a genuinely technical
+// build so everything else falls back to generic project phases. Kept tight on
+// purpose: no bare "build/make/create", which any project would trip.
+const SOFTWARE_PROJECT =
+  /\b(apps?|applications?|websites?|web ?apps?|web ?sites?|api|apis|sdk|cli|front-?end|back-?end|full-?stack|database|databases|schema|codebase|repo|repos|repository|git|deploy(?:ment)?|hosting|framework|frameworks|react|node\.?js|node|swift|swiftui|python|typescript|javascript|\bcss\b|\bhtml\b|ios|android|saas|mvp|refactor|migration|microservices?)\b/i
+
+export function isSoftwareProject(text: string): boolean {
+  return SOFTWARE_PROJECT.test(text)
+}
+
 export function classify(
   text: string,
   entities: Entities,
