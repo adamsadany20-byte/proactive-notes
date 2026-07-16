@@ -180,6 +180,17 @@ export function ClockIcon(props: IconProps) {
 }
 
 // Three sliders with offset knobs — schedule/tuning.
+// A padlock whose body carries the tucked bottom-left corner — a paid tier the
+// user doesn't own yet.
+export function LockIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M8.4 10.4 V7.9 C8.4 5.9 10 4.3 12 4.3 C14 4.3 15.6 5.9 15.6 7.9 V10.4" />
+      <path d="M8 10.4 H17.2 C18.2 10.4 19 11.2 19 12.2 V17.9 C19 19 18.1 19.9 17 19.9 H10.6 C7.9 19.9 5.7 17.7 5.7 15 V12.7 C5.7 11.4 6.7 10.4 8 10.4 Z" />
+    </Svg>
+  )
+}
+
 export function TuneIcon(props: IconProps) {
   return (
     <Svg {...props}>

@@ -8,6 +8,7 @@ import { SidebarStreak } from './SidebarStreak'
 import { isSupabaseEnabled, supabase } from '../services/supabase'
 import {
   ChevronIcon,
+  LockIcon,
   PlusIcon,
   SearchIcon,
   TuneIcon,
@@ -69,18 +70,31 @@ function AiTierSelector() {
   const evAiIncl = gbp(p?.evolveAiIncludedPence, 500)
   const evClIncl = gbp(p?.evolveClassifierIncludedPence, 100)
 
+  // One line per tier, sat under its own name — so all three explain themselves
+  // at once instead of taking turns in a single shared status line. The price
+  // isn't repeated here; it has its own slot on the row.
   const status = (id: Tier): string => {
-    if (id === 'free') return 'Free — deterministic engine, no network'
+    if (id === 'free') return 'Deterministic engine, no network'
     if (unconfigured(id)) return 'AI not configured on server'
     if (capped && !lockedFor(id))
       return 'Spending limit reached — raise it below to continue'
     if (id === 'classifier')
       return lockedFor(id)
-        ? `${classPrice}/mo — includes ${classIncl} of classifier usage`
+        ? `Includes ${classIncl} of classifier usage`
         : 'Cloud classification when the local engine is unsure'
     return lockedFor(id)
-      ? `${evPrice}/mo — ${evAiIncl} tools + ${evClIncl} classifier included`
+      ? `${evAiIncl} of tools + ${evClIncl} classifier included`
       : 'Everything: classification + suggestions & tools'
+  }
+
+  // Shown only on a tier the user can't use yet — the price IS the "you can buy
+  // this" affordance, so it earns the row's right-hand slot. Suppressed when the
+  // server has no API key: don't sell a plan that can't be delivered.
+  const price = (id: Tier): string | null => {
+    if (!lockedFor(id) || unconfigured(id)) return null
+    if (id === 'classifier') return `${classPrice}/mo`
+    if (id === 'evolve') return `${evPrice}/mo`
+    return null
   }
 
   // Tapping a locked paid tier opens a confirmation modal (chosen plan) rather
@@ -124,23 +138,49 @@ function AiTierSelector() {
   return (
     <div className="ai-toggle">
       <strong className="ai-tier-label">AI tier</strong>
-      <div className="tier-seg tier-seg-3" role="radiogroup" aria-label="AI tier">
-        {TIERS.map((t) => (
-          <button
-            key={t.id}
-            className={`tier-opt ${active === t.id ? 'on' : ''}`}
-            role="radio"
-            aria-checked={active === t.id}
-            title={status(t.id)}
-            onClick={() => onPick(t.id)}
-          >
-            {t.label}
-            {lockedFor(t.id) && <span className="tier-lock"> 🔒</span>}
-            {unconfigured(t.id) && <span className="tier-warn"> ·!</span>}
-          </button>
-        ))}
+      {/* A stack of rows, not a segmented pill: the three labels are wildly
+          different lengths, two of them are a purchase rather than a toggle, and
+          each needs its own line of explanation. Rows give every tier room to
+          say what it is at a glance. */}
+      <div className="tier-list" role="radiogroup" aria-label="AI tier">
+        {TIERS.map((t) => {
+          const locked = lockedFor(t.id)
+          return (
+            <button
+              key={t.id}
+              className={`tier-opt ${active === t.id ? 'on' : ''} ${
+                locked ? 'locked' : ''
+              }`}
+              role="radio"
+              aria-checked={active === t.id}
+              onClick={() => onPick(t.id)}
+            >
+              {/* Leading slot carries state: a lock when the tier must be bought,
+                  otherwise the selection dot. Never both — a capped subscriber
+                  owns their plan and must not be shown a padlock. */}
+              <span className="tier-mark" aria-hidden>
+                {locked ? <LockIcon /> : <span className="tier-dot" />}
+              </span>
+              <span className="tier-name">{t.label}</span>
+              {/* Price and warning share one trailing slot rather than each
+                  claiming their own cell. They're mutually exclusive today
+                  (price() yields to the warning), but the slot keeps them from
+                  ever stacking if that changes. */}
+              {(price(t.id) || unconfigured(t.id)) && (
+                <span className="tier-tail">
+                  {price(t.id) && <span className="tier-price">{price(t.id)}</span>}
+                  {unconfigured(t.id) && (
+                    <span className="tier-warn" aria-hidden>
+                      !
+                    </span>
+                  )}
+                </span>
+              )}
+              <span className="tier-desc">{status(t.id)}</span>
+            </button>
+          )
+        })}
       </div>
-      <span className="ai-toggle-text">{status(active)}</span>
       {usageLine && <span className="ai-usage-text">{usageLine}</span>}
 
       {upgradePlan && (

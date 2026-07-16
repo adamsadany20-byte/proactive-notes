@@ -73,6 +73,11 @@
   --radius-notch-note: 24px;
   --radius-notch-sm: 13px;
 
+  /* One gutter for every direct child of the sidebar column (header, streak,
+     search, note list, footer tools). They each used to carry their own inset —
+     20/12/10/16 — so their card edges never lined up into a single rail. */
+  --side-gutter: 14px;
+
   /* Dimensional elevation: a tight warm contact shadow plus a wide soft ambient
      one, so surfaces feel physically layered rather than flatly bordered. */
   --shadow-sm: 0 1px 2px rgba(64, 47, 22, 0.07),
@@ -168,6 +173,11 @@ button {
 .col-side,
 .col-cal {
   background: var(--panel);
+  /* Whatever a column's own background is, --cal-surface must match it: the
+     sticky calendar day-label paints the gap under itself in this colour so
+     cards can't scroll through it. Declared beside `background` everywhere it's
+     set, so the two can never drift apart. */
+  --cal-surface: var(--panel);
   border: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
   border-radius: var(--radius-notch-note);
   box-shadow: var(--shadow-float);
@@ -180,7 +190,7 @@ button {
   align-items: center;
   justify-content: space-between;
   gap: 14px;
-  padding: 22px 20px 16px;
+  padding: 22px var(--side-gutter) 16px;
 }
 .brand {
   display: flex;
@@ -271,8 +281,8 @@ button {
   display: flex;
   align-items: center;
   gap: 11px;
-  width: calc(100% - 24px);
-  margin: 2px 12px 6px;
+  width: calc(100% - var(--side-gutter) * 2);
+  margin: 2px var(--side-gutter) 6px;
   padding: 10px 12px;
   border: 1px solid var(--line);
   background: var(--panel-2);
@@ -388,7 +398,7 @@ button {
   position: relative;
   display: flex;
   align-items: center;
-  margin: 4px 12px 2px;
+  margin: 4px var(--side-gutter) 2px;
 }
 .ns-ico {
   position: absolute;
@@ -449,7 +459,7 @@ button {
 }
 
 .note-list {
-  padding: 6px 10px;
+  padding: 6px var(--side-gutter);
   display: flex;
   flex-direction: column;
   gap: 3px;
@@ -529,14 +539,14 @@ button {
 }
 
 .side-foot {
-  padding: 16px 16px 18px;
+  padding: 16px var(--side-gutter) 18px;
   font-size: 11px;
   color: var(--ink-faint);
   border-top: 1px solid var(--line-soft);
   margin-top: 12px;
 }
 .side-foot p {
-  margin: 14px 4px 0;
+  margin: 14px 0 0;
   line-height: 1.5;
 }
 /* Each tool (AI tier, reminders, spend cap) is its own soft inset card — clear
@@ -565,8 +575,11 @@ button {
   margin-top: 10px;
 }
 
-/* Design theme switcher (Earthy / Modern) */
-.tt-label {
+/* Every footer tool's heading ("Design", "AI tier", "Reminders") reads the same.
+   .ai-tier-label had no type of its own, so it inherited .side-foot's faint 11px
+   body text and sat a tier below its neighbours. */
+.tt-label,
+.ai-tier-label {
   display: block;
   font-size: 12.5px;
   font-weight: 650;
@@ -639,43 +652,118 @@ button {
 .ai-toggle {
   display: block;
 }
-.tier-seg {
+/* A stack of rows rather than a segmented pill. Three labels of very different
+   lengths never shared one track comfortably, and two of the three are a
+   purchase, not a toggle — they need a price and a sentence, which a pill has
+   nowhere to put. */
+.tier-list {
   display: flex;
+  flex-direction: column;
   gap: 4px;
-  background: var(--line);
-  border-radius: 999px;
-  padding: 3px;
 }
+/* Two columns: the state mark, then the text. The name and price share the top
+   line; the description spans the full text column beneath them. */
 .tier-opt {
-  flex: 1;
-  border: none;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  grid-template-areas:
+    'mark name tail'
+    'mark desc desc';
+  align-items: center;
+  column-gap: 8px;
+  row-gap: 1px;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
   background: transparent;
-  border-radius: 999px;
-  padding: 6px 8px;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--ink-faint);
+  font-family: inherit;
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
-  white-space: nowrap;
+  transition: background 0.15s ease, border-color 0.15s ease;
 }
 .tier-opt:hover {
-  color: var(--ink);
+  background: var(--line-soft);
 }
 .tier-opt.on {
-  background: var(--accent);
-  color: #fff;
+  background: color-mix(in srgb, var(--accent) 8%, var(--panel));
+  border-color: color-mix(in srgb, var(--accent) 26%, var(--line));
 }
-.tier-lock {
-  font-size: 9px;
-  opacity: 0.8;
+.tier-mark {
+  grid-area: mark;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  font-size: 13px;
+  color: var(--ink-faint);
+}
+.tier-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1.5px solid var(--line);
+  background: var(--panel);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+/* The selected dot fills from its own centre — an inset ring, so it reads as
+   chosen without needing a tick glyph at 12px. */
+.tier-opt.on .tier-dot {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 2.5px var(--panel), inset 0 0 0 12px var(--accent);
+}
+.tier-opt.locked .tier-mark {
+  color: var(--ink-faint);
+}
+.tier-name {
+  grid-area: name;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+.tier-opt.on .tier-name {
+  color: var(--accent-ink);
+}
+.tier-tail {
+  grid-area: tail;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+/* On a tier you don't own, the price IS the call to action — it says "buy me"
+   far better than a padlock alone, and it's the one number worth surfacing. */
+.tier-price {
+  font-size: 11px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+  border-radius: 999px;
+  padding: 2px 7px;
+  white-space: nowrap;
+}
+.tier-desc {
+  grid-area: desc;
+  font-size: 10.5px;
+  line-height: 1.35;
+  color: var(--ink-faint);
 }
 .tier-warn {
-  color: #d9822b;
-  font-weight: 700;
-}
-.tier-opt.on .tier-warn {
-  color: #ffe0b2;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: #d9822b;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
 }
 .gen-tier-actions {
   display: flex;
@@ -710,31 +798,9 @@ button {
 .switch.on .knob {
   transform: translateX(16px);
 }
-/* the AI-tier heading and the per-tier status line under the segmented control */
-.ai-tier-label {
-  display: block;
-  margin-bottom: 6px;
-}
-.ai-toggle-text {
-  display: block;
-  margin-top: 6px;
-  font-size: 11px;
-  color: var(--ink-faint);
-  line-height: 1.3;
-}
-/* The three-tier control needs tighter chips to fit "Classification". */
-.tier-seg-3 {
-  gap: 2px;
-  padding: 2px;
-}
-.tier-seg-3 .tier-opt {
-  padding: 6px 4px;
-  font-size: 10.5px;
-  letter-spacing: -0.01em;
-}
 .ai-usage-text {
   display: block;
-  margin-top: 4px;
+  margin-top: 8px;
   font-size: 10.5px;
   color: var(--ink-faint);
   opacity: 0.85;
@@ -3378,7 +3444,7 @@ button {
 /* ---- Calendar panel ------------------------------------------------------ */
 
 .cal-head {
-  padding: 22px 20px 10px;
+  padding: 22px var(--side-gutter) 10px;
   font-family: var(--display);
   font-weight: 650;
   font-size: 18px;
@@ -3388,20 +3454,34 @@ button {
   gap: 9px;
 }
 .cal-list {
-  padding: 4px 14px 40px;
+  padding: 4px var(--side-gutter) 40px;
 }
 .cal-daygroup {
   margin-bottom: 16px;
 }
+/* The day label needs air beneath it: it sat flush on its own first card (0px)
+   while whole groups were 16px apart, so each label read as welded to the card
+   under it. The rhythm is now cards 5px < label 9px < groups 16px, which is the
+   grouping the eye should actually see. */
 .cal-dayhead {
   font-size: 11px;
   font-weight: 700;
   letter-spacing: normal;
   color: var(--ink-faint);
   padding: 6px 4px;
+  margin-bottom: 9px;
   position: sticky;
   top: 0;
+  /* z-index is required, not decorative: .cal-event's fadeIn animation lifts the
+     cards into the positioned paint layer, where tree order puts them ABOVE this
+     (later siblings win). Without it the label is painted over by its own card
+     and silently disappears the moment the group starts scrolling. */
+  z-index: 1;
   background: var(--panel-2);
+  /* The label is sticky and opaque, so a bare margin isn't empty space — cards
+     scroll up through it and show clipped under the band. Painting the gap in
+     the surface colour keeps it reading as a gap while a card slides beneath. */
+  box-shadow: 0 9px 0 var(--cal-surface);
 }
 .cal-event {
   display: flex;
@@ -3627,6 +3707,8 @@ button {
     margin: 0 auto;
     border: none;
     background: transparent;
+    /* Column is transparent here — the page ground is what shows through. */
+    --cal-surface: var(--bg);
     border-radius: 0;
     box-shadow: none;
     animation: page-in 0.34s var(--ease-out) both;
@@ -3693,7 +3775,7 @@ button {
     display: none;
   }
   .side-head {
-    padding: 14px 14px 6px;
+    padding: 14px var(--side-gutter) 6px;
   }
   .side-head .icon-btn {
     width: 100%;
@@ -4964,15 +5046,12 @@ input {
 
 /* ---- Earthy: global component reverts (apply on mobile too) --------------- */
 
-/* Footer tools were flat with hairline dividers, not inset cards. */
-[data-theme='earthy'] .ai-toggle {
-  margin-top: 0;
-  padding: 0;
-  border: none;
-  border-radius: 0;
-  background: transparent;
-}
+/* Footer tools were flat with hairline dividers, not inset cards. Every tool
+   gets the same divider — .ai-toggle used to be exempt (it was the first tool in
+   the footer, so it needed no rule above it), but ThemeToggle now sits above it
+   and "AI tier" collided with the design note. */
 [data-theme='earthy'] .theme-toggle,
+[data-theme='earthy'] .ai-toggle,
 [data-theme='earthy'] .push-controls,
 [data-theme='earthy'] .spend-limit {
   margin-top: 12px;
@@ -4984,12 +5063,8 @@ input {
 }
 
 /* Segmented controls + pills were smaller, softer rectangles. */
-[data-theme='earthy'] .tier-seg {
-  border-radius: 8px;
-}
 [data-theme='earthy'] .tier-opt {
-  border-radius: 6px;
-  padding: 5px 6px;
+  border-radius: 8px;
 }
 [data-theme='earthy'] .tt-seg {
   border-radius: 8px;
@@ -5102,6 +5177,7 @@ input {
   }
   [data-theme='earthy'] .col-cal {
     background: var(--panel-2);
+    --cal-surface: var(--panel-2);
     border: none;
     border-left: 1px solid var(--line);
     border-radius: 0;
