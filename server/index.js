@@ -37,6 +37,11 @@ import {
   sendToTarget,
   runTick,
 } from './push.js'
+import {
+  addFeedback,
+  addEvents,
+  summarizeEvents,
+} from './insightStore.js'
 
 // Load server/.env explicitly relative to THIS file, so the keys load no matter
 // where the process is launched from (project root via `npm start`, or the
@@ -180,6 +185,15 @@ const FREE_CLIENT_IDS = new Set(
     .map((s) => s.trim())
     .filter(Boolean),
 )
+
+// The owner(s) — the never-billed client ids also gate the product-analytics
+// view (only the owner should see cross-user usage).
+const isOwner = (id) => !!(id && FREE_CLIENT_IDS.has(id))
+
+// Optional durable delivery for feedback: if set, each submission is POSTed here
+// (a Slack/Discord incoming webhook, or any endpoint that accepts JSON) so it
+// reaches the owner even on an ephemeral host where the flat file resets.
+const FEEDBACK_WEBHOOK_URL = (process.env.FEEDBACK_WEBHOOK_URL || '').trim()
 
 // Free mode (billing off) → always allowed, so editing/trying never gets gated.
 // With billing on, a client needs an activated account with credit remaining.
@@ -376,7 +390,7 @@ const aiConfigured = () => haikuConfigured()
 const calendarConfigured = () =>
   !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET)
 
-app.get('/api/config', (_req, res) => {
+app.get('/api/config', (req, res) => {
   res.json({
     aiConfigured: aiConfigured(),
     haikuConfigured: haikuConfigured(),
@@ -385,7 +399,74 @@ app.get('/api/config', (_req, res) => {
     // Model names are intentionally not exposed to clients.
     billingEnabled: BILLING_ENABLED,
     billingConfigured: billingConfigured(),
+    // Whether this client is an owner (in FREE_CLIENT_IDS) — gates the product
+    // analytics view. Read from the query so the unauthenticated config call can
+    // still identify the owner by their clientId.
+    owner: isOwner(req.userId || req.query.clientId),
   })
+})
+
+// ---------------------------------------------------------------------------
+// Feedback + product analytics.
+// ---------------------------------------------------------------------------
+
+// User feedback — a free-text note ("things the app could add"). Stored, and
+// forwarded to FEEDBACK_WEBHOOK_URL when configured so it actually reaches the
+// owner. Never gated by billing — feedback should always be possible.
+app.post('/api/feedback', async (req, res) => {
+  const { text = '', source = 'form', clientId = '' } = req.body || {}
+  const message = String(text).trim()
+  if (!message) return res.status(400).json({ ok: false, error: 'Empty feedback' })
+
+  const entry = {
+    text: message.slice(0, 4000),
+    source: String(source).slice(0, 40),
+    clientId: req.userId || clientId || null,
+    at: Date.now(),
+  }
+  addFeedback(entry)
+  addEvents([{ name: 'feedback_sent', clientId: entry.clientId, at: entry.at }])
+  console.log(`feedback [${entry.source}] from ${entry.clientId || 'anon'}: ${entry.text.slice(0, 120)}`)
+
+  if (FEEDBACK_WEBHOOK_URL) {
+    // Fire-and-forget; a webhook failure must never lose the stored copy.
+    fetch(FEEDBACK_WEBHOOK_URL, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        text: `📝 New feedback (${entry.source}) from ${entry.clientId || 'anon'}:\n${entry.text}`,
+      }),
+    }).catch((err) => console.error('feedback webhook failed:', err?.message || err))
+  }
+
+  res.json({ ok: true })
+})
+
+// Product analytics — the client batches lightweight events and posts them here.
+// No PII: just event names + the anonymous client id, so the owner can see how
+// the app is used. Best-effort; failures are swallowed client-side.
+app.post('/api/analytics', (req, res) => {
+  const { events = [], clientId = '' } = req.body || {}
+  const key = req.userId || clientId || null
+  const now = Date.now()
+  const clean = (Array.isArray(events) ? events : [])
+    .filter((e) => e && typeof e.name === 'string')
+    .slice(0, 50)
+    .map((e) => ({
+      name: e.name.slice(0, 60),
+      props: e.props && typeof e.props === 'object' ? e.props : undefined,
+      clientId: key,
+      at: typeof e.at === 'number' ? e.at : now,
+    }))
+  addEvents(clean)
+  res.json({ ok: true, accepted: clean.length })
+})
+
+// Owner-only usage summary.
+app.get('/api/analytics/summary', (req, res) => {
+  if (!isOwner(req.userId || req.query.clientId))
+    return res.status(403).json({ error: 'Owner only' })
+  res.json(summarizeEvents())
 })
 
 // ---------------------------------------------------------------------------
@@ -1201,20 +1282,24 @@ const QUESTIONS_SCHEMA = {
   additionalProperties: false,
 }
 
-const QUESTIONS_SYSTEM = `You help a notes app ask a person a few BASIC clarifying questions about a note
-they just wrote, tailored to what it's specifically about.
+const QUESTIONS_SYSTEM = `You help a notes app ask a person clarifying questions about a note they just
+wrote, tailored to what it's specifically about. Their answers are then used to
+BUILD and PRE-FILL custom tools for the note, so ask the things whose answers
+would actually change what gets built.
 
 Rules:
-- Return 2-3 questions, most useful first. Never more than 3.
-- Each must be BASIC and concrete — the obvious things you'd need to know to help
-  with THIS note ("When are you travelling?", "How many days in Oman?",
-  "Who's going with you?"). Never abstract, open-ended, or essay-style.
-- Tailor to the note's actual topic: reference the real place / subject / product
-  where it reads naturally.
-- Give 2-4 short tappable answer "chips" when the answer is likely one of a few
-  options (durations, yes/no, budgets, counts). Omit "chips" for genuinely open
-  questions (names, free text).
-- Keep each question under ~8 words. Friendly, plain language. No preamble.
+- Return 3-5 questions, most useful first. Cover the concrete parameters that
+  shape the note's tools: for a trip — dates, how many days, destination,
+  who's going, budget, travel style; for a study plan — the test date, topics,
+  confidence; for a purchase — budget, must-haves, timing; for a workout goal —
+  frequency, target, current level. Adapt to whatever the note is about.
+- Each must be concrete and answerable in a tap or a few words — never abstract
+  or essay-style. Reference the note's real place / subject / product where it
+  reads naturally ("How many days in Oman?", not "How long?").
+- Give 2-4 short tappable answer "chips" whenever the answer is likely one of a
+  few options (durations, yes/no, budgets, counts, levels). Omit "chips" only for
+  genuinely open answers (names, specific places, free text).
+- Keep each question under ~9 words. Friendly, plain language. No preamble.
 Return JSON only.`
 
 app.post('/api/questions', async (req, res) => {
@@ -1232,13 +1317,13 @@ app.post('/api/questions', async (req, res) => {
       system: QUESTIONS_SYSTEM,
       user: `Note:\n"""\n${text}\n"""\n\nDetected category: ${
         kind || 'unknown'
-      }${topic ? `; topic: ${topic}` : ''}.\nWrite the 2-3 basic questions.`,
+      }${topic ? `; topic: ${topic}` : ''}.\nWrite the 3-5 tailored questions.`,
       schema: QUESTIONS_SCHEMA,
-      maxTokens: 400,
+      maxTokens: 600,
       clientId: key,
       pool: 'classifier',
     })
-    res.json({ configured: true, questions: (data.questions ?? []).slice(0, 3) })
+    res.json({ configured: true, questions: (data.questions ?? []).slice(0, 5) })
   } catch (err) {
     const msg = err?.message || String(err)
     console.error(`questions error [${resolved}]:`, msg)
@@ -1300,7 +1385,7 @@ Each suggestion: a short label (2-3 words, Title Case), a single fitting emoji
 icon, and a one-line description of what it does for this note.`
 
 app.post('/api/suggest', async (req, res) => {
-  const { text = '', backend } = req.body || {}
+  const { text = '', backend, context = '' } = req.body || {}
   const key = req.userId || req.body?.clientId
   if (!(await hasAccess(key)))
     return res.status(402).json(await paywallBody(key, { suggestions: [] }))
@@ -1310,10 +1395,13 @@ app.post('/api/suggest', async (req, res) => {
 
   console.log(`/api/suggest via ${resolved}`)
   try {
+    const ctx = String(context).trim()
     const data = await generateJSON(resolved, {
       model: AI_MODEL_CODE,
       system: SUGGEST_SYSTEM,
-      user: `Note:\n"""\n${text}\n"""`,
+      user: `Note:\n"""\n${text}\n"""${
+        ctx ? `\n\nWhat the user has told us about it:\n${ctx}` : ''
+      }`,
       schema: SUGGEST_SCHEMA,
       maxTokens: 1024,
       clientId: key,
@@ -1412,7 +1500,7 @@ Examples of recommendations:
 - "learning to cook Thai food" -> heading "Where to start"; real dishes, a classic named cookbook, key pantry ingredients.`
 
 app.post('/api/recommend', async (req, res) => {
-  const { text = '', backend } = req.body || {}
+  const { text = '', backend, context = '' } = req.body || {}
   const key = req.userId || req.body?.clientId
   if (!(await hasAccess(key)))
     return res.status(402).json(await paywallBody(key, { recommendations: [] }))
@@ -1423,10 +1511,13 @@ app.post('/api/recommend', async (req, res) => {
 
   console.log(`/api/recommend via ${resolved}`)
   try {
+    const ctx = String(context).trim()
     const data = await generateJSON(resolved, {
       model: AI_MODEL_KNOWLEDGE,
       system: RECOMMEND_SYSTEM,
-      user: `${todayContext()}\n\nNote:\n"""\n${text}\n"""`,
+      user: `${todayContext()}\n\nNote:\n"""\n${text}\n"""${
+        ctx ? `\n\nWhat the user has told us about it:\n${ctx}` : ''
+      }`,
       schema: RECOMMEND_SCHEMA,
       maxTokens: 2048,
       webSearch: true,
@@ -1466,6 +1557,23 @@ Technical requirements (hard):
 - Bake in REAL, relevant initial data derived from the user's note (never leave it empty).
 - Make it genuinely interactive (inputs, toggles, add/remove, edit) where it makes sense.
 
+Use everything you're told, and add what you know (this is what makes the tool
+feel built FOR them):
+- If the note comes with details the user has answered (dates, a destination, a
+  count, a budget, a level, preferences), PRE-FILL the tool with them — don't ask
+  again for something you were already told. A "5 days in Oman" trip planner opens
+  with 5 day-slots for Oman, not an empty shell.
+- Fold in genuinely useful, well-known real-world facts from your own knowledge to
+  give the tool a head start — the concrete things a helpful friend would mention.
+  Examples by topic: a trip → local currency, rough climate for that season, plug
+  type, a couple of must-see spots, key phrases, visa-at-a-glance; a recipe →
+  standard quantities and typical bake times; a study plan → the usual subtopics
+  of that subject; a workout → sensible starting sets/reps. Seed these as editable
+  starting content the user can change, clearly framed as suggestions.
+- Only state facts you're confident are stable and general. NEVER invent live or
+  precise data you can't know — exact prices, today's exchange rate, current
+  opening hours, real-time availability. Keep those as blanks for the user to fill.
+
 Design system — the component renders INSIDE the app's DOM, so these CSS custom
 properties are already in scope. Reference them with var(...) in inline styles.
 NEVER hardcode hex colors; always use these tokens so theming stays consistent:
@@ -1499,7 +1607,7 @@ Styling rules so it blends in seamlessly:
 - Calm and refined — match a premium, minimal aesthetic. Avoid loud colors, emoji walls, or harsh borders.`
 
 app.post('/api/generate-feature', async (req, res) => {
-  const { label = '', description = '', text = '', backend } = req.body || {}
+  const { label = '', description = '', text = '', backend, context = '' } = req.body || {}
   const key = req.userId || req.body?.clientId
   if (!(await hasAccess(key))) return res.status(402).json(await paywallBody(key))
   const resolved = resolveBackend(backend)
@@ -1507,10 +1615,15 @@ app.post('/api/generate-feature', async (req, res) => {
   if (!label.trim()) return res.json({ configured: true, code: '' })
 
   try {
+    const ctx = String(context).trim()
     const data = await generateJSON(resolved, {
       model: AI_MODEL_CODE,
       system: GENERATE_SYSTEM,
-      user: `Build a component that is: "${label}" — ${description}\n\nTailored to this note:\n"""\n${text}\n"""`,
+      user: `Build a component that is: "${label}" — ${description}\n\nTailored to this note:\n"""\n${text}\n"""${
+        ctx
+          ? `\n\nDetails the user has already given (pre-fill the tool with these; don't ask again):\n${ctx}`
+          : ''
+      }`,
       schema: GENERATE_SCHEMA,
       maxTokens: 8192,
       clientId: key,

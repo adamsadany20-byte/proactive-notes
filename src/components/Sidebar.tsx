@@ -1,19 +1,10 @@
 import { useState } from 'react'
 import { useStore } from '../store/appStore'
 import { KIND_META } from '../ui/kindMeta'
-import { PushControls } from './PushControls'
-import { ThemeToggle } from './ThemeToggle'
 import { UpgradeModal } from './UpgradeModal'
 import { SidebarStreak } from './SidebarStreak'
-import { isSupabaseEnabled, supabase } from '../services/supabase'
-import {
-  ChevronIcon,
-  LockIcon,
-  PlusIcon,
-  SearchIcon,
-  TuneIcon,
-  XIcon,
-} from '../ui/icons'
+import { track } from '../ui/analytics'
+import { LockIcon, PlusIcon, SearchIcon, XIcon } from '../ui/icons'
 import {
   startSubscription,
   setSpendCap,
@@ -35,7 +26,7 @@ const TIERS: { id: Tier; label: string }[] = [
 const gbp = (pence: number | undefined, fallback: number): string =>
   `£${((pence ?? fallback) / 100).toFixed(pence != null && pence % 100 ? 2 : 0)}`
 
-function AiTierSelector() {
+export function AiTierSelector() {
   const { state, setTier } = useStore()
   const active = state.settings.tier
   const cfg = state.config
@@ -108,6 +99,7 @@ function AiTierSelector() {
       return
     }
     setTier(id)
+    track('tier_changed', { tier: id })
   }
 
   const goToCheckout = async () => {
@@ -204,7 +196,7 @@ function AiTierSelector() {
 // paid call (not just at checkout), so usage stops at the limit rather than
 // billing past it. Shown only once a plan is live — before that there's nothing
 // to cap.
-function SpendLimit() {
+export function SpendLimit() {
   const { state, setBilling } = useStore()
   const billing = state.billing
   const [editing, setEditing] = useState(false)
@@ -320,15 +312,19 @@ function SpendLimit() {
   )
 }
 
-export function Sidebar({ onOpenCalendar }: { onOpenCalendar?: () => void }) {
+export function Sidebar({
+  onOpenCalendar,
+  onOpenSettings,
+}: {
+  onOpenCalendar?: () => void
+  onOpenSettings?: () => void
+}) {
   const { state, select, createNote, remove } = useStore()
 
-  // The footer tools (AI tier, reminders, spend cap, sign-out) read as clutter
-  // on a phone, so there they fold into one "Settings & tools" disclosure.
-  // Desktop starts open — the sidebar has room and the controls stay glanceable.
-  const [toolsOpen, setToolsOpen] = useState(
-    () => typeof window === 'undefined' || window.innerWidth > 980,
-  )
+  const newNote = () => {
+    createNote()
+    track('note_created')
+  }
 
   // Live search over the note list — matches note text, its open-ended topic,
   // and its detected kind.
@@ -354,14 +350,19 @@ export function Sidebar({ onOpenCalendar }: { onOpenCalendar?: () => void }) {
   return (
     <div className="col col-side">
       <div className="side-head">
-        <div className="brand">
+        <button
+          className="brand"
+          title="Settings & tools"
+          aria-label="Open settings and tools"
+          onClick={onOpenSettings}
+        >
           <img src="/logo.svg" alt="Evolve" className="brand-logo" />
           <span className="brand-text">
             <span className="brand-name">Evolve</span>
-            <span className="brand-tag">Notes that think ahead</span>
+            <span className="brand-tag">Tap for settings &amp; tools</span>
           </span>
-        </div>
-        <button className="icon-btn" title="New note" onClick={createNote}>
+        </button>
+        <button className="icon-btn" title="New note" onClick={newNote}>
           <PlusIcon />
         </button>
       </div>
@@ -397,7 +398,9 @@ export function Sidebar({ onOpenCalendar }: { onOpenCalendar?: () => void }) {
           return (
             <div
               key={n.id}
-              className={`note-item ${n.id === state.selectedId ? 'active' : ''}`}
+              className={`note-item ${n.id === state.selectedId ? 'active' : ''} ${
+                n.segments.length > 0 ? 'is-workspace' : ''
+              }`}
               role="button"
               tabIndex={0}
               onClick={() => select(n.id)}
@@ -424,7 +427,9 @@ export function Sidebar({ onOpenCalendar }: { onOpenCalendar?: () => void }) {
                 ) : (
                   <span className="ni-draft">Draft</span>
                 )}
-                {n.segments.length > 0 && <span>· {n.segments.length} blocks</span>}
+                {n.segments.length > 0 && (
+                  <span className="ni-workspace">· Workspace</span>
+                )}
               </span>
               <button
                 className="note-delete"
@@ -442,40 +447,6 @@ export function Sidebar({ onOpenCalendar }: { onOpenCalendar?: () => void }) {
         )}
       </div>
 
-      <div className="side-foot">
-        <button
-          className="side-tools-toggle"
-          onClick={() => setToolsOpen((o) => !o)}
-          aria-expanded={toolsOpen}
-        >
-          <TuneIcon className="ico" />
-          <span>Settings &amp; tools</span>
-          <ChevronIcon className={`chev ${toolsOpen ? 'open' : ''}`} />
-        </button>
-        <div className={`side-tools ${toolsOpen ? 'open' : ''}`}>
-          <div className="side-tools-inner">
-            <ThemeToggle />
-            <AiTierSelector />
-            <PushControls />
-            <SpendLimit />
-            <p>
-              Notes evolve as you type. The local engine handles everything;
-              Evolve AI is only consulted for richer suggestions and tool
-              generation.
-            </p>
-            {/* Mobile sign-out lives here (the desktop floating pill is hidden
-                on phones via CSS). */}
-            {isSupabaseEnabled && (
-              <button
-                className="side-signout"
-                onClick={() => supabase?.auth.signOut()}
-              >
-                Sign out
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
     </div>
   )
 }

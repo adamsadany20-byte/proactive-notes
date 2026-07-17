@@ -23,8 +23,15 @@ export async function generateCustomFeature(
   description: string,
   noteText: string,
   backend?: AiBackend,
+  context?: string,
 ): Promise<GeneratedComponentResult> {
-  const result = await generateFeatureApi(label, description, noteText, backend)
+  const result = await generateFeatureApi(
+    label,
+    description,
+    noteText,
+    backend,
+    context,
+  )
   if (!result) {
     return {
       code: '',

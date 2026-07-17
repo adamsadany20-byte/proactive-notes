@@ -192,11 +192,40 @@ button {
   gap: 14px;
   padding: 22px var(--side-gutter) 16px;
 }
+/* The brand is now a button — tapping it opens Settings & tools. */
 .brand {
   display: flex;
   align-items: center;
-  gap: 11px;
+  gap: 12px;
   min-width: 0;
+  border: none;
+  background: transparent;
+  padding: 4px;
+  margin: -4px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  transition: background 0.16s ease, transform 0.16s var(--ease-spring);
+}
+.brand:hover {
+  background: var(--panel-2);
+}
+.brand:active {
+  transform: scale(0.97);
+}
+.brand:hover .brand-logo {
+  transform: rotate(-6deg) scale(1.05);
+}
+.brand-logo {
+  transition: transform 0.28s var(--ease-spring);
+}
+.brand:hover .brand-tag {
+  color: var(--accent-ink);
+}
+.brand-tag {
+  transition: color 0.16s ease;
 }
 .brand .dot {
   flex: none;
@@ -226,8 +255,8 @@ button {
 }
 .brand-logo {
   flex: none;
-  width: 40px;
-  height: 32px;
+  width: 52px;
+  height: 42px;
   object-fit: contain;
 }
 .brand-text {
@@ -274,6 +303,185 @@ button {
   background: var(--accent-soft);
   color: var(--accent-ink);
   border-color: transparent;
+}
+
+/* ---- Universal tactile press --------------------------------------------
+   Every button springs slightly on press so nothing feels static. Components
+   with their own richer press keep it (class rules override this element rule);
+   this just guarantees a baseline everywhere. */
+button {
+  transition: transform 0.14s var(--ease-spring);
+}
+button:not(:disabled):active {
+  transform: scale(0.96);
+}
+@media (prefers-reduced-motion: reduce) {
+  button:not(:disabled):active {
+    transform: none;
+  }
+}
+
+/* ---- Settings sheet (slides in when you tap the logo) -------------------- */
+.settings-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  justify-content: flex-end;
+  background: color-mix(in srgb, var(--ink) 34%, transparent);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+  animation: scrim-in 0.22s ease both;
+}
+@keyframes scrim-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.settings-sheet {
+  width: min(420px, 100vw);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border-left: 1px solid var(--line);
+  box-shadow: -18px 0 48px -20px color-mix(in srgb, var(--ink) 55%, transparent);
+  padding-top: env(safe-area-inset-top, 0px);
+  animation: sheet-in 0.36s cubic-bezier(0.2, 0.85, 0.25, 1) both;
+}
+@keyframes sheet-in {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+.settings-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 20px 14px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.settings-title {
+  font-family: var(--display);
+  font-weight: 650;
+  font-size: 20px;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+.settings-x {
+  flex: none;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  color: var(--ink-soft);
+  cursor: pointer;
+  font-size: 13px;
+  transition: background 0.16s ease, color 0.16s ease,
+    transform 0.16s var(--ease-spring);
+}
+.settings-x:hover {
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+.settings-body {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  padding: 16px 20px calc(30px + env(safe-area-inset-bottom, 0px));
+}
+.settings-note {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--ink-faint);
+  margin: 16px 0 0;
+}
+@media (max-width: 560px) {
+  .settings-sheet {
+    width: 100vw;
+    border-left: none;
+  }
+}
+
+/* ---- Logo settings hint (one-time coach mark) --------------------------- */
+.logo-hint {
+  position: fixed;
+  z-index: 150;
+  top: calc(78px + env(safe-area-inset-top, 0px));
+  left: max(16px, env(safe-area-inset-left, 0px));
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  border-radius: 999px;
+  padding: 9px 15px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  box-shadow: 0 8px 22px -8px color-mix(in srgb, var(--accent) 62%, transparent);
+  animation: hint-pop 0.42s var(--ease-spring) both,
+    hint-bob 2.6s ease-in-out 0.7s infinite;
+}
+.logo-hint-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #fff;
+  animation: hint-ping 1.8s ease-out infinite;
+}
+@keyframes hint-pop {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes hint-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(3px);
+  }
+}
+@keyframes hint-ping {
+  0% {
+    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.6);
+  }
+  100% {
+    box-shadow: 0 0 0 9px rgba(255, 255, 255, 0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .logo-hint {
+    animation: hint-pop 0.42s var(--ease-spring) both;
+  }
+  .logo-hint-dot {
+    animation: none;
+  }
+}
+
+/* A note with built tools reads as a "workspace". */
+.ni-workspace {
+  color: var(--accent-ink);
+  font-weight: 600;
 }
 
 /* ---- Sidebar streak strip (woven into the primary column) ---------------- */
@@ -558,7 +766,9 @@ button {
 .theme-toggle,
 .ai-toggle,
 .push-controls,
-.spend-limit {
+.spend-limit,
+.feedback,
+.owner-analytics {
   background: var(--panel-2);
   border: 1px solid var(--line-soft);
   border-radius: var(--radius-sm);
@@ -571,8 +781,311 @@ button {
   margin-top: 10px;
 }
 .push-controls,
-.spend-limit {
+.spend-limit,
+.feedback,
+.owner-analytics {
   margin-top: 10px;
+}
+
+/* ---- Feedback (form in settings + occasional prompt) --------------------- */
+.fb-label {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 650;
+  color: var(--ink);
+  margin-bottom: 6px;
+}
+.fb-sub,
+.fb-thanks {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--ink-faint);
+  margin: 0 0 9px;
+}
+.fb-thanks {
+  margin: 0;
+  color: var(--ink-soft);
+}
+.fb-input {
+  width: 100%;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: var(--radius-sm);
+  padding: 9px 11px;
+  font-family: inherit;
+  font-size: 12.5px;
+  color: var(--ink);
+  resize: vertical;
+  box-sizing: border-box;
+}
+.fb-input:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+}
+.fb-error {
+  font-size: 11px;
+  color: #c0492e;
+  margin: 6px 0 0;
+}
+.fb-send {
+  margin-top: 9px;
+  width: 100%;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  border-radius: var(--radius-sm);
+  padding: 9px 12px;
+  font-size: 12.5px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: opacity 0.15s ease, transform 0.12s ease;
+}
+.fb-send:hover:not(:disabled) {
+  opacity: 0.92;
+}
+.fb-send:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* The occasional prompt — a calm bottom-corner card, never a blocking modal. */
+.fb-prompt {
+  position: fixed;
+  z-index: 70;
+  bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+  right: 18px;
+  width: min(340px, calc(100vw - 28px));
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-float);
+  padding: 15px 16px 16px;
+  animation: fb-rise 0.34s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes fb-rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.fb-prompt-x {
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  border: none;
+  background: transparent;
+  color: var(--ink-faint);
+  cursor: pointer;
+  padding: 4px;
+  font-size: 13px;
+  line-height: 1;
+}
+.fb-prompt-x:hover {
+  color: var(--ink);
+}
+.fb-prompt-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--display);
+  font-weight: 650;
+  font-size: 15px;
+  color: var(--ink);
+  padding-right: 18px;
+}
+.fb-prompt-ico {
+  display: inline-flex;
+  color: var(--accent);
+  font-size: 15px;
+}
+.fb-prompt-sub {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--ink-soft);
+  margin: 7px 0 10px;
+}
+.fb-prompt-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+.fb-prompt-actions .fb-send {
+  width: auto;
+  margin-top: 0;
+  padding: 8px 16px;
+}
+.fb-prompt-later,
+.fb-prompt-never {
+  border: none;
+  background: transparent;
+  color: var(--ink-faint);
+  font-size: 11.5px;
+  font-family: inherit;
+  cursor: pointer;
+  padding: 6px 4px;
+}
+.fb-prompt-later:hover,
+.fb-prompt-never:hover {
+  color: var(--ink-soft);
+}
+.fb-prompt-never {
+  margin-left: auto;
+}
+.fb-prompt-thanks {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+  color: var(--ink);
+  padding: 4px 0;
+}
+
+/* ---- Owner analytics ----------------------------------------------------- */
+.oa-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+}
+.oa-title {
+  font-size: 12.5px;
+  font-weight: 650;
+  color: var(--ink);
+}
+.oa-badge {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+.oa-chev {
+  margin-left: auto;
+  color: var(--ink-faint);
+  transform: rotate(-90deg);
+  transition: transform 0.2s ease;
+}
+.oa-chev.open {
+  transform: rotate(0deg);
+}
+.oa-body {
+  margin-top: 11px;
+}
+.oa-refresh {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--ink-soft);
+  border-radius: var(--radius-sm);
+  padding: 5px 11px;
+  font-size: 11.5px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+}
+.oa-empty {
+  font-size: 11.5px;
+  color: var(--ink-faint);
+  margin: 9px 0 0;
+}
+.oa-stats {
+  display: flex;
+  gap: 8px;
+  margin: 11px 0;
+}
+.oa-stat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  padding: 9px 4px;
+}
+.oa-num {
+  font-family: var(--display);
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.oa-cap {
+  font-size: 10px;
+  color: var(--ink-faint);
+}
+.oa-events {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.oa-event {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 11.5px;
+  color: var(--ink-soft);
+  padding: 3px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+.oa-event-name {
+  font-variant-numeric: tabular-nums;
+}
+.oa-event-count {
+  font-weight: 650;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.oa-sub {
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--ink-soft);
+  margin: 12px 0 6px;
+}
+.oa-fb-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.oa-fb-item {
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--ink-soft);
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  padding: 7px 9px;
+}
+.oa-fb-src {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--accent-ink);
+  margin-right: 6px;
 }
 
 /* Every footer tool's heading ("Design", "AI tier", "Reminders") reads the same.
@@ -3791,23 +4304,29 @@ button {
      cohesive bar pinned to the very top — not a faint band floating in the page.
      The panel background + bottom edge make the tabs feel intentional; the blur
      is a bonus as content scrolls beneath. */
+  /* MODERN: a floating header. The tabs live in their own rounded "segmented"
+     pill and the logo is its own floating button — nothing spans the full width,
+     so there's no hard bar edge to look cut off. Content dissolves under it via
+     the ::before fade as you scroll. (Earthy overrides this to a connected bar.) */
   .mnav {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 10px;
     position: sticky;
     top: 0;
     z-index: 60;
-    padding: 11px clamp(16px, 5vw, 26px);
-    padding-top: calc(11px + env(safe-area-inset-top, 0px));
-    /* Landscape notch: keep the bar's contents out from under the cutout. */
-    padding-left: max(clamp(16px, 5vw, 26px), env(safe-area-inset-left, 0px));
-    padding-right: max(clamp(16px, 5vw, 26px), env(safe-area-inset-right, 0px));
-    background: color-mix(in srgb, var(--panel) 96%, transparent);
-    backdrop-filter: saturate(1.5) blur(18px);
-    -webkit-backdrop-filter: saturate(1.5) blur(18px);
-    border-bottom: 1px solid var(--line);
-    box-shadow: 0 6px 20px -14px color-mix(in srgb, var(--ink) 34%, transparent);
+    padding: calc(10px + env(safe-area-inset-top, 0px))
+      max(clamp(12px, 4vw, 20px), env(safe-area-inset-right, 0px)) 10px
+      max(clamp(12px, 4vw, 20px), env(safe-area-inset-left, 0px));
+    background: transparent;
+  }
+  .mnav::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(var(--bg) 52%, transparent);
+    pointer-events: none;
+    z-index: -1;
   }
   .mnav-brand {
     display: flex;
@@ -3816,61 +4335,79 @@ button {
     margin-right: auto;
     min-width: 0;
   }
-  .mnav-logo {
-    width: 26px;
-    height: 26px;
-    border-radius: 7px;
+  /* Big, tappable logo — a floating rounded tile that opens Settings. */
+  .mnav-logo-btn {
     flex: none;
+    border: none;
+    background: var(--panel);
+    border-radius: 16px;
+    padding: 6px 7px;
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    box-shadow: 0 8px 22px -10px color-mix(in srgb, var(--ink) 44%, transparent),
+      inset 0 1px 1px var(--card-highlight);
+    transition: transform 0.2s var(--ease-spring), box-shadow 0.2s ease;
   }
+  .mnav-logo-btn:hover {
+    box-shadow: 0 10px 26px -10px color-mix(in srgb, var(--accent) 46%, transparent);
+  }
+  .mnav-logo-btn:active {
+    transform: scale(0.9);
+  }
+  .mnav-logo {
+    width: 46px;
+    height: 38px;
+    object-fit: contain;
+    display: block;
+  }
+  /* The big logo carries the brand; the wordmark would crowd the row. */
   .mnav-name {
-    font-family: 'Alice', Georgia, serif;
-    font-weight: 400;
-    font-size: 18px;
-    letter-spacing: 0;
-    color: var(--ink);
+    display: none;
   }
   .mnav-links {
     display: flex;
     align-items: center;
-    gap: clamp(10px, 3.5vw, 18px);
+    gap: 2px;
     flex: none;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 17px;
+    padding: 5px;
+    box-shadow: 0 8px 22px -10px color-mix(in srgb, var(--ink) 40%, transparent),
+      inset 0 1px 1px var(--card-highlight);
   }
   .mnav-links button {
     position: relative;
     border: none;
     background: transparent;
     font-family: inherit;
-    font-size: 13.5px;
+    font-size: 12.5px;
     font-weight: 600;
     color: var(--ink-soft);
-    padding: 9px 2px;
-    min-height: 40px;
+    padding: 8px 11px;
+    border-radius: 12px;
+    min-height: 36px;
     display: inline-flex;
     align-items: center;
     gap: 5px;
-    transition: color 0.18s ease;
+    transition: color 0.2s ease, background 0.24s var(--ease-spring),
+      transform 0.14s var(--ease-spring);
   }
-  .mnav-links button::after {
-    content: '';
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: -1px;
-    height: 2px;
-    border-radius: 2px;
-    background: var(--accent);
-    transform: scaleX(0);
-    transform-origin: center;
-    transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
-  }
+  /* Active tab is a filled accent segment that springs in. */
   .mnav-links button.on {
+    color: #fff;
+    background: var(--accent);
+    box-shadow: 0 4px 12px -4px color-mix(in srgb, var(--accent) 60%, transparent);
+  }
+  .mnav-links button:not(.on):hover {
     color: var(--accent-ink);
   }
-  .mnav-links button.on::after {
-    transform: scaleX(1);
+  .mnav-links button:not(.on):active {
+    background: var(--panel-2);
   }
   .mnav-links button:active {
-    color: var(--accent-ink);
+    transform: scale(0.93);
   }
   /* Standalone ambient streak chip on the far right of the header — the flame
      is always in view (momentum from anywhere) and taps through to the
@@ -4032,8 +4569,32 @@ button {
   transform: translateY(-2px);
   box-shadow: var(--shadow);
 }
+/* Picked for a multi-build: a filled accent chip so several selections read at
+   a glance. */
+.gen-chip.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.gen-chip.on:hover {
+  color: #fff;
+  border-color: var(--accent);
+}
 .gen-chip-icon {
   font-size: 15px;
+}
+.gen-chip-check {
+  font-size: 12px;
+  font-weight: 800;
+  margin-left: 1px;
+}
+/* Build / clear row under the selectable suggestions. */
+.gen-pick-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  animation: fadeIn 0.25s ease both;
 }
 @keyframes chip-rise {
   from {
@@ -5105,7 +5666,9 @@ input {
 [data-theme='earthy'] .theme-toggle,
 [data-theme='earthy'] .ai-toggle,
 [data-theme='earthy'] .push-controls,
-[data-theme='earthy'] .spend-limit {
+[data-theme='earthy'] .spend-limit,
+[data-theme='earthy'] .feedback,
+[data-theme='earthy'] .owner-analytics {
   margin-top: 12px;
   padding: 12px 0 0;
   border: none;
@@ -5196,12 +5759,61 @@ input {
   letter-spacing: normal;
   white-space: normal;
 }
-/* Earthy's top bar is flat like its bordered columns — no lift shadow. (`.mnav`
-   is display:none on desktop, so this only shows on mobile.) */
+/* EARTHY (mobile): the flat, original look — a SOLID top bar the same colour as
+   the earthy columns, flush to the top and seamlessly connected to the content
+   below (no floating pill, no gradient fade, no cut-off edge). The tabs sit
+   inline in the bar with an underline for the active one. */
 [data-theme='earthy'] .mnav {
-  background: color-mix(in srgb, var(--panel-2) 97%, transparent);
+  background: var(--panel-2);
   border-bottom: 1px solid var(--line);
   box-shadow: none;
+}
+[data-theme='earthy'] .mnav::before {
+  display: none;
+}
+[data-theme='earthy'] .mnav-logo-btn {
+  background: transparent;
+  box-shadow: none;
+  padding: 2px;
+  border-radius: 10px;
+}
+[data-theme='earthy'] .mnav-links {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  gap: clamp(9px, 3.5vw, 18px);
+}
+[data-theme='earthy'] .mnav-links button {
+  background: transparent;
+  color: var(--ink-soft);
+  border-radius: 0;
+  padding: 9px 2px;
+  min-height: 40px;
+}
+[data-theme='earthy'] .mnav-links button.on {
+  background: transparent;
+  color: var(--accent-ink);
+  box-shadow: none;
+}
+[data-theme='earthy'] .mnav-links button.on::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+  animation: mnav-underline 0.24s var(--ease-out) both;
+}
+@keyframes mnav-underline {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
 }
 
 /* ---- Earthy: desktop-only structural reverts ----------------------------- */

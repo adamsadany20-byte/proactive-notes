@@ -5,6 +5,8 @@ import {
   type FeatureSuggestion,
 } from '../engine/featureSuggester'
 import { DynamicComponentRenderer } from './DynamicComponentRenderer'
+import { collectNoteContext } from '../engine/noteContext'
+import { track } from './analytics'
 import { useStore } from '../store/appStore'
 import {
   startSubscription,
@@ -32,6 +34,10 @@ interface Props {
 export function FeatureGenerator({ note }: Props) {
   const { state, setBackend } = useStore()
   const backend = state.settings.aiBackend
+  // Always points at the latest note so debounced effects read the current
+  // answers when they fire, without re-subscribing on every keystroke/answer.
+  const noteRef = useRef(note)
+  noteRef.current = note
   // The tool generator is an EVOLVE-tier feature, so it gates on broaderAi
   // (true only for evolve) — a Classification-only plan doesn't get it.
   const aiOn = state.settings.broaderAi
@@ -54,6 +60,10 @@ export function FeatureGenerator({ note }: Props) {
   const [suggestError, setSuggestError] = useState<string | null>(null)
   const [request, setRequest] = useState('')
   const [generated, setGenerated] = useState<GeneratedFeature[]>([])
+  // Which suggestion chips are picked (by label — the prompt returns distinct
+  // labels). Lets the user queue several tools and build them in one go rather
+  // than one click at a time.
+  const [picked, setPicked] = useState<Set<string>>(new Set())
 
   // Seamless discovery: instead of a button, suggestions surface on their own a
   // beat after you stop typing (on the Claude tier). Debounced, cached by text,
@@ -70,10 +80,16 @@ export function FeatureGenerator({ note }: Props) {
       setSuggesting(true)
       setSuggestError(null)
       try {
-        const { suggestions, error } = await suggestFeatures(text, backend)
+        const { suggestions, error } = await suggestFeatures(
+          text,
+          backend,
+          collectNoteContext(noteRef.current),
+        )
         if (myId !== reqId.current) return
         if (error) setSuggestError(`${backendLabel}: ${error}`)
         setSuggestions(suggestions)
+        // The suggestion set just changed — drop any stale picks.
+        setPicked(new Set())
       } catch (err) {
         if (myId === reqId.current) setSuggestError(String(err))
       } finally {
@@ -102,7 +118,11 @@ export function FeatureGenerator({ note }: Props) {
       const myId = ++recReqId.current
       lastRecText.current = text
       try {
-        const { heading, recommendations, actions } = await recommendApi(text, backend)
+        const { heading, recommendations, actions } = await recommendApi(
+          text,
+          backend,
+          collectNoteContext(noteRef.current),
+        )
         if (myId !== recReqId.current) return
         setRecHeading(heading)
         setRecs(recommendations)
@@ -114,12 +134,33 @@ export function FeatureGenerator({ note }: Props) {
     return () => clearTimeout(handle)
   }, [note.text, aiOn, aiConfigured, locked, backend])
 
+  // Toggle a suggestion in/out of the picked set.
+  const togglePick = (label: string) => {
+    setPicked((prev) => {
+      const next = new Set(prev)
+      if (next.has(label)) next.delete(label)
+      else next.add(label)
+      return next
+    })
+  }
+
+  // Build every picked suggestion at once, then clear the selection. Each build
+  // is independent (its own card + async request), so they run in parallel.
+  const buildPicked = () => {
+    suggestions
+      .filter((s) => picked.has(s.label))
+      .forEach((s) => buildFeature(s.label, s.icon, s.description))
+    setPicked(new Set())
+  }
+
   const buildFeature = async (
     label: string,
     icon: string,
     description: string
   ) => {
-    const id = `${label}-${Date.now()}`
+    track('tool_built', { label })
+    // Random suffix so building several tools in the same tick can't collide.
+    const id = `${label}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
     setGenerated((prev) => [
       ...prev,
       { id, label, icon, description, loading: true },
@@ -130,7 +171,8 @@ export function FeatureGenerator({ note }: Props) {
         label,
         description,
         note.text,
-        backend
+        backend,
+        collectNoteContext(note)
       )
       if (error || !code) throw new Error(error || 'Empty response')
       setGenerated((prev) =>
@@ -158,7 +200,8 @@ export function FeatureGenerator({ note }: Props) {
         feature.label,
         feature.description,
         note.text,
-        backend
+        backend,
+        collectNoteContext(note)
       )
       if (error || !code) throw new Error(error || 'Empty response')
       setGenerated((prev) =>
@@ -302,21 +345,45 @@ export function FeatureGenerator({ note }: Props) {
 
       {suggestions.length > 0 && (
         <div className="gen-suggestions">
-          <div className="gen-sub">Tailored to what you’re writing</div>
-          <div className="gen-chips">
-            {suggestions.map((s, i) => (
-              <button
-                key={`${s.label}-${i}`}
-                className="gen-chip"
-                onClick={() => buildFeature(s.label, s.icon, s.description)}
-                title={s.description}
-                style={{ animationDelay: `${i * 0.06}s` }}
-              >
-                <span className="gen-chip-icon">{s.icon}</span>
-                {s.label}
-              </button>
-            ))}
+          <div className="gen-sub">
+            {picked.size > 0
+              ? `${picked.size} selected — pick more or build`
+              : 'Tap the tools you want, then build'}
           </div>
+          <div className="gen-chips">
+            {suggestions.map((s, i) => {
+              const on = picked.has(s.label)
+              return (
+                <button
+                  key={`${s.label}-${i}`}
+                  className={`gen-chip ${on ? 'on' : ''}`}
+                  role="checkbox"
+                  aria-checked={on}
+                  onClick={() => togglePick(s.label)}
+                  title={s.description}
+                  style={{ animationDelay: `${i * 0.06}s` }}
+                >
+                  <span className="gen-chip-icon">{s.icon}</span>
+                  {s.label}
+                  {on && (
+                    <span className="gen-chip-check" aria-hidden>
+                      ✓
+                    </span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+          {picked.size > 0 && (
+            <div className="gen-pick-actions">
+              <button className="gen-build" onClick={buildPicked}>
+                Build {picked.size} {picked.size === 1 ? 'tool' : 'tools'}
+              </button>
+              <button className="gen-suggest" onClick={() => setPicked(new Set())}>
+                Clear
+              </button>
+            </div>
+          )}
         </div>
       )}
 

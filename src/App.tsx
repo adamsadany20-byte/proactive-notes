@@ -8,6 +8,9 @@ import { useReminders } from './ui/useReminders'
 import { usePushSync } from './ui/usePushSync'
 import { computeGlobalStreak } from './store/streak'
 import { Onboarding } from './components/Onboarding'
+import { FeedbackPrompt } from './components/FeedbackControls'
+import { SettingsSheet } from './components/SettingsSheet'
+import { track } from './ui/analytics'
 import { needsOnboarding } from './services/theme'
 import {
   ClockIcon,
@@ -25,6 +28,29 @@ export function App() {
   // First-run: prompt for a design style. Only for genuinely new users; the
   // choice is changeable later in Settings → Design.
   const [onboarding, setOnboarding] = useState(needsOnboarding)
+
+  // Settings & tools now live in a sheet opened by tapping the logo (keeps the
+  // note list uncluttered). A one-time hint teaches that gesture.
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [logoHint, setLogoHint] = useState(() => {
+    try {
+      return !localStorage.getItem('evolve.logoHint')
+    } catch {
+      return false
+    }
+  })
+  const dismissHint = () => {
+    setLogoHint(false)
+    try {
+      localStorage.setItem('evolve.logoHint', '1')
+    } catch {
+      /* ignore */
+    }
+  }
+  const openSettings = () => {
+    setSettingsOpen(true)
+    dismissHint()
+  }
 
   // Mobile: one section is shown at a time, chosen from the top nav. On desktop
   // this state is inert — CSS shows all three columns regardless.
@@ -67,6 +93,7 @@ export function App() {
       }
     }
     init()
+    track('app_open')
     return () => {
       cancelled = true
     }
@@ -79,7 +106,14 @@ export function App() {
           via CSS (where the three columns are always visible). */}
       <header className="mnav">
         <div className="mnav-brand">
-          <img src="/logo.svg" alt="" className="mnav-logo" />
+          <button
+            className="mnav-logo-btn"
+            aria-label="Open settings and tools"
+            title="Settings & tools"
+            onClick={openSettings}
+          >
+            <img src="/logo.svg" alt="Evolve" className="mnav-logo" />
+          </button>
           <span className="mnav-name">Evolve</span>
         </div>
         <nav className="mnav-links" aria-label="Sections">
@@ -122,7 +156,10 @@ export function App() {
         )}
       </header>
 
-      <Sidebar onOpenCalendar={() => goto('calendar')} />
+      <Sidebar
+        onOpenCalendar={() => goto('calendar')}
+        onOpenSettings={openSettings}
+      />
 
       <div className="col col-main">
         {selected ? (
@@ -152,7 +189,21 @@ export function App() {
         </div>
       )}
 
+      <SettingsSheet
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+      />
+
+      {/* One-time coach mark teaching that the logo opens settings. */}
+      {logoHint && !settingsOpen && !onboarding && (
+        <button className="logo-hint" onClick={dismissHint}>
+          <span className="logo-hint-dot" aria-hidden />
+          Tap the logo for settings &amp; tools
+        </button>
+      )}
+
       {onboarding && <Onboarding onDone={() => setOnboarding(false)} />}
+      {!onboarding && <FeedbackPrompt />}
     </div>
   )
 }

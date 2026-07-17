@@ -25,6 +25,7 @@ export interface ServerConfig {
   calendarConnected: boolean
   billingEnabled?: boolean
   billingConfigured?: boolean
+  owner?: boolean // this client is an owner → sees the product-analytics view
 }
 
 // A stable, anonymous per-browser id. It ties Stripe subscriptions to this
@@ -190,7 +191,71 @@ async function safeJson<T>(
 }
 
 export function fetchServerConfig() {
-  return safeJson<ServerConfig>(API_BASE + '/api/config')
+  return safeJson<ServerConfig>(
+    API_BASE + '/api/config?clientId=' + encodeURIComponent(getClientId()),
+  )
+}
+
+// ---- Feedback + product analytics -----------------------------------------
+
+export async function submitFeedback(
+  text: string,
+  source = 'form',
+): Promise<{ ok: boolean; error?: string }> {
+  const r = await safeJson<{ ok?: boolean; error?: string }>(
+    API_BASE + '/api/feedback',
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text, source, clientId: getClientId() }),
+    },
+  )
+  if (!r) return { ok: false, error: 'Could not reach the server.' }
+  return { ok: !!r.ok, error: r.error }
+}
+
+export interface AnalyticsEvent {
+  name: string
+  props?: Record<string, unknown>
+  at?: number
+}
+
+// Fire-and-forget event upload. `keepalive` lets it complete during page unload.
+export function sendEvents(events: AnalyticsEvent[]): void {
+  if (!events.length) return
+  try {
+    fetch(API_BASE + '/api/analytics', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ events, clientId: getClientId() }),
+      keepalive: true,
+    }).catch(() => {})
+  } catch {
+    /* analytics is best-effort */
+  }
+}
+
+export interface FeedbackEntry {
+  text: string
+  source: string
+  clientId: string | null
+  at: number
+}
+export interface AnalyticsSummary {
+  totalEvents: number
+  distinctClients: number
+  byName: Record<string, number>
+  byDay: Record<string, number>
+  feedbackCount: number
+  recentFeedback: FeedbackEntry[]
+}
+
+export function fetchAnalyticsSummary() {
+  return safeJson<AnalyticsSummary>(
+    API_BASE +
+      '/api/analytics/summary?clientId=' +
+      encodeURIComponent(getClientId()),
+  )
 }
 
 export function enrich(text: string, candidate: string, backend?: AiBackend) {
@@ -277,6 +342,7 @@ export interface FeatureSuggestion {
 export async function suggestFeaturesApi(
   text: string,
   backend?: AiBackend,
+  context?: string,
 ): Promise<{ suggestions: FeatureSuggestion[]; error?: string }> {
   const r = await safeJson<{
     configured: boolean
@@ -285,7 +351,7 @@ export async function suggestFeaturesApi(
   }>(API_BASE + '/api/suggest', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ text, backend, clientId: getClientId() }),
+    body: JSON.stringify({ text, backend, context, clientId: getClientId() }),
   })
   if (!r) {
     return {
@@ -318,6 +384,7 @@ export interface ActionRec {
 export async function recommendApi(
   text: string,
   backend?: AiBackend,
+  context?: string,
 ): Promise<{
   heading: string
   recommendations: Recommendation[]
@@ -333,7 +400,7 @@ export async function recommendApi(
   }>(API_BASE + '/api/recommend', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ text, backend, clientId: getClientId() }),
+    body: JSON.stringify({ text, backend, context, clientId: getClientId() }),
   })
   if (!r || r.configured === false)
     return { heading: '', recommendations: [], actions: [] }
@@ -350,6 +417,7 @@ export async function generateFeatureApi(
   description: string,
   text: string,
   backend?: AiBackend,
+  context?: string,
 ): Promise<{ configured?: boolean; code?: string; error?: string } | null> {
   return safeJson<{ configured: boolean; code: string; error?: string }>(
     API_BASE + '/api/generate-feature',
@@ -361,6 +429,7 @@ export async function generateFeatureApi(
         description,
         text,
         backend,
+        context,
         clientId: getClientId(),
       }),
     },

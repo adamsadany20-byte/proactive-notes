@@ -13,9 +13,10 @@ export type { FeatureSuggestion }
 export async function suggestFeatures(
   noteText: string,
   backend?: AiBackend,
+  context?: string,
 ): Promise<{ suggestions: FeatureSuggestion[]; error?: string }> {
   if (!noteText.trim()) return { suggestions: [] }
-  const { suggestions, error } = await suggestFeaturesApi(noteText, backend)
+  const { suggestions, error } = await suggestFeaturesApi(noteText, backend, context)
   return {
     suggestions: suggestions
       .filter((s) => s?.label && s?.description)
