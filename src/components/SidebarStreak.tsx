@@ -1,6 +1,6 @@
 import { useStore } from '../store/appStore'
 import { computeGlobalStreak } from '../store/streak'
-import { FlameIcon, SproutIcon } from '../ui/icons'
+import { StreakFlameIcon, SproutIcon } from '../ui/icons'
 
 // A compact, always-present streak strip woven into the top of the sidebar (the
 // primary column / Notes view), so the streak lives where you actually work
@@ -14,7 +14,6 @@ export function SidebarStreak({ onOpen }: { onOpen?: () => void }) {
   if (!g.hasAny) return null
 
   const alive = g.current > 0
-  const unit = g.current === 1 ? 'day' : 'days'
 
   const title = alive
     ? g.atRisk
@@ -39,9 +38,10 @@ export function SidebarStreak({ onOpen }: { onOpen?: () => void }) {
       title="Open your streak"
     >
       <span className="ss-badge">
-        <span className="ss-flame">{alive ? <FlameIcon /> : <SproutIcon />}</span>
+        <span className="ss-flame">
+          {alive ? <StreakFlameIcon /> : <SproutIcon />}
+        </span>
         <span className="ss-count">{g.current}</span>
-        <span className="ss-unit">{unit}</span>
       </span>
       <span className="ss-body">
         <span className="ss-title">{title}</span>

@@ -105,6 +105,24 @@ export function FlameIcon(props: IconProps) {
   )
 }
 
+// The streak's own flame — a layered, lively flame with an animated inner ember.
+// The parts carry classes so CSS can flicker the body and pulse the core
+// independently (see .sf-body / .sf-core / streak-flicker / streak-ember).
+export function StreakFlameIcon(props: IconProps) {
+  return (
+    <Svg {...props} stroke="none" fill="currentColor">
+      <path
+        className="sf-body"
+        d="M12.1 1.8 C13.7 4.7 13.1 7.4 11.2 9.6 C9.5 11.5 8 13.1 8 15.6 C8 18.9 9.8 21.2 12.1 21.2 C14.5 21.2 16.4 19 16.4 16 C16.4 14.2 15.7 12.6 14.4 11.1 C14.6 12.4 14.2 13.4 13.3 14 C14.9 10.4 14.1 6.1 12.1 1.8 Z"
+      />
+      <path
+        className="sf-core"
+        d="M12.2 12.9 C10.8 14.2 10.2 15.5 10.2 16.8 C10.2 18.4 11 19.4 12.3 19.4 C13.6 19.4 14.4 18.2 14.4 16.7 C14.4 15.4 13.6 14.2 12.2 12.9 Z"
+      />
+    </Svg>
+  )
+}
+
 // A two-leaf sprout — the not-yet-lit streak.
 export function SproutIcon(props: IconProps) {
   return (

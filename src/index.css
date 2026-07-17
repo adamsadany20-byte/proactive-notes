@@ -255,9 +255,10 @@ button {
 }
 .brand-logo {
   flex: none;
-  width: 52px;
-  height: 42px;
+  width: 46px;
+  height: 46px;
   object-fit: contain;
+  filter: drop-shadow(0 3px 8px color-mix(in srgb, var(--ink) 18%, transparent));
 }
 .brand-text {
   display: flex;
@@ -517,13 +518,17 @@ button:not(:disabled):active {
 .side-streak.at-risk {
   animation: today-breathe 2.6s ease-in-out infinite;
 }
+/* Flame + count only — the "days" label used to be crammed as a third row and
+   overflowed the circle. Two rows sit cleanly with room to spare. */
 .ss-badge {
   flex: none;
   display: grid;
-  grid-template-areas: 'flame' 'count' 'unit';
+  grid-template-areas: 'flame' 'count';
+  grid-template-rows: auto auto;
   place-items: center;
-  width: 42px;
-  height: 42px;
+  gap: 1px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   background: var(--panel);
   border: 1.5px solid var(--line);
@@ -534,18 +539,17 @@ button:not(:disabled):active {
 }
 .ss-flame {
   grid-area: flame;
-  align-self: start;
-  margin-top: 4px;
-  font-size: 12px;
+  align-self: end;
+  font-size: 14px;
   line-height: 1;
   color: var(--ink-faint);
 }
 .side-streak.alive .ss-flame {
   color: var(--ember);
-  animation: flame-flicker 2.8s ease-in-out infinite;
 }
 .ss-count {
   grid-area: count;
+  align-self: start;
   font-family: var(--display);
   font-size: 17px;
   font-weight: 700;
@@ -554,16 +558,6 @@ button:not(:disabled):active {
 }
 .side-streak.alive .ss-count {
   color: color-mix(in srgb, var(--ember-deep) 62%, var(--ink));
-}
-.ss-unit {
-  grid-area: unit;
-  align-self: end;
-  margin-bottom: 4px;
-  font-size: 7px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--ink-faint);
 }
 .ss-body {
   flex: 1;
@@ -3191,7 +3185,6 @@ button:not(:disabled):active {
 }
 .today.alive .today-flame {
   color: var(--streak);
-  animation: flame-flicker 2.8s ease-in-out infinite;
 }
 .today.celebrate .today-flame {
   animation: flame-leap 0.8s ease-out both;
@@ -3825,6 +3818,54 @@ button:not(:disabled):active {
     transform: scale(0.96) rotate(-1.5deg);
   }
 }
+
+/* ---- Custom streak flame (StreakFlameIcon) ------------------------------
+   The body flickers and leans from its base; the inner ember pulses lighter,
+   so the flame reads as genuinely burning rather than a static glyph. */
+.sf-core {
+  fill: color-mix(in srgb, var(--panel) 52%, currentColor);
+}
+.side-streak.alive .ss-flame svg,
+.today.alive .today-flame svg {
+  transform-origin: 50% 82%;
+  animation: streak-flicker 1.9s ease-in-out infinite;
+}
+.side-streak.alive .ss-flame .sf-core,
+.today.alive .today-flame .sf-core {
+  animation: streak-ember 1.25s ease-in-out infinite;
+}
+@keyframes streak-flicker {
+  0%,
+  100% {
+    transform: scale(1) rotate(0deg);
+  }
+  20% {
+    transform: scale(1.05, 0.95) rotate(-2.5deg);
+  }
+  45% {
+    transform: scale(0.97, 1.07) rotate(1.5deg);
+  }
+  70% {
+    transform: scale(1.04, 1) rotate(-1deg);
+  }
+}
+@keyframes streak-ember {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .side-streak.alive .ss-flame svg,
+  .today.alive .today-flame svg,
+  .side-streak.alive .ss-flame .sf-core,
+  .today.alive .today-flame .sf-core {
+    animation: none;
+  }
+}
 @keyframes flame-leap {
   0% {
     transform: scale(1);
@@ -4335,29 +4376,28 @@ button:not(:disabled):active {
     margin-right: auto;
     min-width: 0;
   }
-  /* Big, tappable logo — a floating rounded tile that opens Settings. */
+  /* Big, tappable logo — the emblem tile IS the button now (edge-to-edge, no
+     frame), floating via a drop-shadow that follows its rounded silhouette. */
   .mnav-logo-btn {
     flex: none;
     border: none;
-    background: var(--panel);
-    border-radius: 16px;
-    padding: 6px 7px;
+    background: transparent;
+    padding: 0;
     display: grid;
     place-items: center;
     cursor: pointer;
-    box-shadow: 0 8px 22px -10px color-mix(in srgb, var(--ink) 44%, transparent),
-      inset 0 1px 1px var(--card-highlight);
-    transition: transform 0.2s var(--ease-spring), box-shadow 0.2s ease;
+    filter: drop-shadow(0 8px 16px color-mix(in srgb, var(--ink) 30%, transparent));
+    transition: transform 0.2s var(--ease-spring), filter 0.2s ease;
   }
   .mnav-logo-btn:hover {
-    box-shadow: 0 10px 26px -10px color-mix(in srgb, var(--accent) 46%, transparent);
+    filter: drop-shadow(0 10px 20px color-mix(in srgb, var(--accent) 45%, transparent));
   }
   .mnav-logo-btn:active {
     transform: scale(0.9);
   }
   .mnav-logo {
-    width: 46px;
-    height: 38px;
+    width: 52px;
+    height: 52px;
     object-fit: contain;
     display: block;
   }

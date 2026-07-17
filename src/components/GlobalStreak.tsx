@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useStore } from '../store/appStore'
-import { FlameIcon, SproutIcon, TrophyIcon } from '../ui/icons'
+import { FlameIcon, StreakFlameIcon, SproutIcon, TrophyIcon } from '../ui/icons'
 import {
   computeGlobalStreak,
   todaysCommitments,
@@ -123,7 +123,7 @@ export function GlobalStreak() {
             />
           </svg>
           <span className="today-flame">
-            {alive ? <FlameIcon /> : <SproutIcon />}
+            {alive ? <StreakFlameIcon /> : <SproutIcon />}
           </span>
           <span key={g.current} className="today-count">
             {g.current}
