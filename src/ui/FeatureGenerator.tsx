@@ -144,12 +144,23 @@ export function FeatureGenerator({ note }: Props) {
     })
   }
 
-  // Build every picked suggestion at once, then clear the selection. Each build
-  // is independent (its own card + async request), so they run in parallel.
+  // Build the picked suggestions. One pick → that tool. Several picks → a SINGLE
+  // combined app: one component that lays the selected tools out as sections,
+  // rather than a scatter of separate cards.
   const buildPicked = () => {
-    suggestions
-      .filter((s) => picked.has(s.label))
-      .forEach((s) => buildFeature(s.label, s.icon, s.description))
+    const picks = suggestions.filter((s) => picked.has(s.label))
+    if (picks.length === 0) return
+    if (picks.length === 1) {
+      buildFeature(picks[0].label, picks[0].icon, picks[0].description)
+    } else {
+      const label = picks.map((p) => p.label).join(' + ')
+      const description =
+        'ONE single app that combines all of these, laid out as clearly ' +
+        'separated sections within the same component (not separate tools): ' +
+        picks.map((p) => `${p.label} — ${p.description}`).join('; ') +
+        '. Give it a short heading and let the sections share one cohesive layout.'
+      buildFeature(label, '✦', description)
+    }
     setPicked(new Set())
   }
 
@@ -346,9 +357,11 @@ export function FeatureGenerator({ note }: Props) {
       {suggestions.length > 0 && (
         <div className="gen-suggestions">
           <div className="gen-sub">
-            {picked.size > 0
-              ? `${picked.size} selected — pick more or build`
-              : 'Tap the tools you want, then build'}
+            {picked.size > 1
+              ? `${picked.size} selected — they'll build into one app`
+              : picked.size === 1
+                ? '1 selected — pick more to combine, or build'
+                : 'Tap the tools you want, then build'}
           </div>
           <div className="gen-chips">
             {suggestions.map((s, i) => {
@@ -377,7 +390,9 @@ export function FeatureGenerator({ note }: Props) {
           {picked.size > 0 && (
             <div className="gen-pick-actions">
               <button className="gen-build" onClick={buildPicked}>
-                Build {picked.size} {picked.size === 1 ? 'tool' : 'tools'}
+                {picked.size === 1
+                  ? 'Build tool'
+                  : `Build ${picked.size} in one app`}
               </button>
               <button className="gen-suggest" onClick={() => setPicked(new Set())}>
                 Clear
