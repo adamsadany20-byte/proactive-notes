@@ -6103,3 +6103,249 @@ input {
     font-size: 22px;
   }
 }
+
+/* =========================================================================
+   Landing page (/welcome) — marketing front for ad traffic. Uses the app's
+   design tokens; defaults to the Modern palette (no data-theme set).
+   ========================================================================= */
+.landing {
+  min-height: 100dvh;
+  background:
+    radial-gradient(120% 90% at 50% -10%, color-mix(in srgb, var(--accent) 8%, var(--bg)), var(--bg) 60%);
+  color: var(--ink);
+  font-family: var(--font);
+  overflow-x: hidden;
+}
+.landing a {
+  text-decoration: none;
+}
+.lp-nav {
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 20px clamp(18px, 5vw, 40px);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.lp-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.lp-logo {
+  width: 38px;
+  height: 38px;
+  object-fit: contain;
+}
+.lp-name {
+  font-family: var(--display);
+  font-size: 22px;
+  font-weight: 650;
+  color: var(--ink);
+}
+.lp-try {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--accent-ink);
+  padding: 8px 14px;
+  border-radius: 999px;
+  transition: background 0.16s ease;
+}
+.lp-try:hover {
+  background: var(--accent-soft);
+}
+
+.lp-hero {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: clamp(30px, 7vw, 70px) clamp(20px, 6vw, 40px) 40px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.lp-hero-logo {
+  width: clamp(84px, 20vw, 120px);
+  height: clamp(84px, 20vw, 120px);
+  object-fit: contain;
+  filter: drop-shadow(0 12px 28px color-mix(in srgb, var(--accent) 30%, transparent));
+  animation: lp-float 5s ease-in-out infinite;
+}
+@keyframes lp-float {
+  0%, 100% { transform: translateY(0) rotate(-1deg); }
+  50% { transform: translateY(-8px) rotate(2deg); }
+}
+.lp-h1 {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: clamp(34px, 8vw, 56px);
+  line-height: 1.04;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  margin: 22px 0 0;
+}
+.lp-lede {
+  font-size: clamp(15px, 3.4vw, 19px);
+  line-height: 1.55;
+  color: var(--ink-soft);
+  margin: 18px 0 0;
+  max-width: 560px;
+}
+.lp-cta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 30px;
+}
+.lp-primary {
+  background: var(--accent);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 650;
+  padding: 13px 26px;
+  border-radius: 999px;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  box-shadow: 0 10px 24px -8px color-mix(in srgb, var(--accent) 55%, transparent);
+  transition: transform 0.16s var(--ease-spring), box-shadow 0.2s ease;
+}
+.lp-primary:hover {
+  transform: translateY(-2px);
+}
+.lp-primary:disabled {
+  opacity: 0.6;
+}
+.lp-secondary {
+  color: var(--ink-soft);
+  font-size: 15px;
+  font-weight: 600;
+  padding: 13px 22px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  transition: border-color 0.16s ease, color 0.16s ease;
+}
+.lp-secondary:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+  color: var(--accent-ink);
+}
+
+.lp-features {
+  max-width: 900px;
+  margin: 20px auto 0;
+  padding: 20px clamp(18px, 5vw, 40px);
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+}
+.lp-feature {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 22px 20px;
+  box-shadow: var(--shadow-sm);
+}
+.lp-feat-ico {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  font-size: 20px;
+}
+.lp-feat-title {
+  font-family: var(--display);
+  font-weight: 650;
+  font-size: 17px;
+  color: var(--ink);
+  margin: 13px 0 6px;
+}
+.lp-feat-body {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+  margin: 0;
+}
+
+.lp-interest {
+  max-width: 540px;
+  margin: 30px auto 0;
+  padding: clamp(28px, 6vw, 44px) clamp(22px, 6vw, 40px);
+  text-align: center;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.lp-h2 {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: clamp(24px, 6vw, 32px);
+  color: var(--ink);
+  margin: 0;
+}
+.lp-sub {
+  font-size: 14.5px;
+  line-height: 1.55;
+  color: var(--ink-soft);
+  margin: 12px 0 22px;
+}
+.lp-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  text-align: left;
+}
+.lp-input {
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  border-radius: var(--radius-sm);
+  padding: 13px 15px;
+  font-size: 15px;
+  font-family: inherit;
+  color: var(--ink);
+}
+.lp-input:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--line));
+  background: var(--panel);
+}
+.lp-submit {
+  margin-top: 4px;
+  width: 100%;
+}
+.lp-error {
+  font-size: 13px;
+  color: #c0492e;
+  margin: 0;
+}
+.lp-thanks {
+  font-size: 16px;
+  color: var(--ink);
+  margin: 0;
+}
+.lp-foot {
+  max-width: 1040px;
+  margin: 40px auto 0;
+  padding: 30px clamp(18px, 5vw, 40px) 50px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  color: var(--ink-faint);
+  border-top: 1px solid var(--line-soft);
+}
+.lp-foot a {
+  color: var(--ink-soft);
+}
+@media (prefers-reduced-motion: reduce) {
+  .lp-hero-logo {
+    animation: none;
+  }
+}

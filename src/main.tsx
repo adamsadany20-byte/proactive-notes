@@ -2,6 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import { App } from './App'
+import { Landing } from './components/Landing'
 import { StoreProvider } from './store/appStore'
 import { isSupabaseEnabled, supabase } from './services/supabase'
 import { AuthGate } from './components/AuthGate'
@@ -24,6 +25,11 @@ window.addEventListener('error', (e) => {
 })
 
 try {
+  // The marketing landing page (for ad traffic) lives at /welcome and skips the
+  // app shell, store, and auth entirely — it just needs to load and capture
+  // interest.
+  const isLanding = window.location.pathname.replace(/\/$/, '') === '/welcome'
+
   const appContent = (
     <StoreProvider>
       <App />
@@ -34,7 +40,9 @@ try {
 
   root.render(
     <StrictMode>
-      {isSupabaseEnabled ? (
+      {isLanding ? (
+        <Landing />
+      ) : isSupabaseEnabled ? (
         <AuthGate>{appContent}</AuthGate>
       ) : (
         appContent

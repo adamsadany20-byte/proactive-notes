@@ -513,6 +513,47 @@ Safari and shows the user exactly how to install it. Android needs no install
 
 ---
 
+## Landing page, feedback & interest signups
+
+**Landing page** — a marketing page lives at **`/welcome`**
+(`https://your-app.onrender.com/welcome`). Point ads there. Its email form and
+the in-app feedback form both post to `POST /api/feedback` (interest signups use
+`source: "interest"` and carry the email). Nothing to configure — it works out
+of the box — but two optional knobs make sure you actually *receive* what comes
+in:
+
+**1. Durable storage (recommended — you already run Supabase).** With
+`SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` set, feedback and interest signups
+are written to a `feedback` table (survives redeploys, browsable in the
+dashboard). Without it they go to a flat file that resets on each Render deploy.
+Run this once in Supabase → SQL editor:
+
+```sql
+create table if not exists public.feedback (
+  id bigint generated always as identity primary key,
+  text text,
+  source text,
+  email text,
+  client_id text,
+  created_at timestamptz not null default now()
+);
+-- Service-role only; no public/anon access (the server writes with the service key).
+alter table public.feedback enable row level security;
+```
+
+The server auto-detects the table (same env vars as accounts/billing). Startup
+needs no extra config.
+
+**2. Instant delivery (optional).** Set **`FEEDBACK_WEBHOOK_URL`** to a Slack or
+Discord incoming-webhook URL and every submission is also pushed there in real
+time (the payload includes both `text` and `content`, so either service works).
+
+**Reading it in-app:** add your `clientId` to `FREE_CLIENT_IDS` and the
+**Settings → Analytics (Owner)** panel shows recent feedback + signups with
+emails. (Your `clientId` is in the browser console: `localStorage['evolve.clientId']`.)
+
+---
+
 ## Complete End-to-End Deployment Flow
 
 ### Timeline

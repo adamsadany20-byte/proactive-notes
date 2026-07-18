@@ -410,32 +410,49 @@ app.get('/api/config', (req, res) => {
 // Feedback + product analytics.
 // ---------------------------------------------------------------------------
 
-// User feedback — a free-text note ("things the app could add"). Stored, and
-// forwarded to FEEDBACK_WEBHOOK_URL when configured so it actually reaches the
-// owner. Never gated by billing — feedback should always be possible.
+// Feedback + landing-page interest — free text and/or an email. Persisted
+// (Supabase when configured, so it survives redeploys) AND forwarded to
+// FEEDBACK_WEBHOOK_URL when set, so it actually reaches the owner. Never gated
+// by billing. The landing "interest" form posts here with source:"interest".
 app.post('/api/feedback', async (req, res) => {
-  const { text = '', source = 'form', clientId = '' } = req.body || {}
-  const message = String(text).trim()
-  if (!message) return res.status(400).json({ ok: false, error: 'Empty feedback' })
+  const { text = '', source = 'form', email = '', clientId = '' } = req.body || {}
+  const message = String(text).trim().slice(0, 4000)
+  const addr = String(email).trim().slice(0, 200)
+  // Accept a note, an email, or both — but not an empty submission.
+  if (!message && !addr)
+    return res.status(400).json({ ok: false, error: 'Nothing to send' })
+  if (addr && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(addr))
+    return res.status(400).json({ ok: false, error: 'That email looks off' })
 
   const entry = {
-    text: message.slice(0, 4000),
+    text: message,
     source: String(source).slice(0, 40),
+    email: addr || null,
     clientId: req.userId || clientId || null,
     at: Date.now(),
   }
-  addFeedback(entry)
-  addEvents([{ name: 'feedback_sent', clientId: entry.clientId, at: entry.at }])
-  console.log(`feedback [${entry.source}] from ${entry.clientId || 'anon'}: ${entry.text.slice(0, 120)}`)
+  await addFeedback(entry)
+  addEvents([
+    {
+      name: source === 'interest' ? 'interest_signup' : 'feedback_sent',
+      clientId: entry.clientId,
+      at: entry.at,
+    },
+  ])
+  console.log(
+    `feedback [${entry.source}] from ${entry.email || entry.clientId || 'anon'}: ${entry.text.slice(0, 120)}`,
+  )
 
   if (FEEDBACK_WEBHOOK_URL) {
+    const line = `📝 ${entry.source === 'interest' ? 'Interest signup' : 'New feedback'} (${entry.source})${
+      entry.email ? ` — ${entry.email}` : ` from ${entry.clientId || 'anon'}`
+    }${entry.text ? `:\n${entry.text}` : ''}`
+    // `text` for Slack, `content` for Discord — one payload works for both.
     // Fire-and-forget; a webhook failure must never lose the stored copy.
     fetch(FEEDBACK_WEBHOOK_URL, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        text: `📝 New feedback (${entry.source}) from ${entry.clientId || 'anon'}:\n${entry.text}`,
-      }),
+      body: JSON.stringify({ text: line, content: line }),
     }).catch((err) => console.error('feedback webhook failed:', err?.message || err))
   }
 
@@ -463,10 +480,10 @@ app.post('/api/analytics', (req, res) => {
 })
 
 // Owner-only usage summary.
-app.get('/api/analytics/summary', (req, res) => {
+app.get('/api/analytics/summary', async (req, res) => {
   if (!isOwner(req.userId || req.query.clientId))
     return res.status(403).json({ error: 'Owner only' })
-  res.json(summarizeEvents())
+  res.json(await summarizeEvents())
 })
 
 // ---------------------------------------------------------------------------

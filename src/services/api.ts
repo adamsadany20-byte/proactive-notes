@@ -201,17 +201,23 @@ export function fetchServerConfig() {
 export async function submitFeedback(
   text: string,
   source = 'form',
+  email = '',
 ): Promise<{ ok: boolean; error?: string }> {
   const r = await safeJson<{ ok?: boolean; error?: string }>(
     API_BASE + '/api/feedback',
     {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ text, source, clientId: getClientId() }),
+      body: JSON.stringify({ text, source, email, clientId: getClientId() }),
     },
   )
   if (!r) return { ok: false, error: 'Could not reach the server.' }
   return { ok: !!r.ok, error: r.error }
+}
+
+// Landing-page "gauge interest" signup — an email plus an optional note.
+export function submitInterest(email: string, message = '') {
+  return submitFeedback(message, 'interest', email)
 }
 
 export interface AnalyticsEvent {
