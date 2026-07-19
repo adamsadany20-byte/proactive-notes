@@ -29,6 +29,51 @@ migration has been applied, and the webhook must subscribe to
 
 ## Recent Work (Jul 2026)
 
+### Auto-suggested Google Docs / Sheets / Slides
+
+Senses when a note wants a real document and offers a one-tap chip under the
+editor to spin one up in the user's Google account, seeded with the note's
+content and linked back onto the note.
+- **Detection** — `detectDocNeed(note)` in [engine/docs.ts](src/engine/docs.ts)
+  is pure/deterministic/local (mirrors `patterns.ts`): explicit type words
+  ("presentation" → slides, "budget/spreadsheet" → sheet, "essay/report" → doc)
+  win at high confidence; else a kind lean (`finance`/`purchase` → sheet); else
+  soft table/writing hints on longer notes. Returns null for plain notes so it
+  never nags. We deliberately **suggest, not auto-open** — literally opening a
+  tab unprompted is hostile (popup blockers, wrong account).
+- **UI** — [DocSuggestion.tsx](src/components/DocSuggestion.tsx), rendered under
+  `SmartSuggestions` in [NoteEditor.tsx](src/components/NoteEditor.tsx). Primary
+  chip is the sensed type; the other two are offered as alternates; a × dismisses
+  that type for the note (`Note.docsDeclined`). Created files list under it and
+  persist (`Note.docs: DocLink[]`, synced via the whole-note Supabase row).
+  Per-type accents: doc blue, sheet green, slides amber.
+- **Creation** — `POST /api/google/create` (server/index.js) creates the file via
+  the Docs/Sheets/Slides APIs and seeds it (doc: note text as body; sheet:
+  lines→rows, commas→cols via `seedToRows`; slides: note title/subtitle on the
+  title slide), returning `{id, url}`. Uses `authedClient()` (the same googleapis
+  OAuth client the calendar uses). `SCOPES` gained `drive.file` (least-privilege —
+  only app-created files), `documents`, `spreadsheets`, `presentations`.
+  `/api/config` reports `googleConfigured`/`googleConnected`.
+- **Google access is granted AT LOGIN, not a separate step.** "Continue with
+  Google" ([AuthGate.tsx](src/components/AuthGate.tsx)) requests the doc scopes +
+  `access_type:offline` + `prompt:consent` via Supabase `signInWithOAuth`. The
+  returned `provider_refresh_token`/`provider_token` (only present on the fresh
+  redirect, captured in `onAuthStateChange`) is POSTed to `POST /api/google/link`,
+  which stores it (`refresh_token` + `expiry_date:1` to force a refresh on first
+  use). `linkGoogleTokens` then fires a `google-linked` window event; App.tsx
+  refetches config so `googleConnected` flips true without a reload. **This means
+  the Google OAuth client in the Supabase dashboard MUST be the same
+  `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` the server uses** — only the issuing
+  client can refresh the token.
+- **Fallbacks** — email/OTP sign-in has no Google link, so the chip shows a
+  "Connect Google" link → `connectGoogle()` → the server `/auth/google` flow
+  (redirects back with `?google=connected`). If Google isn't connected at all,
+  the chip opens a blank `docs.new`/`sheets.new`/`slides.new` (no title/seed, not
+  linked back).
+- **Setup / caveat**: enable the Docs/Sheets/Slides/Drive APIs + these scopes on
+  the shared Google Cloud OAuth client, and set it as the Supabase Google
+  provider. Not yet run against real Google OAuth end-to-end.
+
 ### Local pattern recognition (free tier, no network)
 
 Deterministic on-device intelligence surfaced as a quiet strip under the editor

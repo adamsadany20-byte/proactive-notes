@@ -3,7 +3,11 @@ import { useStore } from './store/appStore'
 import { Sidebar } from './components/Sidebar'
 import { CalendarPanel } from './components/CalendarPanel'
 import { NoteEditor } from './components/NoteEditor'
-import { fetchServerConfig, fetchBillingStatus } from './services/api'
+import {
+  fetchServerConfig,
+  fetchBillingStatus,
+  GOOGLE_LINKED_EVENT,
+} from './services/api'
 import { useReminders } from './ui/useReminders'
 import { usePushSync } from './ui/usePushSync'
 import { computeGlobalStreak } from './store/streak'
@@ -94,8 +98,19 @@ export function App() {
     }
     init()
     track('app_open')
+
+    // When a Google sign-in links the account (AuthGate → /api/google/link), the
+    // server's googleConnected flips true — refetch config so the doc suggestions
+    // switch from the blank-file fallback to real, linked creation without a reload.
+    const onLinked = async () => {
+      const cfg = await fetchServerConfig()
+      if (!cancelled && cfg) setConfig(cfg)
+    }
+    window.addEventListener(GOOGLE_LINKED_EVENT, onLinked)
+
     return () => {
       cancelled = true
+      window.removeEventListener(GOOGLE_LINKED_EVENT, onLinked)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])

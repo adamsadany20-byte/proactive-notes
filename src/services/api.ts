@@ -23,6 +23,11 @@ export interface ServerConfig {
   haikuConfigured: boolean
   calendarConfigured: boolean
   calendarConnected: boolean
+  // Google Docs/Sheets/Slides creation. `configured` = the server has Google
+  // OAuth credentials; `connected` = a user has authorised it (shares the same
+  // OAuth connection as the calendar, so these track calendarConfigured/Connected).
+  googleConfigured?: boolean
+  googleConnected?: boolean
   billingEnabled?: boolean
   billingConfigured?: boolean
   owner?: boolean // this client is an owner → sees the product-analytics view
@@ -446,3 +451,76 @@ export async function generateFeatureApi(
 // note-owned events only, so there's no OAuth connect/disconnect or external
 // event sync. (The server's /auth/google + /api/calendar routes remain but are
 // no longer reachable from the UI.)
+
+// ---- Google Docs / Sheets / Slides creation -------------------------------
+
+export interface CreatedDoc {
+  id: string
+  type: 'doc' | 'sheet' | 'slides'
+  title: string
+  url: string
+}
+
+export interface CreateDocResult {
+  ok: boolean
+  // Present on success.
+  doc?: CreatedDoc
+  // 'not_connected' → the app isn't authorised for Google (client should fall
+  // back to a blank docs.new tab). Other values are hard failures.
+  error?: 'not_connected' | 'not_configured' | 'create_failed' | 'network'
+}
+
+// Create a real Google file for a note, seeded with `seed` content, against the
+// user's connected Google account. Returns { ok:false, error:'not_connected' }
+// when Google isn't authorised — the caller then opens a blank doc instead.
+export async function createGoogleDoc(input: {
+  type: 'doc' | 'sheet' | 'slides'
+  title: string
+  seed?: string
+}): Promise<CreateDocResult> {
+  const r = await safeJson<CreateDocResult>(API_BASE + '/api/google/create', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  return r ?? { ok: false, error: 'network' }
+}
+
+// Kick off the Google OAuth consent flow. Full-page redirect to the server,
+// which bounces to Google and back to the app with ?google=connected. Used as a
+// fallback for users who signed in with email rather than Google.
+export function connectGoogle(): void {
+  window.location.href = API_BASE + '/auth/google'
+}
+
+// Disconnect Google — clears the server-stored tokens (shared with the dormant
+// calendar routes, hence the endpoint name). The next doc creation falls back to
+// a blank docs.new until the user reconnects.
+export async function disconnectGoogle(): Promise<void> {
+  await safeJson(API_BASE + '/api/calendar/disconnect', { method: 'POST' })
+}
+
+// Fired after the Google account is linked so the app can refresh server config
+// (googleConnected → true) without a reload. App.tsx listens for it.
+export const GOOGLE_LINKED_EVENT = 'google-linked'
+
+// Hand the Google tokens from a "Continue with Google" sign-in to the server so
+// it can create Docs/Sheets/Slides on the user's behalf. No-op when neither
+// token is present (e.g. a session with no Google provider). Fire-and-forget.
+export async function linkGoogleTokens(input: {
+  refreshToken?: string | null
+  accessToken?: string | null
+}): Promise<void> {
+  if (!input.refreshToken && !input.accessToken) return
+  const res = await safeJson<{ ok: boolean }>(API_BASE + '/api/google/link', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      refreshToken: input.refreshToken ?? undefined,
+      accessToken: input.accessToken ?? undefined,
+    }),
+  })
+  if (res?.ok && typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(GOOGLE_LINKED_EVENT))
+  }
+}

@@ -1,5 +1,16 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../services/supabase';
+import { linkGoogleTokens } from '../services/api';
+
+// Google Docs/Sheets/Slides scopes requested alongside sign-in, so one "Continue
+// with Google" grants both login and the ability to create documents. drive.file
+// is least-privilege — the app only ever sees files it creates itself.
+const GOOGLE_DOC_SCOPES = [
+  'https://www.googleapis.com/auth/drive.file',
+  'https://www.googleapis.com/auth/documents',
+  'https://www.googleapis.com/auth/spreadsheets',
+  'https://www.googleapis.com/auth/presentations',
+].join(' ');
 
 interface AuthGateProps {
   children: React.ReactNode;
@@ -24,6 +35,16 @@ export function AuthGate({ children }: AuthGateProps) {
     // React to sign-in / sign-out (also fires after the emailed link is opened)
     const { data: { subscription } } = supabase!.auth.onAuthStateChange((_event, session) => {
       setIsLoggedIn(!!session);
+      // Right after a "Continue with Google" redirect the session carries the
+      // Google provider tokens (they aren't persisted across reloads, so this is
+      // the one chance to capture them). Hand them to the server so it can create
+      // documents — no separate "Connect Google" step needed.
+      if (session?.provider_refresh_token || session?.provider_token) {
+        linkGoogleTokens({
+          refreshToken: session.provider_refresh_token,
+          accessToken: session.provider_token,
+        });
+      }
     });
 
     return () => subscription?.unsubscribe();
@@ -55,7 +76,14 @@ export function AuthGate({ children }: AuthGateProps) {
     setStatus({ tone: 'info', text: 'Redirecting to Google…' });
     const { error } = await supabase!.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: window.location.origin },
+      options: {
+        redirectTo: window.location.origin,
+        // Ask for document-creation scopes as part of sign-in.
+        scopes: GOOGLE_DOC_SCOPES,
+        // offline + consent make Google return a refresh token every time, so
+        // the server can keep creating documents after the access token expires.
+        queryParams: { access_type: 'offline', prompt: 'consent' },
+      },
     });
     if (error) setStatus({ tone: 'error', text: error.message });
   };

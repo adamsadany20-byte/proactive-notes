@@ -396,6 +396,9 @@ app.get('/api/config', (req, res) => {
     haikuConfigured: haikuConfigured(),
     calendarConfigured: calendarConfigured(),
     calendarConnected: !!loadTokens(),
+    // Google Docs/Sheets/Slides creation shares the same OAuth connection.
+    googleConfigured: calendarConfigured(),
+    googleConnected: !!loadTokens(),
     // Model names are intentionally not exposed to clients.
     billingEnabled: BILLING_ENABLED,
     billingConfigured: billingConfigured(),
@@ -1656,7 +1659,17 @@ app.post('/api/generate-feature', async (req, res) => {
 // ---------------------------------------------------------------------------
 // Google Calendar — OAuth + event CRUD.
 // ---------------------------------------------------------------------------
-const SCOPES = ['https://www.googleapis.com/auth/calendar.events']
+// One OAuth connection powers both the (dormant) calendar routes and document
+// creation. `drive.file` is least-privilege: the app can only see/edit files it
+// creates itself, never the rest of the user's Drive. The per-product scopes let
+// us seed content through the Docs/Sheets/Slides APIs.
+const SCOPES = [
+  'https://www.googleapis.com/auth/calendar.events',
+  'https://www.googleapis.com/auth/drive.file',
+  'https://www.googleapis.com/auth/documents',
+  'https://www.googleapis.com/auth/spreadsheets',
+  'https://www.googleapis.com/auth/presentations',
+]
 
 // Lazy-load googleapis. It's a very large package that takes many seconds to
 // import, which would otherwise block server startup for an OPTIONAL feature
@@ -1712,7 +1725,7 @@ function isAuthError(err) {
 
 app.get('/auth/google', async (_req, res) => {
   if (!calendarConfigured())
-    return res.status(400).send('Google Calendar is not configured on the server.')
+    return res.status(400).send('Google is not configured on the server.')
   const client = await oauthClient()
   const url = client.generateAuthUrl({
     access_type: 'offline',
@@ -1727,10 +1740,10 @@ app.get('/auth/google/callback', async (req, res) => {
     const client = await oauthClient()
     const { tokens } = await client.getToken(req.query.code)
     saveTokens(tokens)
-    res.redirect(`${APP_ORIGIN}/?calendar=connected`)
+    res.redirect(`${APP_ORIGIN}/?google=connected`)
   } catch (err) {
     console.error('oauth callback error:', err?.message || err)
-    res.redirect(`${APP_ORIGIN}/?calendar=error`)
+    res.redirect(`${APP_ORIGIN}/?google=error`)
   }
 })
 
@@ -1811,6 +1824,141 @@ app.delete('/api/calendar/events/:id', async (req, res) => {
     res.status(502).json({ connected: true, error: 'delete_failed' })
   }
 })
+
+// ---------------------------------------------------------------------------
+// Google Docs / Sheets / Slides — create a file for a note, seeded with its
+// content, in the user's connected Google account.
+// ---------------------------------------------------------------------------
+
+// Link the Google account the user just signed in with. Supabase's "Continue
+// with Google" returns a provider refresh token (when the app requests the
+// Docs/Sheets/Slides scopes + offline access); the client forwards it here so we
+// can mint access tokens for file creation without a second Google consent step.
+// Storing `expiry_date: 1` forces a refresh on first use, so we never rely on a
+// possibly-stale access token. Requires the SAME Google OAuth client in Supabase
+// and in GOOGLE_CLIENT_ID/SECRET, since only its issuer can refresh the token.
+app.post('/api/google/link', async (req, res) => {
+  if (!calendarConfigured())
+    return res.status(409).json({ ok: false, error: 'not_configured' })
+  const { refreshToken, accessToken } = req.body || {}
+  if (!refreshToken && !accessToken)
+    return res.status(400).json({ ok: false, error: 'no_token' })
+  const prev = loadTokens() || {}
+  const tokens = refreshToken
+    ? { ...prev, refresh_token: refreshToken, expiry_date: 1 }
+    : { ...prev, access_token: accessToken, expiry_date: Date.now() + 50 * 60_000 }
+  saveTokens(tokens)
+  res.json({ ok: true })
+})
+
+app.post('/api/google/create', async (req, res) => {
+  const { type, title, seed } = req.body || {}
+  if (!['doc', 'sheet', 'slides'].includes(type))
+    return res.status(400).json({ ok: false, error: 'bad_type' })
+  if (!calendarConfigured())
+    return res.status(409).json({ ok: false, error: 'not_configured' })
+
+  const client = await authedClient()
+  if (!client) return res.status(409).json({ ok: false, error: 'not_connected' })
+
+  const cleanTitle = String(title || 'Untitled').slice(0, 120) || 'Untitled'
+  const seedText = String(seed || '').slice(0, 8000)
+
+  try {
+    const google = await getGoogle()
+    let doc
+    if (type === 'doc') doc = await createDoc(google, client, cleanTitle, seedText)
+    else if (type === 'sheet')
+      doc = await createSheet(google, client, cleanTitle, seedText)
+    else doc = await createSlides(google, client, cleanTitle, seedText)
+    res.json({ ok: true, doc: { ...doc, type, title: cleanTitle } })
+  } catch (err) {
+    console.error('google create error:', err?.message || err)
+    if (isAuthError(err)) {
+      clearTokens()
+      return res.status(409).json({ ok: false, error: 'not_connected' })
+    }
+    res.status(502).json({ ok: false, error: 'create_failed' })
+  }
+})
+
+// Create a Google Doc and seed it with the note's text as body paragraphs.
+async function createDoc(google, auth, title, seed) {
+  const docs = google.docs({ version: 'v1', auth })
+  const { data } = await docs.documents.create({ requestBody: { title } })
+  const id = data.documentId
+  if (seed.trim()) {
+    // Insert at index 1 (just after the document's implicit start).
+    await docs.documents.batchUpdate({
+      documentId: id,
+      requestBody: {
+        requests: [{ insertText: { location: { index: 1 }, text: seed } }],
+      },
+    })
+  }
+  return { id, url: `https://docs.google.com/document/d/${id}/edit` }
+}
+
+// Create a Google Sheet and seed rows from the note (lines → rows, commas →
+// columns), so a list or a "£40 rent / £12 phone" note lands as a real grid.
+async function createSheet(google, auth, title, seed) {
+  const sheets = google.sheets({ version: 'v4', auth })
+  const { data } = await sheets.spreadsheets.create({
+    requestBody: { properties: { title } },
+  })
+  const id = data.spreadsheetId
+  const values = seedToRows(title, seed)
+  if (values.length) {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: id,
+      range: 'A1',
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values },
+    })
+  }
+  return { id, url: data.spreadsheetUrl || `https://docs.google.com/spreadsheets/d/${id}/edit` }
+}
+
+// Turn note text into a 2D array of cells. A leading header row is always the
+// note's title so the sheet isn't anonymous; each subsequent non-empty line
+// becomes a row, split on commas / tabs / " - " / " — " into columns.
+function seedToRows(title, seed) {
+  const rows = [[title]]
+  for (const raw of seed.split('\n')) {
+    const line = raw.trim().replace(/^[-*•\d.)\]]+\s*/, '')
+    if (!line) continue
+    const cells = line
+      .split(/\s*[,\t]\s*|\s+[-—]\s+/)
+      .map((c) => c.trim())
+      .filter(Boolean)
+    rows.push(cells.length ? cells : [line])
+  }
+  return rows.length > 1 ? rows : []
+}
+
+// Create a Google Slides deck. The default deck has one title slide; we set its
+// title to the note's topic and drop the note's first line into the subtitle.
+async function createSlides(google, auth, title, seed) {
+  const slides = google.slides({ version: 'v1', auth })
+  const { data } = await slides.presentations.create({ requestBody: { title } })
+  const id = data.presentationId
+  const first = data.slides?.[0]
+  const requests = []
+  const subtitle = seed.split('\n').map((l) => l.trim()).find(Boolean) || ''
+  for (const el of first?.pageElements || []) {
+    const ph = el.shape?.placeholder?.type
+    if (ph === 'CENTERED_TITLE' || ph === 'TITLE')
+      requests.push({ insertText: { objectId: el.objectId, text: title } })
+    else if ((ph === 'SUBTITLE' || ph === 'BODY') && subtitle)
+      requests.push({ insertText: { objectId: el.objectId, text: subtitle } })
+  }
+  if (requests.length)
+    await slides.presentations.batchUpdate({
+      presentationId: id,
+      requestBody: { requests },
+    })
+  return { id, url: `https://docs.google.com/presentation/d/${id}/edit` }
+}
 
 // ---- shaping helpers --------------------------------------------------------
 

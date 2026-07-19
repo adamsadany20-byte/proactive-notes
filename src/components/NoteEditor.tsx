@@ -9,6 +9,7 @@ import { useVoiceInput } from '../ui/useVoiceInput'
 import { KIND_META, tintVars } from '../ui/kindMeta'
 import { ContextualPrompt } from './ContextualPrompt'
 import { SmartSuggestions } from './SmartSuggestions'
+import { DocSuggestion } from './DocSuggestion'
 import { SegmentView } from './Segments'
 import { detectListPattern } from '../engine/patterns'
 import { eventConflicts } from '../store/reconcile'
@@ -153,6 +154,8 @@ export function NoteEditor({ note }: { note: Note }) {
         )}
 
         <SmartSuggestions note={note} onInsert={insertContinuation} />
+
+        <DocSuggestion note={note} />
 
         {showPrompt && result.nextQuestion && (
           <ContextualPrompt

@@ -8,6 +8,7 @@ import {
 } from 'react'
 import type {
   CalendarEvent,
+  DocLink,
   Enrichment,
   RemoteClassification,
   TailoredQuestions,
@@ -103,6 +104,8 @@ type Action =
   | { type: 'UPDATE_REMINDER'; reminderId: string; patch: Partial<Reminder> }
   | { type: 'START_STREAK'; noteId: string }
   | { type: 'DECLINE_STREAK'; noteId: string }
+  | { type: 'ATTACH_DOC'; noteId: string; doc: DocLink }
+  | { type: 'DECLINE_DOC'; noteId: string; docType: DocLink['type'] }
   | { type: 'LOG_SHOPPING'; ts: number }
   | { type: 'HYDRATE'; notes: Note[]; reminders: Reminder[] }
 
@@ -405,6 +408,28 @@ function reducer(state: State, action: Action): State {
       )
       return { ...state, notes }
     }
+    case 'ATTACH_DOC': {
+      const notes = state.notes.map((n) => {
+        if (n.id !== action.noteId) return n
+        // De-dupe by file id (a double-tap shouldn't attach twice).
+        if ((n.docs ?? []).some((d) => d.id === action.doc.id)) return n
+        return {
+          ...n,
+          docs: [...(n.docs ?? []), action.doc],
+          updatedAt: Date.now(),
+        }
+      })
+      return { ...state, notes }
+    }
+    case 'DECLINE_DOC': {
+      const notes = state.notes.map((n) => {
+        if (n.id !== action.noteId) return n
+        const declined = n.docsDeclined ?? []
+        if (declined.includes(action.docType)) return n
+        return { ...n, docsDeclined: [...declined, action.docType] }
+      })
+      return { ...state, notes }
+    }
     case 'LOG_SHOPPING': {
       // Keep a bounded, de-duplicated history (ignore repeat logs within an
       // hour so a double-tap doesn't skew the learned cadence).
@@ -509,6 +534,8 @@ interface StoreApi {
   updateReminder: (reminderId: string, patch: Partial<Reminder>) => void
   startStreak: (noteId: string) => void
   declineStreak: (noteId: string) => void
+  attachDoc: (noteId: string, doc: DocLink) => void
+  declineDoc: (noteId: string, docType: DocLink['type']) => void
   logShopping: (ts?: number) => void
 }
 
@@ -714,6 +741,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         dispatch({ type: 'UPDATE_REMINDER', reminderId, patch }),
       startStreak: (noteId) => dispatch({ type: 'START_STREAK', noteId }),
       declineStreak: (noteId) => dispatch({ type: 'DECLINE_STREAK', noteId }),
+      attachDoc: (noteId, doc) => dispatch({ type: 'ATTACH_DOC', noteId, doc }),
+      declineDoc: (noteId, docType) =>
+        dispatch({ type: 'DECLINE_DOC', noteId, docType }),
       logShopping: (ts) => dispatch({ type: 'LOG_SHOPPING', ts: ts ?? Date.now() }),
     }),
     [state],

@@ -240,6 +240,23 @@ export interface StreakInfo {
   actionableDate: string | null
 }
 
+// ---- Linked documents -------------------------------------------------------
+
+// A Google Doc / Sheet / Slides file the app created for a note. Created either
+// against the user's Google account (server, seeded with the note's content) or,
+// when Google isn't connected, opened blank via docs.new. Stored on the note so
+// it's remembered and reopenable.
+export interface DocLink {
+  id: string // Google file id, or a local id for a blank fallback link
+  type: 'doc' | 'sheet' | 'slides'
+  title: string
+  url: string
+  createdAt: number
+  // True when this was a blank docs.new fallback (not created via the API), so
+  // we know its content wasn't seeded and its id isn't a real Drive file id.
+  blank?: boolean
+}
+
 // ---- Notes ------------------------------------------------------------------
 
 export interface Note {
@@ -269,6 +286,11 @@ export interface Note {
   // True once the user has declined the "start a streak?" offer for this goal,
   // so we stop asking (they can still opt in from the tracker later).
   streakDeclined?: boolean
+  // Google Docs/Sheets/Slides the app has created for this note (see DocLink).
+  docs?: DocLink[]
+  // Doc types the user has dismissed the "start a doc?" offer for, so we stop
+  // suggesting that type for this note (they can still create one manually).
+  docsDeclined?: ('doc' | 'sheet' | 'slides')[]
 }
 
 export interface InferenceResult {
