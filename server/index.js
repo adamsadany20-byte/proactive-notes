@@ -1659,17 +1659,13 @@ app.post('/api/generate-feature', async (req, res) => {
 // ---------------------------------------------------------------------------
 // Google Calendar — OAuth + event CRUD.
 // ---------------------------------------------------------------------------
-// One OAuth connection powers both the (dormant) calendar routes and document
-// creation. `drive.file` is least-privilege: the app can only see/edit files it
-// creates itself, never the rest of the user's Drive. The per-product scopes let
-// us seed content through the Docs/Sheets/Slides APIs.
-const SCOPES = [
-  'https://www.googleapis.com/auth/calendar.events',
-  'https://www.googleapis.com/auth/drive.file',
-  'https://www.googleapis.com/auth/documents',
-  'https://www.googleapis.com/auth/spreadsheets',
-  'https://www.googleapis.com/auth/presentations',
-]
+// `drive.file` alone is enough to create AND seed Docs/Sheets/Slides: it grants
+// per-file access to files the app itself creates (which is all we ever touch),
+// and the Docs/Sheets/Slides APIs accept it for those files. It is a
+// NON-SENSITIVE scope, so Google shows no "unverified app" warning and the app
+// needs no OAuth verification — unlike the broad `documents`/`spreadsheets`/
+// `presentations`/`calendar.events` scopes, which are sensitive. Keep it this way.
+const SCOPES = ['https://www.googleapis.com/auth/drive.file']
 
 // Lazy-load googleapis. It's a very large package that takes many seconds to
 // import, which would otherwise block server startup for an OPTIONAL feature

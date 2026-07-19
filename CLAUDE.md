@@ -51,9 +51,13 @@ content and linked back onto the note.
   the Docs/Sheets/Slides APIs and seeds it (doc: note text as body; sheet:
   lines→rows, commas→cols via `seedToRows`; slides: note title/subtitle on the
   title slide), returning `{id, url}`. Uses `authedClient()` (the same googleapis
-  OAuth client the calendar uses). `SCOPES` gained `drive.file` (least-privilege —
-  only app-created files), `documents`, `spreadsheets`, `presentations`.
-  `/api/config` reports `googleConfigured`/`googleConnected`.
+  OAuth client the calendar uses). `SCOPES` is **only `drive.file`** — a
+  NON-SENSITIVE scope that still creates + seeds all three file types (per-file
+  access to app-created files is enough for the Docs/Sheets/Slides APIs). This is
+  deliberate: the broad `documents`/`spreadsheets`/`presentations`/
+  `calendar.events` scopes are *sensitive*, which triggers Google's "unverified
+  app" warning + a verification review. Do NOT re-add them. `/api/config` reports
+  `googleConfigured`/`googleConnected`.
 - **Google access is granted AT LOGIN, not a separate step.** "Continue with
   Google" ([AuthGate.tsx](src/components/AuthGate.tsx)) requests the doc scopes +
   `access_type:offline` + `prompt:consent` via Supabase `signInWithOAuth`. The
@@ -70,9 +74,12 @@ content and linked back onto the note.
   (redirects back with `?google=connected`). If Google isn't connected at all,
   the chip opens a blank `docs.new`/`sheets.new`/`slides.new` (no title/seed, not
   linked back).
-- **Setup / caveat**: enable the Docs/Sheets/Slides/Drive APIs + these scopes on
-  the shared Google Cloud OAuth client, and set it as the Supabase Google
-  provider. Not yet run against real Google OAuth end-to-end.
+- **Setup / caveat**: enable the Docs/Sheets/Slides/Drive APIs on the shared
+  Google Cloud OAuth client, and set it as the Supabase Google provider. Since
+  the only scope is the non-sensitive `drive.file`, publishing the OAuth consent
+  screen to "In production" needs **no** Google verification and shows no warning.
+  (While the consent screen is in "Testing", only accounts added under Test users
+  can sign in.) Not yet run against real Google OAuth end-to-end.
 
 ### Local pattern recognition (free tier, no network)
 

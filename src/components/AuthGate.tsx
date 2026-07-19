@@ -2,15 +2,11 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../services/supabase';
 import { linkGoogleTokens } from '../services/api';
 
-// Google Docs/Sheets/Slides scopes requested alongside sign-in, so one "Continue
-// with Google" grants both login and the ability to create documents. drive.file
-// is least-privilege — the app only ever sees files it creates itself.
-const GOOGLE_DOC_SCOPES = [
-  'https://www.googleapis.com/auth/drive.file',
-  'https://www.googleapis.com/auth/documents',
-  'https://www.googleapis.com/auth/spreadsheets',
-  'https://www.googleapis.com/auth/presentations',
-].join(' ');
+// Requested alongside sign-in, so one "Continue with Google" grants both login
+// and document creation. `drive.file` is non-sensitive (per-file access to files
+// the app creates) — enough to create AND seed Docs/Sheets/Slides, while avoiding
+// the sensitive-scope "unverified app" warning and Google's verification review.
+const GOOGLE_DOC_SCOPES = 'https://www.googleapis.com/auth/drive.file';
 
 interface AuthGateProps {
   children: React.ReactNode;
