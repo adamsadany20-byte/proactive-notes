@@ -176,6 +176,35 @@ function capReached(ent) {
   return !!ent && ent.capPence > 0 && overageChargePence(ent) >= ent.capPence
 }
 
+// ---------------------------------------------------------------------------
+// Beta mode — a free public beta that can't bankrupt the owner.
+//
+// During the beta billing is OFF (there is nothing to buy), but every Claude
+// call still costs the OWNER real money at Anthropic. BETA_ALLOWANCE_PENCE gives
+// each tester a fixed allowance of REAL spend (not a token count): once their
+// metered usage passes it, the paid routes 402 with reason 'beta_limit' and the
+// app falls back to the local engine, which is free, offline and unmetered — so
+// a tester whose allowance runs out still has a working app, just without the
+// cloud AI. 0 disables the cap (unlimited, and unlimited cost).
+//
+// Usage is already metered per client even in free mode (see meterUsage), so
+// this reads numbers we're recording anyway.
+// ---------------------------------------------------------------------------
+const BETA_ALLOWANCE_PENCE = Number(process.env.BETA_ALLOWANCE_PENCE || 0)
+const betaMode = () => !BILLING_ENABLED && BETA_ALLOWANCE_PENCE > 0
+
+// Total real spend a tester has caused, across both metered pools.
+function betaUsedPence(ent) {
+  if (!ent) return 0
+  return (ent.aiUsedPence || 0) + (ent.classifierUsedPence || 0)
+}
+function betaRemainingPence(ent) {
+  return Math.max(0, BETA_ALLOWANCE_PENCE - betaUsedPence(ent))
+}
+function betaExhausted(ent) {
+  return betaMode() && betaUsedPence(ent) >= BETA_ALLOWANCE_PENCE
+}
+
 // Comma-separated clientIds that are never billed — put your own browser's
 // `evolve.clientId` (localStorage) here so YOU can keep testing a deployed app
 // for free even with billing enabled for everyone else.
@@ -198,7 +227,13 @@ const FEEDBACK_WEBHOOK_URL = (process.env.FEEDBACK_WEBHOOK_URL || '').trim()
 // Free mode (billing off) → always allowed, so editing/trying never gets gated.
 // With billing on, a client needs an activated account with credit remaining.
 async function hasAccess(clientId) {
-  if (!BILLING_ENABLED) return true
+  if (!BILLING_ENABLED) {
+    // Free mode. In an open beta each tester still gets a hard spend allowance,
+    // because the owner is the one paying Anthropic for every call.
+    if (!betaMode()) return true
+    if (clientId && FREE_CLIENT_IDS.has(clientId)) return true
+    return !betaExhausted(await getEntitlement(clientId))
+  }
   if (clientId && FREE_CLIENT_IDS.has(clientId)) return true
   // New model: the Evolve subscription unlocks the coding/world-knowledge
   // features — unless the user's own spend limit has been reached.
@@ -212,7 +247,11 @@ async function hasAccess(clientId) {
 // Classification is unlocked by EITHER paid plan (classifier or evolve), and
 // stops at the user's spend limit like everything else.
 async function hasClassifyAccess(clientId) {
-  if (!BILLING_ENABLED) return true
+  if (!BILLING_ENABLED) {
+    if (!betaMode()) return true
+    if (clientId && FREE_CLIENT_IDS.has(clientId)) return true
+    return !betaExhausted(await getEntitlement(clientId))
+  }
   if (clientId && FREE_CLIENT_IDS.has(clientId)) return true
   if (!(await hasClassifier(clientId))) return false
   return !capReached(await getEntitlement(clientId))
@@ -223,6 +262,21 @@ async function hasClassifyAccess(clientId) {
 async function paywallBody(clientId, extra = {}, need = 'evolve') {
   const ent = await getEntitlement(clientId)
   const money = (p) => `£${(p / 100).toFixed(2)}`
+
+  // Beta tester who has spent their allowance. There is nothing to sell them —
+  // be straight about what happened and what still works.
+  if (betaExhausted(ent)) {
+    return {
+      configured: true,
+      subscribed: false,
+      reason: 'beta_limit',
+      error:
+        `You've used your ${money(BETA_ALLOWANCE_PENCE)} of free AI during the beta — ` +
+        `thank you, that was real money and genuinely useful. Everything on-device ` +
+        `still works; reply to your beta email if you need more.`,
+      ...extra,
+    }
+  }
 
   // Subscribed, but they've hit the limit they set on beyond-plan usage.
   if (capReached(ent)) {
@@ -553,6 +607,17 @@ app.get('/api/billing/status', async (req, res) => {
         },
       },
       periodEnd: e?.periodEnd || 0,
+      // Beta allowance — the real spend this tester has caused and what's left.
+      // Surfaced so the beta UI can be honest about cost instead of vague.
+      beta: betaMode()
+        ? {
+            active: true,
+            allowancePence: BETA_ALLOWANCE_PENCE,
+            usedPence: Math.round(betaUsedPence(e) * 100) / 100,
+            remainingPence: Math.round(betaRemainingPence(e) * 100) / 100,
+            exhausted: betaExhausted(e) && !freeBypass,
+          }
+        : { active: false },
       // What beyond-plan usage would cost this cycle — the figure the user's
       // spend limit caps.
       overagePence: e ? Math.round(overageChargePence(e) * 100) / 100 : 0,

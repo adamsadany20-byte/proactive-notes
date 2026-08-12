@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import { App } from './App'
 import { Landing } from './components/Landing'
+import { Beta } from './components/Beta'
 import { StoreProvider } from './store/appStore'
 import { isSupabaseEnabled, supabase } from './services/supabase'
 import { AuthGate } from './components/AuthGate'
@@ -28,7 +29,10 @@ try {
   // The marketing landing page (for ad traffic) lives at /welcome and skips the
   // app shell, store, and auth entirely — it just needs to load and capture
   // interest.
-  const isLanding = window.location.pathname.replace(/\/$/, '') === '/welcome'
+  const path = window.location.pathname.replace(/\/$/, '')
+  const isLanding = path === '/welcome'
+  // The beta recruitment page — same standalone treatment as /welcome.
+  const isBeta = path === '/beta'
 
   const appContent = (
     <StoreProvider>
@@ -40,7 +44,9 @@ try {
 
   root.render(
     <StrictMode>
-      {isLanding ? (
+      {isBeta ? (
+        <Beta />
+      ) : isLanding ? (
         <Landing />
       ) : isSupabaseEnabled ? (
         <AuthGate>{appContent}</AuthGate>

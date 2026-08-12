@@ -29,6 +29,31 @@ migration has been applied, and the webhook must subscribe to
 
 ## Recent Work (Jul 2026)
 
+### Open beta: recruitment page + per-tester spend allowance
+
+A free public beta that can't bankrupt the owner. Two halves that must stay in
+sync — the page states a number, the server enforces that same number.
+- **`/beta`** ([Beta.tsx](src/components/Beta.tsx), routed in
+  [main.tsx](src/main.tsx) like `/welcome`) recruits testers. It asks for
+  *specific* things (where it misread you / wasted your time / what was missing /
+  what broke) rather than "any feedback welcome", and carries a blunt cost
+  section: local engine £0, small models ~0.1–1p, **web-search calls ~20p each**.
+  The allowance figure is **fetched from the server** (`billing.beta.allowancePence`)
+  so the page can't drift from what's enforced. Signups post with source `beta`
+  (`submitBetaSignup`), separable from `/welcome`'s `interest` signups.
+- **`BETA_ALLOWANCE_PENCE`** (server, pence, 0/unset = off) gives each tester a
+  fixed allowance of REAL Anthropic spend. Active only when
+  `BILLING_ENABLED=false` (`betaMode()`); usage was already metered per client in
+  free mode (`meterUsage`), so this just reads it. `hasAccess`/`hasClassifyAccess`
+  gate on `betaExhausted()`; `FREE_CLIENT_IDS` bypasses it.
+- **Running out is not a paywall.** The 402 carries `reason: 'beta_limit'` with a
+  message saying the local engine still works and to reply to the beta email —
+  there is nothing to buy. `/api/billing/status` returns a `beta` block
+  (`allowance/used/remaining/exhausted`), surfaced in Settings → **Beta usage**
+  ([BetaUsage.tsx](src/components/BetaUsage.tsx)) as a real-money meter that warns
+  at 25% left. Verified: fresh tester allowed, exhausted tester 402s, owner
+  bypasses, and with the allowance unset free mode is unchanged.
+
 ### Auto-suggested Google Docs / Sheets / Slides
 
 Senses when a note wants a real document and offers a one-tap chip under the

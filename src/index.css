@@ -6541,3 +6541,210 @@ input {
     animation: none;
   }
 }
+
+/* ---- Beta recruitment page (/beta) --------------------------------------- */
+
+/* Reuses the landing shell (.landing, .lp-*) and adds the two blocks unique to
+   the beta: the "what I'm asking of you" prompts, and the cost transparency
+   panel. The cost block is deliberately the loudest thing on the page. */
+.beta-badge {
+  display: inline-block;
+  margin-bottom: 14px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  border: 1px solid color-mix(in srgb, var(--accent) 26%, transparent);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.beta-section {
+  max-width: 900px;
+  margin: 40px auto 0;
+  padding: 0 clamp(18px, 5vw, 40px);
+  text-align: center;
+}
+.beta-asks {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 14px;
+  margin-top: 8px;
+  text-align: left;
+}
+.beta-ask {
+  display: flex;
+  gap: 13px;
+  align-items: flex-start;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 18px;
+  box-shadow: var(--shadow-sm);
+}
+.beta-ask-ico {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  font-size: 15px;
+}
+.beta-ask-title {
+  font-family: var(--display);
+  font-weight: 650;
+  font-size: 15.5px;
+  color: var(--ink);
+  margin: 2px 0 5px;
+}
+.beta-ask-body {
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+  margin: 0;
+}
+.beta-note {
+  margin: 18px auto 0;
+  max-width: 620px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+
+/* The money section — the honest core of the page. */
+.beta-cost {
+  max-width: 900px;
+  margin: 46px auto 0;
+  padding: clamp(26px, 5vw, 38px) clamp(18px, 5vw, 36px);
+  text-align: center;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.beta-cost-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 14px;
+  text-align: left;
+  margin-top: 4px;
+}
+.beta-cost-card {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 18px;
+  background: color-mix(in srgb, var(--ink) 2.5%, transparent);
+}
+/* The expensive one gets visual weight — it's the behaviour we need to change. */
+.beta-cost-card--hot {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+.beta-cost-k {
+  display: block;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.beta-cost-v {
+  display: block;
+  font-family: var(--display);
+  font-size: 30px;
+  font-weight: 700;
+  color: var(--ink);
+  margin: 4px 0 8px;
+}
+.beta-cost-card--hot .beta-cost-v {
+  color: var(--accent-ink);
+}
+.beta-cost-b {
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--ink-soft);
+  margin: 0;
+}
+
+.beta-allowance {
+  margin-top: 22px;
+  padding: 20px;
+  text-align: left;
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--line));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+}
+.beta-allow-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 18px;
+  color: var(--ink);
+  margin: 0 0 10px;
+}
+.beta-allow-chip {
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-family: var(--ui, inherit);
+  font-size: 12px;
+  font-weight: 700;
+}
+.beta-allow-body {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--ink-soft);
+  margin: 0 0 10px;
+}
+.beta-allow-body:last-child {
+  margin-bottom: 0;
+}
+.beta-allow-ask {
+  padding-top: 10px;
+  border-top: 1px dashed color-mix(in srgb, var(--accent) 28%, transparent);
+  color: var(--ink);
+}
+.beta-fine {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-faint);
+  text-align: center;
+}
+
+/* ---- In-app beta allowance meter (Settings) ------------------------------ */
+
+.beta-meter {
+  height: 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ink) 10%, transparent);
+  overflow: hidden;
+  margin: 4px 0 10px;
+}
+.beta-meter-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+.beta-meter-fill.is-low {
+  background: #c9852b;
+}
+.beta-meter-fill.is-out {
+  background: color-mix(in srgb, var(--ink) 32%, transparent);
+}
+@media (prefers-reduced-motion: reduce) {
+  .beta-meter-fill {
+    transition: none;
+  }
+}

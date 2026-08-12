@@ -74,6 +74,16 @@ export interface BillingStatus {
     classifier: { usedPence: number; includedPence: number }
   }
   periodEnd?: number
+  // Open-beta allowance. During the beta nothing is for sale, but every AI call
+  // costs the owner real money, so each tester gets a fixed allowance of real
+  // spend. When it's gone the cloud AI stops and the local engine carries on.
+  beta?: {
+    active: boolean
+    allowancePence?: number
+    usedPence?: number
+    remainingPence?: number
+    exhausted?: boolean
+  }
   // What beyond-plan usage would cost this cycle (pence) — what capPence caps.
   overagePence?: number
   pricing?: {
@@ -223,6 +233,18 @@ export async function submitFeedback(
 // Landing-page "gauge interest" signup — an email plus an optional note.
 export function submitInterest(email: string, message = '') {
   return submitFeedback(message, 'interest', email)
+}
+
+// Beta-programme signup. Kept as its own source so beta testers are separable
+// from general interest signups when you export the list to invite people.
+export function submitBetaSignup(email: string, message = '') {
+  return submitFeedback(message, 'beta', email)
+}
+
+// Feedback sent from inside the app by a beta tester (source-tagged so it can be
+// told apart from ordinary feedback when you read it).
+export function submitBetaFeedback(text: string, email = '') {
+  return submitFeedback(text, 'beta-feedback', email)
 }
 
 export interface AnalyticsEvent {
