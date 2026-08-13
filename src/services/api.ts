@@ -107,7 +107,8 @@ export interface BillingStatus {
   }
 }
 
-// Subscribe to a recurring plan ('classifier' £2/mo or 'evolve' £12/mo).
+// Subscribe to a recurring plan ('classifier' £1/mo or 'evolve' £6/mo — the
+// server is the source of truth for prices; these are just the current defaults).
 export function startSubscription(plan: 'classifier' | 'evolve') {
   return startCheckout(plan)
 }

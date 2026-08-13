@@ -23,8 +23,12 @@ const TIERS: { id: Tier; label: string }[] = [
   { id: 'evolve', label: 'Evolve AI' },
 ]
 
-const gbp = (pence: number | undefined, fallback: number): string =>
-  `£${((pence ?? fallback) / 100).toFixed(pence != null && pence % 100 ? 2 : 0)}`
+// Format pence as £. Decides on the RESOLVED value (not just the server one) so
+// a sub-pound fallback like 50p renders "£0.50" rather than rounding to "£1".
+const gbp = (pence: number | undefined, fallback: number): string => {
+  const v = pence ?? fallback
+  return `£${(v / 100).toFixed(v % 100 ? 2 : 0)}`
+}
 
 export function AiTierSelector() {
   const { state, setTier } = useStore()
@@ -55,11 +59,11 @@ export function AiTierSelector() {
   const unconfigured = (id: Tier): boolean =>
     id !== 'free' && cfg?.haikuConfigured === false
 
-  const classPrice = gbp(p?.classifierPricePence, 200)
-  const classIncl = gbp(p?.classifierIncludedPence, 100)
-  const evPrice = gbp(p?.evolvePricePence, 1200)
-  const evAiIncl = gbp(p?.evolveAiIncludedPence, 500)
-  const evClIncl = gbp(p?.evolveClassifierIncludedPence, 100)
+  const classPrice = gbp(p?.classifierPricePence, 100)
+  const classIncl = gbp(p?.classifierIncludedPence, 50)
+  const evPrice = gbp(p?.evolvePricePence, 600)
+  const evAiIncl = gbp(p?.evolveAiIncludedPence, 250)
+  const evClIncl = gbp(p?.evolveClassifierIncludedPence, 50)
 
   // One line per tier, sat under its own name — so all three explain themselves
   // at once instead of taking turns in a single shared status line. The price

@@ -250,9 +250,12 @@ export function FeatureGenerator({ note }: Props) {
 
   if (aiOn && locked) {
     const pricing = state.billing?.pricing
-    const evPrice = ((pricing?.evolvePricePence ?? 1200) / 100).toFixed(0)
-    const evAiIncl = ((pricing?.evolveAiIncludedPence ?? 500) / 100).toFixed(0)
-    const evClIncl = ((pricing?.evolveClassifierIncludedPence ?? 100) / 100).toFixed(0)
+    // Precision from the resolved value, so a 50p allowance shows "0.50" rather
+    // than rounding to "1".
+    const money = (v: number) => (v / 100).toFixed(v % 100 ? 2 : 0)
+    const evPrice = money(pricing?.evolvePricePence ?? 600)
+    const evAiIncl = money(pricing?.evolveAiIncludedPence ?? 250)
+    const evClIncl = money(pricing?.evolveClassifierIncludedPence ?? 50)
     const markup = pricing?.overageMarkup ?? 2
     return (
       <div className="gen">

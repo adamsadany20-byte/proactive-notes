@@ -18,7 +18,7 @@ Most recent session, in order:
    re-classifies **only when the local engine is unsure**. (See "Cloud
    classification".)
 4. **Billing switched from one-time credit → two recurring subscriptions**
-   (Classification £2/mo, Evolve AI £12/mo with two metered pools), and the spend
+   (Classification £1/mo, Evolve AI £6/mo with two metered pools), and the spend
    cap was rewired to limit **overage** instead of a dead top-up path. (See
    "Billing".)
 
@@ -182,9 +182,15 @@ network.
 `BILLING_ENABLED=false` (default) = everything free, nothing gated. When on,
 three tiers:
 - **Free** — local engine only.
-- **Classification £2/mo** — includes **£1** classifier usage.
-- **Evolve AI £12/mo** — **two independently-metered pools**: **£5** coding +
-  world knowledge (`ai`) **and £1** classifier. Includes everything.
+- **Classification £1/mo** — includes **50p** classifier usage.
+- **Evolve AI £6/mo** — **two independently-metered pools**: **£2.50** coding +
+  world knowledge (`ai`) **and 50p** classifier. Includes everything.
+
+Prices were halved from the original £2/£12 for the beta. The **included usage
+was halved by the same factor deliberately** — each plan bundles usage worth
+half its fee (50% gross margin). Raising an `*_INCLUDED_PENCE` without raising
+the price eats that margin, and a plan that bundles as much usage as it charges
+for loses money on every subscriber once Stripe's ~2.9% + 30p is taken.
 
 Each pool overages at **£2 per £1** (`OVERAGE_MARKUP`) beyond its allowance.
 Checkout is `mode:'subscription'` with inline recurring `price_data` (no Stripe

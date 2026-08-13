@@ -17,19 +17,23 @@ export function UpgradeModal({
   onConfirm: () => void
   onStayFree: () => void
 }) {
-  const gbp = (pence: number | undefined, fallback: number) =>
-    `£${((pence ?? fallback) / 100).toFixed(0)}`
+  // Decide the precision on the RESOLVED value so sub-pound amounts (a 50p
+  // included allowance) render "£0.50" instead of rounding up to "£1".
+  const gbp = (pence: number | undefined, fallback: number) => {
+    const v = pence ?? fallback
+    return `£${(v / 100).toFixed(v % 100 ? 2 : 0)}`
+  }
   const markup = pricing?.overageMarkup ?? 2
   const isEvolve = plan === 'evolve'
 
   const price = isEvolve
-    ? gbp(pricing?.evolvePricePence, 1200)
-    : gbp(pricing?.classifierPricePence, 200)
+    ? gbp(pricing?.evolvePricePence, 600)
+    : gbp(pricing?.classifierPricePence, 100)
   const classIncl = gbp(
     isEvolve ? pricing?.evolveClassifierIncludedPence : pricing?.classifierIncludedPence,
-    100,
+    50,
   )
-  const aiIncl = gbp(pricing?.evolveAiIncludedPence, 500)
+  const aiIncl = gbp(pricing?.evolveAiIncludedPence, 250)
 
   return (
     <div

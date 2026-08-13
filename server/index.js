@@ -134,18 +134,25 @@ const USD_TO_GBP = Number(process.env.USD_TO_GBP || 0.78)
 // Recurring subscription plans (the current model). Two tiers, each billed
 // monthly with independently-metered included usage pools; overage bills at
 // OVERAGE_MARKUP pence per 1p of token value beyond a pool's allowance.
-//   • classifier — £2/mo, includes £1 of classifier usage.
-//   • evolve     — £12/mo, includes £5 of coding+world-knowledge ('ai' pool)
-//                  AND £1 of classifier usage.
+//   • classifier — £1/mo, includes £0.50 of classifier usage.
+//   • evolve     — £6/mo, includes £2.50 of coding+world-knowledge ('ai' pool)
+//                  AND £0.50 of classifier usage.
+//
+// Beta pricing: halved from the original £2/£12 to make the paid beta an easier
+// yes. The INCLUDED usage was halved by the same factor on purpose — a plan must
+// keep costing more than the usage it bundles, or every subscriber is a loss.
+// Each plan bundles usage worth half its fee (50% gross margin before overage),
+// which still has to cover Stripe's ~2.9% + 30p per charge. If you raise the
+// included figures without raising the price, subscribers start losing money.
 // All values in pence, env-tunable.
 // ---------------------------------------------------------------------------
-const CLASSIFIER_PRICE_PENCE = Number(process.env.CLASSIFIER_PRICE_PENCE || 200) // £2/mo
-const CLASSIFIER_INCLUDED_PENCE = Number(process.env.CLASSIFIER_INCLUDED_PENCE || 100) // £1 classifier
-const EVOLVE_PRICE_PENCE = Number(process.env.EVOLVE_PRICE_PENCE || 1200) // £12/mo
-const EVOLVE_AI_INCLUDED_PENCE = Number(process.env.EVOLVE_AI_INCLUDED_PENCE || 500) // £5 coding+knowledge
+const CLASSIFIER_PRICE_PENCE = Number(process.env.CLASSIFIER_PRICE_PENCE || 100) // £1/mo
+const CLASSIFIER_INCLUDED_PENCE = Number(process.env.CLASSIFIER_INCLUDED_PENCE || 50) // 50p classifier
+const EVOLVE_PRICE_PENCE = Number(process.env.EVOLVE_PRICE_PENCE || 600) // £6/mo
+const EVOLVE_AI_INCLUDED_PENCE = Number(process.env.EVOLVE_AI_INCLUDED_PENCE || 250) // £2.50 coding+knowledge
 const EVOLVE_CLASSIFIER_INCLUDED_PENCE = Number(
-  process.env.EVOLVE_CLASSIFIER_INCLUDED_PENCE || 100,
-) // £1 classifier
+  process.env.EVOLVE_CLASSIFIER_INCLUDED_PENCE || 50,
+) // 50p classifier
 const OVERAGE_MARKUP = Number(process.env.OVERAGE_MARKUP || 2) // charge £2 per £1 of overage
 
 // Beta pricing. During the open beta testers pay a REDUCED markup on the usage
