@@ -22,7 +22,9 @@ Most recent session, in order:
    cap was rewired to limit **overage** instead of a dead top-up path. (See
    "Billing".)
 
-**Before charging anyone:** the Stripe subscription path has never run against
+**Note:** the Stripe subscription path is now verified in test mode (see "Known
+Limitations"). The paragraph below is retained for the deployment steps; the
+"never run" claim no longer holds. Historically: it had never run against
 real Stripe — see "Known Limitations". The `entitlements` subscription-columns
 migration has been applied, and the webhook must subscribe to
 `checkout.session.completed`, `invoice.paid`, and `customer.subscription.deleted`.
@@ -484,14 +486,19 @@ Nudges fire via `useReminders` (20-second poll). Copy is streak-aware: *"keep yo
 - Mobile: safe areas + top bar done (see UI Patterns); touch interactions could
   still be smoother
 - Performance: large note collections (100+) untested
-- **Billing: the Stripe subscription path is NOT yet verified against real
-  Stripe.** Verified by test: 402 gating, per-pool metering, cap math +
-  enforcement, the status payload. NOT verified end-to-end: subscription
-  checkout, webhook signatures for the new events, and `invoice.paid` → pool
-  reset → `stripe.invoiceItems.create` (which creates a REAL charge). Run the
-  flow in Stripe **test** mode (`stripe listen --forward-to
-  localhost:8787/api/billing/webhook`) before relying on it. Overage bills **one
-  cycle in arrears**, so a mistake wouldn't surface for a month.
+- **Billing: the subscription path IS now verified against real Stripe (test
+  mode).** Exercised end-to-end against `sk_test_`: subscription checkout
+  (`mode:subscription`, £6 GBP, monthly recurring, key+plan metadata, correct
+  product description), `checkout.session.completed` → plan + pools set,
+  `invoice.paid`/`subscription_cycle` → `stripe.invoiceItems.create` for the
+  ENDING cycle then pool reset, and `customer.subscription.deleted` → downgrade
+  with gating re-enforced (402 `no_plan`). The overage invoice item billed at
+  the **beta 1.5× rate, not 2×** — confirming `effectiveMarkup()` reaches the
+  actual invoice, which is the divergence that would bill people something they
+  weren't shown. **Still unverified:** real webhook *signature* validation
+  (tested with `STRIPE_WEBHOOK_SECRET` unset, which takes the unsigned-parse
+  branch) and anything against a **live** key. Overage still bills one cycle in
+  arrears, so a live mistake wouldn't surface for a month.
 - Billing: the legacy one-time credit path (`activate`/`topup`) is still in the
   code for pre-subscription accounts. There are no such accounts in practice —
   it can probably be deleted.

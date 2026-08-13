@@ -1,5 +1,9 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { submitBetaSignup, fetchBillingStatus } from '../services/api'
+import {
+  submitBetaSignup,
+  fetchBillingStatus,
+  type BillingStatus,
+} from '../services/api'
 
 // The beta sign-up screen, served at /beta. Two jobs, deliberately in this order:
 //   1. Recruit testers who will actively hunt for what's wrong (not just "try it").
@@ -32,8 +36,12 @@ const ASKS = [
   },
 ]
 
+// Keep pence only when they matter: 600 -> "£6", 50 -> "£0.50". Never round a
+// sub-pound figure up to "£1" — this page quotes real prices.
 const money = (pence?: number) =>
-  pence === undefined ? null : `£${(pence / 100).toFixed(2)}`
+  pence === undefined
+    ? null
+    : `£${(pence / 100).toFixed(pence % 100 ? 2 : 0)}`
 
 export function Beta() {
   const [email, setEmail] = useState('')
@@ -43,35 +51,31 @@ export function Beta() {
   const [error, setError] = useState<string | null>(null)
   // Pull the real rates from the server so this page can never quote a price
   // different from the one actually charged.
-  const [markup, setMarkup] = useState<number | null>(null)
-  const [standard, setStandard] = useState<number | null>(null)
-  const [plans, setPlans] = useState<{
-    classifier?: number
-    evolve?: number
-    evolveAiIncluded?: number
-  } | null>(null)
+  const [pricing, setPricing] = useState<BillingStatus['pricing'] | null>(null)
 
   useEffect(() => {
     let live = true
     fetchBillingStatus().then((b) => {
-      if (!live || !b?.pricing) return
-      if (b.pricing.overageMarkup) setMarkup(b.pricing.overageMarkup)
-      if (b.pricing.standardMarkup) setStandard(b.pricing.standardMarkup)
-      setPlans({
-        classifier: b.pricing.classifierPricePence,
-        evolve: b.pricing.evolvePricePence,
-        evolveAiIncluded: b.pricing.evolveAiIncludedPence,
-      })
+      if (live && b?.pricing) setPricing(b.pricing)
     })
     return () => {
       live = false
     }
   }, [])
 
-  // Fall back to the documented rates if the server can't be reached, so the
+  // Fall back to the current defaults if the server can't be reached, so the
   // page still says something true rather than rendering blanks.
-  const rate = markup ?? 1.5
-  const normal = standard ?? 2
+  const rate = pricing?.overageMarkup ?? 1.5
+  const normal = pricing?.standardMarkup ?? 2
+  const classPrice = pricing?.classifierPricePence ?? 100
+  const classIncl = pricing?.classifierIncludedPence ?? 50
+  const evPrice = pricing?.evolvePricePence ?? 600
+  const evAiIncl = pricing?.evolveAiIncludedPence ?? 250
+  const evClIncl = pricing?.evolveClassifierIncludedPence ?? 50
+  // Only claim a beta discount when one actually exists. If BETA_MARKUP isn't
+  // set the server reports the standard rate for both, and saying "you pay 2×,
+  // not 2×" would be nonsense — so fall back to describing the normal rate.
+  const discounted = rate < normal
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
@@ -183,44 +187,105 @@ export function Beta() {
           </div>
         </div>
 
+        {/* What you'd actually pay. Three tiers, stated plainly. */}
+        <h3 className="beta-plans-head">What you’d pay</h3>
+        <div className="beta-cost-grid beta-plans">
+          <div className="beta-cost-card">
+            <span className="beta-cost-k">Free</span>
+            <span className="beta-cost-v">£0</span>
+            <p className="beta-cost-b">
+              The whole on-device engine, forever. No account needed, no limit,
+              nothing metered. If you never want to spend a penny, stop here —
+              this tier is genuinely the bulk of the app.
+            </p>
+          </div>
+          <div className="beta-cost-card">
+            <span className="beta-cost-k">Classification</span>
+            <span className="beta-cost-v">{money(classPrice)}<span className="beta-per">/mo</span></span>
+            <p className="beta-cost-b">
+              Sharper, cloud-backed reading of your notes when the local engine
+              isn’t sure. Includes <strong>{money(classIncl)}</strong> of
+              classifier usage each month — roughly{' '}
+              {Math.round(classIncl / 0.12)} classifications.
+            </p>
+          </div>
+          <div className="beta-cost-card beta-cost-card--hot">
+            <span className="beta-cost-k">Evolve AI</span>
+            <span className="beta-cost-v">{money(evPrice)}<span className="beta-per">/mo</span></span>
+            <p className="beta-cost-b">
+              Everything: custom tool generation, world knowledge, web search.
+              Includes <strong>{money(evAiIncl)}</strong> of tool &amp;
+              knowledge usage <em>and</em> <strong>{money(evClIncl)}</strong> of
+              classification, metered as two separate pots.
+            </p>
+          </div>
+        </div>
+
         <div className="beta-allowance">
           <h3 className="beta-allow-title">
-            Beta deal: you pay {rate}× cost, not {normal}×
-            <span className="beta-allow-chip">{rate}× tokens</span>
+            {discounted ? (
+              <>
+                Beta deal: you pay {rate}× cost, not {normal}×
+                <span className="beta-allow-chip">{rate}× tokens</span>
+              </>
+            ) : (
+              <>
+                How usage beyond your plan works
+                <span className="beta-allow-chip">{rate}× tokens</span>
+              </>
+            )}
           </h3>
+
           <p className="beta-allow-body">
-            The paid tiers are unchanged
-            {plans?.classifier && plans?.evolve ? (
+            Your monthly fee already covers the usage listed above. You only pay
+            more if you go <em>past</em> it — and then only for what you
+            actually use, at{' '}
+            <strong>
+              {rate}× what the tokens genuinely cost me
+            </strong>
+            {discounted ? (
               <>
                 {' '}
-                — <strong>{money(plans.classifier)}/mo</strong> for sharper
-                classification, <strong>{money(plans.evolve)}/mo</strong> for
-                Evolve AI
-                {plans.evolveAiIncluded
-                  ? ` (which includes ${money(plans.evolveAiIncluded)} of usage)`
-                  : ''}
+                instead of the standard <strong>{normal}×</strong>. That’s real
+                cost plus {Math.round((rate - 1) * 100)}% — enough to cover the
+                Anthropic bill and card fees without profiting off you while
+                you’re doing me a favour.
               </>
-            ) : null}
-            . What changes for testers is the rate on usage{' '}
-            <em>beyond</em> what your plan includes: normally{' '}
-            <strong>{normal}×</strong> what the tokens actually cost, but{' '}
-            <strong>{rate}×</strong> for you — real cost plus{' '}
-            {Math.round((rate - 1) * 100)}%, which covers the bill without
-            profiting off you while you’re doing me a favour.
+            ) : (
+              <>
+                . That margin covers the Anthropic bill, Stripe’s fees and
+                hosting — it isn’t a markup for its own sake.
+              </>
+            )}
           </p>
+
           <p className="beta-allow-body">
-            In real money: that ~20p web-search call bills you{' '}
-            <strong>~{Math.round(20 * rate)}p</strong> instead of ~
-            {Math.round(20 * normal)}p. The small stuff stays under a penny.
-            Your metered usage is visible in the app at any time under{' '}
-            <strong>⚙ → Settings</strong> — the same numbers I see, no rounding
-            in my favour.
+            <strong>In real money.</strong> The expensive action is a web-search
+            lookup at about 20p of raw cost, which bills you{' '}
+            <strong>~{Math.round(20 * rate)}p</strong>
+            {discounted ? <> rather than ~{Math.round(20 * normal)}p</> : null}.
+            Everything else — classifying a note, building a tool — is a penny
+            or less, so on Evolve AI you’d have to run{' '}
+            <strong>~{Math.round(evAiIncl / (20 * rate))} web searches</strong>{' '}
+            in a month before paying anything above {money(evPrice)} at all.
           </p>
+
+          <p className="beta-allow-body">
+            <strong>How and when you’re billed.</strong> Overage isn’t charged
+            the moment it happens — it’s totalled at the end of your monthly
+            cycle and added to your <em>next</em> invoice, itemised. Both pots
+            reset each cycle. Cancel any time and the subscription simply stops
+            at the end of the period you’ve paid for.
+          </p>
+
           <p className="beta-allow-body beta-allow-ask">
-            You’re never charged by surprise: set a spend limit in Settings and
-            usage stops there rather than billing past it. And if you’d rather
-            spend nothing at all, the on-device engine does the bulk of the work
-            for free — permanently.
+            <strong>You’re never charged by surprise.</strong> Set a spend limit
+            in Settings and usage <em>stops</em> at that figure rather than
+            billing past it — it caps overage only, never the plan fee. Your
+            running total is visible in the app under{' '}
+            <strong>⚙ → Settings</strong> at any time: the same numbers I see,
+            no rounding in my favour. And if you’d rather spend nothing, the
+            on-device engine keeps doing the bulk of the work for free.
           </p>
         </div>
       </section>

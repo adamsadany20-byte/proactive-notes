@@ -6672,6 +6672,26 @@ input {
   margin: 0;
 }
 
+/* The plan tiles ("what you'd pay"), sat under the raw-cost cards. */
+.beta-plans-head {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 19px;
+  color: var(--ink);
+  margin: 26px 0 12px;
+  text-align: left;
+}
+.beta-plans {
+  margin-top: 0;
+}
+.beta-per {
+  font-family: var(--ui, inherit);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-faint);
+  margin-left: 2px;
+}
+
 .beta-allowance {
   margin-top: 22px;
   padding: 20px;

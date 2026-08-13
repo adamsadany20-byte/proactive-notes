@@ -155,6 +155,11 @@ const EVOLVE_CLASSIFIER_INCLUDED_PENCE = Number(
 ) // 50p classifier
 const OVERAGE_MARKUP = Number(process.env.OVERAGE_MARKUP || 2) // charge £2 per £1 of overage
 
+// Format pence as £, keeping pence when they matter: 600 -> "£6", 50 -> "£0.50".
+// Never round a sub-pound allowance up to "£1" — this text goes on the Stripe
+// checkout page and the invoice, so it has to state the real figure.
+const gbp = (pence) => `£${(pence / 100).toFixed(pence % 100 ? 2 : 0)}`
+
 // Beta pricing. During the open beta testers pay a REDUCED markup on the usage
 // they cause: BETA_MARKUP (1.5 = token cost + 50%) instead of the standard
 // OVERAGE_MARKUP (2 = cost + 100%). It's a thank-you for testing that still
@@ -687,14 +692,12 @@ app.post('/api/billing/checkout', async (req, res) => {
     const amount = planPrice(plan)
     const name =
       plan === 'evolve'
-        ? `Evolve AI — £${(EVOLVE_PRICE_PENCE / 100).toFixed(0)}/mo (incl. £${(
-            EVOLVE_AI_INCLUDED_PENCE / 100
-          ).toFixed(0)} coding & world knowledge + £${(
-            EVOLVE_CLASSIFIER_INCLUDED_PENCE / 100
-          ).toFixed(0)} classifier)`
-        : `Classification — £${(CLASSIFIER_PRICE_PENCE / 100).toFixed(0)}/mo (incl. £${(
-            CLASSIFIER_INCLUDED_PENCE / 100
-          ).toFixed(0)} classifier usage)`
+        ? `Evolve AI — ${gbp(EVOLVE_PRICE_PENCE)}/mo (incl. ${gbp(
+            EVOLVE_AI_INCLUDED_PENCE,
+          )} coding & world knowledge + ${gbp(EVOLVE_CLASSIFIER_INCLUDED_PENCE)} classifier)`
+        : `Classification — ${gbp(CLASSIFIER_PRICE_PENCE)}/mo (incl. ${gbp(
+            CLASSIFIER_INCLUDED_PENCE,
+          )} classifier usage)`
     try {
       const stripe = await getStripe()
       const session = await stripe.checkout.sessions.create({
