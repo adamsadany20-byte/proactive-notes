@@ -164,8 +164,19 @@ const gbp = (pence) => `£${(pence / 100).toFixed(pence % 100 ? 2 : 0)}`
 // they cause: BETA_MARKUP (1.5 = token cost + 50%) instead of the standard
 // OVERAGE_MARKUP (2 = cost + 100%). It's a thank-you for testing that still
 // covers the Anthropic bill, so usage funds itself instead of coming out of the
-// owner's pocket. 0 / unset = no beta discount, everyone pays the standard rate.
-const BETA_MARKUP = Number(process.env.BETA_MARKUP || 0)
+// owner's pocket.
+//
+// DEFAULTS TO THE BETA RATE so a deployment needs no env var to run the beta —
+// the beta is the current state of the product. **To END the beta, set
+// BETA_MARKUP=0** (in Render → Environment): the rate reverts to OVERAGE_MARKUP
+// and the /beta page automatically stops advertising a discount. Note this
+// changes the overage rate for EXISTING subscribers on their next cycle; the
+// monthly plan fee they signed up at is locked by Stripe and does NOT change.
+const BETA_MARKUP = Number(
+  process.env.BETA_MARKUP === undefined || process.env.BETA_MARKUP === ''
+    ? 1.5
+    : process.env.BETA_MARKUP,
+)
 const betaPricing = () => BETA_MARKUP > 0
 // The markup actually charged on beyond-plan usage right now.
 const effectiveMarkup = () => (betaPricing() ? BETA_MARKUP : OVERAGE_MARKUP)

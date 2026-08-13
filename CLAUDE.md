@@ -46,6 +46,14 @@ something they weren't shown. `pricing.standardMarkup`/`betaPricing` let the UI
 show what the discount is off. Needs `BILLING_ENABLED=true`. Verified: £1 of raw
 overage bills 150p at the beta rate vs 200p standard, and the quote matches.
 
+**`BETA_MARKUP` defaults to 1.5** — the beta is the product's current state, so a
+deployment needs no env var to run it. Plan prices (£1/£6) are code defaults too.
+**To end the beta: set `BETA_MARKUP=0`.** The rate reverts to `OVERAGE_MARKUP` and
+the `/beta` page stops advertising a discount by itself (it only claims one when
+`rate < standard`). Raising the plan prices afterwards affects **new** checkouts
+only — an existing subscriber's monthly fee is held by Stripe and never changes
+retroactively. Their *overage* rate does move to 2× on the next cycle, though.
+
 The `/beta` page and Settings → **Beta pricing** ([BetaUsage.tsx](src/components/BetaUsage.tsx))
 both read these rates from the server rather than hardcoding them.
 
