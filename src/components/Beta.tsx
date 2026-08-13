@@ -41,20 +41,37 @@ export function Beta() {
   const [busy, setBusy] = useState(false)
   const [done, setDone] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  // The real allowance from the server, so the number on this page is the number
-  // actually enforced — not a figure in marketing copy that can drift out of date.
-  const [allowance, setAllowance] = useState<number | null>(null)
+  // Pull the real rates from the server so this page can never quote a price
+  // different from the one actually charged.
+  const [markup, setMarkup] = useState<number | null>(null)
+  const [standard, setStandard] = useState<number | null>(null)
+  const [plans, setPlans] = useState<{
+    classifier?: number
+    evolve?: number
+    evolveAiIncluded?: number
+  } | null>(null)
 
   useEffect(() => {
     let live = true
     fetchBillingStatus().then((b) => {
-      if (live && b?.beta?.active && b.beta.allowancePence)
-        setAllowance(b.beta.allowancePence)
+      if (!live || !b?.pricing) return
+      if (b.pricing.overageMarkup) setMarkup(b.pricing.overageMarkup)
+      if (b.pricing.standardMarkup) setStandard(b.pricing.standardMarkup)
+      setPlans({
+        classifier: b.pricing.classifierPricePence,
+        evolve: b.pricing.evolvePricePence,
+        evolveAiIncluded: b.pricing.evolveAiIncludedPence,
+      })
     })
     return () => {
       live = false
     }
   }, [])
+
+  // Fall back to the documented rates if the server can't be reached, so the
+  // page still says something true rather than rendering blanks.
+  const rate = markup ?? 1.5
+  const normal = standard ?? 2
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
@@ -93,7 +110,7 @@ export function Beta() {
             Join the beta
           </a>
           <a className="lp-secondary" href="#cost">
-            What it costs me
+            What it costs
           </a>
         </div>
       </section>
@@ -129,8 +146,9 @@ export function Beta() {
       <section className="beta-cost" id="cost">
         <h2 className="lp-h2">Let’s talk about money, honestly</h2>
         <p className="lp-sub">
-          The beta is free for you. It is not free for me, and I’d rather explain
-          that up front than quietly throttle you later.
+          I’m one person, not a funded company, so I can’t absorb everyone’s AI
+          bill. Instead of hiding that, here is exactly what things cost and
+          exactly what you’d pay.
         </p>
 
         <div className="beta-cost-grid">
@@ -140,59 +158,69 @@ export function Beta() {
             <p className="beta-cost-b">
               The on-device engine — classifying notes, building checklists,
               calendars, streaks and trackers — runs entirely in your browser.
-              No network, no cost, no limit. This is most of the app.
+              No network, no cost, no limit. This is most of the app, and it
+              stays free whatever you decide.
             </p>
           </div>
           <div className="beta-cost-card">
-            <span className="beta-cost-k">Costs me a little</span>
+            <span className="beta-cost-k">Costs pennies</span>
             <span className="beta-cost-v">~0.1–1p</span>
             <p className="beta-cost-b">
               Sharper classification and building a custom tool call a small AI
-              model. Fractions of a penny each — pennies across a whole week of
-              heavy use.
+              model. Fractions of a penny per call — pennies across a whole week
+              of heavy use.
             </p>
           </div>
           <div className="beta-cost-card beta-cost-card--hot">
-            <span className="beta-cost-k">Costs me a lot</span>
+            <span className="beta-cost-k">The expensive one</span>
             <span className="beta-cost-v">~20p</span>
             <p className="beta-cost-b">
-              Anything needing live web search — recommendations and
+              Anything using live web search — recommendations and
               world-knowledge lookups — runs a bigger model over real search
-              results. <strong>One tap ≈ 20p of my money.</strong> Twenty
-              testers doing that ten times is £40 out of my pocket, in an
-              afternoon.
+              results. <strong>About 20p of raw cost per tap.</strong> This is
+              the one worth being deliberate with.
             </p>
           </div>
         </div>
 
         <div className="beta-allowance">
           <h3 className="beta-allow-title">
-            So here’s the deal
-            {allowance !== null && (
-              <span className="beta-allow-chip">{money(allowance)} each</span>
-            )}
+            Beta deal: you pay {rate}× cost, not {normal}×
+            <span className="beta-allow-chip">{rate}× tokens</span>
           </h3>
           <p className="beta-allow-body">
-            I’m a solo developer paying for this out of pocket, so every tester
-            gets a fixed allowance of{' '}
-            {allowance !== null ? (
-              <strong>{money(allowance)} of real AI spend</strong>
-            ) : (
-              <strong>real AI spend</strong>
-            )}{' '}
-            — measured in actual pennies billed to me, not credits I made up.
-            You can see exactly how much you’ve used in the app under{' '}
-            <strong>⚙ → Beta usage</strong>.
+            The paid tiers are unchanged
+            {plans?.classifier && plans?.evolve ? (
+              <>
+                {' '}
+                — <strong>{money(plans.classifier)}/mo</strong> for sharper
+                classification, <strong>{money(plans.evolve)}/mo</strong> for
+                Evolve AI
+                {plans.evolveAiIncluded
+                  ? ` (which includes ${money(plans.evolveAiIncluded)} of usage)`
+                  : ''}
+              </>
+            ) : null}
+            . What changes for testers is the rate on usage{' '}
+            <em>beyond</em> what your plan includes: normally{' '}
+            <strong>{normal}×</strong> what the tokens actually cost, but{' '}
+            <strong>{rate}×</strong> for you — real cost plus{' '}
+            {Math.round((rate - 1) * 100)}%, which covers the bill without
+            profiting off you while you’re doing me a favour.
           </p>
           <p className="beta-allow-body">
-            <strong>When it runs out, nothing is taken away from you.</strong>{' '}
-            The AI features pause; the on-device engine keeps working exactly as
-            before. No card, no upsell, no dark pattern — just tell me and I’ll
-            top you up if you’re testing something worthwhile.
+            In real money: that ~20p web-search call bills you{' '}
+            <strong>~{Math.round(20 * rate)}p</strong> instead of ~
+            {Math.round(20 * normal)}p. The small stuff stays under a penny.
+            Your metered usage is visible in the app at any time under{' '}
+            <strong>⚙ → Settings</strong> — the same numbers I see, no rounding
+            in my favour.
           </p>
           <p className="beta-allow-body beta-allow-ask">
-            All I ask: don’t sit on the web-search features to watch them spin.
-            Use them like they’re your money, because they’re somebody’s.
+            You’re never charged by surprise: set a spend limit in Settings and
+            usage stops there rather than billing past it. And if you’d rather
+            spend nothing at all, the on-device engine does the bulk of the work
+            for free — permanently.
           </p>
         </div>
       </section>

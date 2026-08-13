@@ -29,10 +29,26 @@ migration has been applied, and the webhook must subscribe to
 
 ## Recent Work (Jul 2026)
 
-### Open beta: recruitment page + per-tester spend allowance
+### Open beta: recruitment page + beta pricing (1.5× instead of 2×)
 
-A free public beta that can't bankrupt the owner. Two halves that must stay in
-sync — the page states a number, the server enforces that same number.
+A beta that funds itself. Two halves that must stay in sync — the page states a
+rate, the server charges that same rate.
+
+**Beta pricing is the live model**: testers pay the normal plan prices, but usage
+beyond a plan's included allowance bills at **`BETA_MARKUP`** (1.5 = token cost
++50%) instead of the standard `OVERAGE_MARKUP` (2 = +100%). `effectiveMarkup()`
+is the single source of truth and is used by `overageChargePence()` (so the spend
+cap matches), the `/api/billing/status` `pricing` quote, **and `billOverage()`**
+(the Stripe invoice item) — they must never diverge, or people get billed
+something they weren't shown. `pricing.standardMarkup`/`betaPricing` let the UI
+show what the discount is off. Needs `BILLING_ENABLED=true`. Verified: £1 of raw
+overage bills 150p at the beta rate vs 200p standard, and the quote matches.
+
+The `/beta` page and Settings → **Beta pricing** ([BetaUsage.tsx](src/components/BetaUsage.tsx))
+both read these rates from the server rather than hardcoding them.
+
+**The free-allowance path below is the alternative** (free beta, owner absorbs
+the cost) — still implemented and off by default; the two are independent.
 - **`/beta`** ([Beta.tsx](src/components/Beta.tsx), routed in
   [main.tsx](src/main.tsx) like `/welcome`) recruits testers. It asks for
   *specific* things (where it misread you / wasted your time / what was missing /

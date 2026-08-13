@@ -93,7 +93,12 @@ export interface BillingStatus {
     evolvePricePence?: number
     evolveAiIncludedPence?: number
     evolveClassifierIncludedPence?: number
+    // The markup actually charged on usage beyond a plan's allowance — the
+    // reduced beta rate while the beta is running. Always quote THIS one.
     overageMarkup?: number
+    // The standard rate the beta discount is measured against.
+    standardMarkup?: number
+    betaPricing?: boolean
     // Legacy credit-model pricing.
     activationPence?: number
     includedCreditPence?: number

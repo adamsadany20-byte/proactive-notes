@@ -148,6 +148,16 @@ const EVOLVE_CLASSIFIER_INCLUDED_PENCE = Number(
 ) // £1 classifier
 const OVERAGE_MARKUP = Number(process.env.OVERAGE_MARKUP || 2) // charge £2 per £1 of overage
 
+// Beta pricing. During the open beta testers pay a REDUCED markup on the usage
+// they cause: BETA_MARKUP (1.5 = token cost + 50%) instead of the standard
+// OVERAGE_MARKUP (2 = cost + 100%). It's a thank-you for testing that still
+// covers the Anthropic bill, so usage funds itself instead of coming out of the
+// owner's pocket. 0 / unset = no beta discount, everyone pays the standard rate.
+const BETA_MARKUP = Number(process.env.BETA_MARKUP || 0)
+const betaPricing = () => BETA_MARKUP > 0
+// The markup actually charged on beyond-plan usage right now.
+const effectiveMarkup = () => (betaPricing() ? BETA_MARKUP : OVERAGE_MARKUP)
+
 // What a plan includes for a given usage pool ('ai' | 'classifier'), in pence.
 function includedFor(plan, pool) {
   if (plan === 'classifier') return pool === 'classifier' ? CLASSIFIER_INCLUDED_PENCE : 0
@@ -163,10 +173,11 @@ const planPrice = (plan) =>
 // spend limit caps — the plan fee itself never counts toward it.
 function overageChargePence(ent) {
   if (!ent || ent.plan === 'none') return 0
+  const markup = effectiveMarkup()
   return (
-    Math.max(0, (ent.aiUsedPence || 0) - includedFor(ent.plan, 'ai')) * OVERAGE_MARKUP +
+    Math.max(0, (ent.aiUsedPence || 0) - includedFor(ent.plan, 'ai')) * markup +
     Math.max(0, (ent.classifierUsedPence || 0) - includedFor(ent.plan, 'classifier')) *
-      OVERAGE_MARKUP
+      markup
   )
 }
 
@@ -569,7 +580,12 @@ app.get('/api/billing/status', async (req, res) => {
     evolvePricePence: EVOLVE_PRICE_PENCE,
     evolveAiIncludedPence: EVOLVE_AI_INCLUDED_PENCE,
     evolveClassifierIncludedPence: EVOLVE_CLASSIFIER_INCLUDED_PENCE,
-    overageMarkup: OVERAGE_MARKUP, // £ charged per £1 of usage beyond a pool's allowance
+    // £ charged per £1 of usage beyond a pool's allowance. This is the rate the
+    // UI must quote — it's the reduced beta rate while the beta is running.
+    overageMarkup: effectiveMarkup(),
+    // The standard (non-beta) rate, so the UI can show what the discount is off.
+    standardMarkup: OVERAGE_MARKUP,
+    betaPricing: betaPricing(),
     // Legacy one-time credit model (kept for old accounts / back-compat).
     activationPence: ACTIVATION_PRICE_PENCE,
     includedCreditPence: ACTIVATION_CREDIT_PENCE,
@@ -886,10 +902,13 @@ app.post(
 )
 
 // Compute a subscriber's overage for the ending cycle (each pool beyond its
-// included allowance, charged at OVERAGE_MARKUP) and add it as an invoice item
-// on the customer, so it lands on the upcoming invoice. No-op when nothing's owed.
+// included allowance, charged at the current markup — the reduced BETA_MARKUP
+// while the beta is on) and add it as an invoice item on the customer, so it
+// lands on the upcoming invoice. No-op when nothing's owed. This must use the
+// SAME rate the UI quotes, or people are billed something they weren't shown.
 async function billOverage(stripe, ent, customerId) {
   if (!customerId) return
+  const markup = effectiveMarkup()
   const pools = [
     { pool: 'ai', used: ent.aiUsedPence || 0 },
     { pool: 'classifier', used: ent.classifierUsedPence || 0 },
@@ -897,7 +916,7 @@ async function billOverage(stripe, ent, customerId) {
   let overagePence = 0
   for (const { pool, used } of pools) {
     const over = Math.max(0, used - includedFor(ent.plan, pool))
-    overagePence += over * OVERAGE_MARKUP
+    overagePence += over * markup
   }
   overagePence = Math.round(overagePence)
   if (overagePence <= 0) return

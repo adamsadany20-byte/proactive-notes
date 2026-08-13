@@ -8,6 +8,34 @@ import { useStore } from '../store/appStore'
 export function BetaUsage() {
   const { state } = useStore()
   const beta = state.billing?.beta
+  const pricing = state.billing?.pricing
+
+  // Paid beta: no free allowance, but testers get a reduced markup on usage
+  // beyond their plan. Show the rate they're actually charged, and what it
+  // would otherwise be, so the discount is visible rather than claimed.
+  if (!beta?.active && pricing?.betaPricing) {
+    const rate = pricing.overageMarkup ?? 1.5
+    const normal = pricing.standardMarkup ?? 2
+    return (
+      <div className="push-controls">
+        <div className="pc-head">
+          <span className="pc-title">✦ Beta pricing</span>
+          <span className="pc-badge on">{rate}× tokens</span>
+        </div>
+        <p className="pc-sub">
+          Usage beyond what your plan includes bills at <strong>{rate}×</strong>{' '}
+          its real token cost while you’re testing, instead of the usual{' '}
+          {normal}×. A web-search call costs about{' '}
+          <strong>{Math.round(20 * rate)}p</strong> rather than{' '}
+          {Math.round(20 * normal)}p.
+        </p>
+        <p className="pc-sub">
+          The on-device engine stays free and unmetered. Set a spend limit below
+          if you want usage to stop at a fixed amount.
+        </p>
+      </div>
+    )
+  }
 
   if (!beta?.active) return null
 
