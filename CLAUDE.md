@@ -35,6 +35,46 @@ migration has been applied, and the webhook must subscribe to
 
 ## Recent Work (Jul 2026)
 
+### Vercel migration (from Render)
+
+The app now deploys to Vercel as **static `dist/` on the CDN + the entire Express
+app as ONE serverless function** (`api/index.js` re-exports `server/index.js`).
+Routing lives in [vercel.json](vercel.json): `/api/*` and `/auth/*` rewrite into
+the function, everything else falls through to `index.html` (SPA). Deliberately
+one function rather than a file-per-route, so the API is byte-identical on Vercel
+and on a plain Node host (`npm start`) — no second code path to keep in sync.
+
+**`IS_SERVERLESS` (`process.env.VERCEL`) gates everything process-shaped** in
+server/index.js: `app.listen`, `express.static(dist)` + the `*` catch-all, and
+the 60s push `setInterval`. Without those guards the function would bind a port
+it doesn't own and shadow the CDN with a catch-all.
+
+**The serverless constraints that actually bite:**
+- **The 60s internal push sweep never runs.** Instances freeze between requests,
+  so `/api/cron/tick` is the ONLY delivery path for reminders. `vercel.json`
+  declares `*/2 * * * *`; the route now also accepts
+  `Authorization: Bearer $CRON_SECRET` (what Vercel Cron sends) alongside the
+  existing `?secret=` / `x-cron-secret`, so cron-job.org keeps working as a
+  plan-independent fallback if the Vercel plan's cron frequency is too coarse.
+- **The filesystem is ephemeral AND per-instance**, so every flat-file fallback
+  is unusable — a write is invisible to the next invocation. Supabase is
+  mandatory. `tokenStore.js` was the gap: it was file-only, so Google
+  Docs/Sheets/Slides would have silently broken. It now has a Supabase backend
+  (new **`google_tokens`** table, single row `id='default'`, same single-user
+  scope as before) and its API went **async** — all call sites now await it.
+- Server deps were hoisted into the **root** `package.json` so Vercel's function
+  bundler can trace them (it only installs the root manifest). `server/package.json`
+  stays for local dev; Node resolves `server/node_modules` first, root otherwise.
+
+**No `VITE_API_BASE` needed** — a production build already falls back to
+same-origin (`api.ts`), so the single-service assumption holds.
+
+Verified locally by importing the exported app under `VERCEL=1` and driving it as
+a handler: `/api/config`, `/api/billing/status` and `/api/cron/tick` (GET) all
+200, `/beta` correctly 404s inside the function (the CDN serves it), all three
+cron auth forms behave, and non-serverless mode still boots and listens. See
+DEPLOYMENT.md → "Deploy to Vercel" for the manual steps.
+
 ### Payment overhaul: ONE pricing model (no beta rate, no legacy credit)
 
 The dual-rate "beta pricing" system is **gone**. There is now exactly one rate,

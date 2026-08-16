@@ -77,11 +77,59 @@ sleeps after idle and the first request takes ~30s to wake; also the flat-file
 stores under `server/` reset on redeploy — fine for testing, another reason
 real accounts + a DB come before charging money.)
 
-### Two-service alternative (Vercel frontend + separate backend)
-Only if you want the frontend on a CDN:
-- Deploy the **frontend** to Vercel with `VITE_API_BASE=https://your-backend-url`.
+### Deploy to Vercel (static frontend + the API as one function)
+
+The repo is set up for this: `vercel.json` builds the Vite app to `dist/` (served
+from Vercel's CDN) and routes `/api/*` and `/auth/*` into `api/index.js`, which
+re-exports the whole Express app as a single serverless function. The API
+therefore behaves identically on Vercel and on a plain Node host.
+
+**What changes on serverless — read this before switching:**
+
+| Thing | On Render (long-running) | On Vercel (serverless) |
+| --- | --- | --- |
+| `app.listen` / static serving | used | skipped (gated on `process.env.VERCEL`) |
+| 60s internal push sweep | runs | **never runs** — instances are frozen between requests |
+| Reminder delivery | internal timer **or** cron ping | **cron only** (`/api/cron/tick`) |
+| Flat-file stores | work (until redeploy) | **must use Supabase** — the FS is ephemeral *and* per-instance |
+
+Because of the last two rows, on Vercel these are **mandatory**, not optional:
+- `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` — without them, entitlements,
+  push targets, feedback and Google tokens all fall back to files that vanish
+  between invocations. Paid subscriptions would silently disappear.
+- The `google_tokens` table (see the SQL above) — new, and required for
+  Docs/Sheets/Slides to keep working.
+
+**Cron.** `vercel.json` declares `*/2 * * * *` against `/api/cron/tick`. Vercel
+automatically sends `Authorization: Bearer $CRON_SECRET` when a `CRON_SECRET`
+env var exists on the project, and the route accepts that (as well as
+`?secret=` and `x-cron-secret`, so an external pinger still works unchanged).
+**Check your plan's cron frequency limit** — Hobby is far coarser than every two
+minutes. If your plan won't run it that often, keep the existing cron-job.org
+pinger and point it at `https://YOUR-DOMAIN/api/cron/tick?secret=…`; that path
+is plan-independent and is what reminders rely on.
+
+**Steps:**
+1. Vercel → **Add New → Project** → import the GitHub repo. It reads
+   `vercel.json`; leave the build settings alone.
+2. Add every env var from the Render service (see the checklist in the migration
+   section of `CLAUDE.md`). `VITE_API_BASE` is **not** needed — a production
+   build already defaults to same-origin.
+3. Set `APP_ORIGIN` to the final URL (your custom domain if you have one), or
+   Stripe and Google send users back to the wrong place.
+4. Update the **Stripe webhook URL** and the **Google OAuth redirect URI** to the
+   new domain, and add the domain to **Supabase → Authentication → URL
+   Configuration**.
+5. Deploy, then verify:
+   ```bash
+   curl -s https://YOUR-DOMAIN/api/config | head -c 200
+   ```
+   If that returns JSON, the rewrite into the Express function is working.
+
+### Two-service alternative (frontend on a CDN + separate backend)
+- Deploy the **frontend** with `VITE_API_BASE=https://your-backend-url`.
 - Deploy the **backend** (the `server/` folder) to Render/Railway.
-- Set the backend's `APP_ORIGIN` to your Vercel URL (used for Google OAuth redirect).
+- Set the backend's `APP_ORIGIN` to the frontend URL (used for OAuth redirects).
 
 ---
 
@@ -298,6 +346,18 @@ create table push_targets (
   updated_at timestamptz not null default now()
 );
 alter table push_targets enable row level security;
+
+-- Google OAuth tokens (Docs/Sheets/Slides + calendar). Single row, id='default'
+-- — same single-user scope as the flat file it replaces. REQUIRED on a
+-- serverless host (Vercel): the filesystem there is ephemeral and per-instance,
+-- so a token written by one invocation is invisible to the next and document
+-- creation silently stops working. RLS ON, no policy — service_role only.
+create table if not exists google_tokens (
+  id text primary key,
+  data jsonb not null,
+  updated_at timestamptz not null default now()
+);
+alter table google_tokens enable row level security;
 ```
 
 > ### ⚠️ Migration: already created `entitlements` before 2026-07-14?

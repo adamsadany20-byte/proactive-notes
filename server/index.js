@@ -49,6 +49,13 @@ dotenv.config({ path: path.join(__dirname, '.env') })
 
 const PORT = process.env.PORT || 8787
 const APP_ORIGIN = process.env.APP_ORIGIN || 'http://localhost:5173'
+
+// On a serverless host (Vercel) this module is imported as a request handler,
+// not run as a process: there is no port to listen on, the platform serves the
+// static frontend itself, and background timers never fire because the instance
+// is frozen between requests. Everything process-shaped is gated on this.
+// Set VERCEL automatically by the platform; SERVERLESS is a manual escape hatch.
+const IS_SERVERLESS = !!(process.env.VERCEL || process.env.SERVERLESS)
 // Two models split the work by what each is best at per pound:
 //   • CODE (tool suggestions + tool generation) — Haiku: fast, cheap, and
 //     plenty for emitting well-specified JSON and React components.
@@ -384,15 +391,16 @@ const aiConfigured = () => haikuConfigured()
 const calendarConfigured = () =>
   !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET)
 
-app.get('/api/config', (req, res) => {
+app.get('/api/config', async (req, res) => {
+  const connected = !!(await loadTokens())
   res.json({
     aiConfigured: aiConfigured(),
     haikuConfigured: haikuConfigured(),
     calendarConfigured: calendarConfigured(),
-    calendarConnected: !!loadTokens(),
+    calendarConnected: connected,
     // Google Docs/Sheets/Slides creation shares the same OAuth connection.
     googleConfigured: calendarConfigured(),
-    googleConnected: !!loadTokens(),
+    googleConnected: connected,
     // Model names are intentionally not exposed to clients.
     billingEnabled: BILLING_ENABLED,
     billingConfigured: billingConfigured(),
@@ -921,7 +929,13 @@ app.post('/api/push/test', async (req, res) => {
 const CRON_SECRET = (process.env.CRON_SECRET || '').trim()
 app.all('/api/cron/tick', async (req, res) => {
   if (CRON_SECRET) {
-    const given = req.query.secret || req.headers['x-cron-secret']
+    // Three accepted forms so any scheduler works:
+    //   ?secret=…            — cron-job.org and friends (simplest to configure)
+    //   x-cron-secret: …     — header-based pingers
+    //   Authorization: Bearer …  — what VERCEL CRON sends automatically when a
+    //                          CRON_SECRET env var exists on the project.
+    const bearer = (req.headers.authorization || '').replace(/^Bearer\s+/i, '')
+    const given = req.query.secret || req.headers['x-cron-secret'] || bearer
     if (given !== CRON_SECRET) return res.status(401).json({ error: 'unauthorized' })
   }
   try {
@@ -1646,12 +1660,17 @@ async function oauthClient() {
 
 // Returns an authed client, or null if not connected.
 async function authedClient() {
-  const tokens = loadTokens()
+  const tokens = await loadTokens()
   if (!tokens) return null
   const client = await oauthClient()
   client.setCredentials(tokens)
-  // Persist refreshed tokens so the refresh_token survives.
-  client.on('tokens', (t) => saveTokens({ ...tokens, ...t }))
+  // Persist refreshed tokens so the refresh_token survives. Fire-and-forget:
+  // googleapis emits this synchronously and doesn't await us.
+  client.on('tokens', (t) => {
+    saveTokens({ ...tokens, ...t }).catch((err) =>
+      console.error('token refresh save error:', err?.message || err),
+    )
+  })
   return client
 }
 
@@ -1690,7 +1709,7 @@ app.get('/auth/google/callback', async (req, res) => {
   try {
     const client = await oauthClient()
     const { tokens } = await client.getToken(req.query.code)
-    saveTokens(tokens)
+    await saveTokens(tokens)
     res.redirect(`${APP_ORIGIN}/?google=connected`)
   } catch (err) {
     console.error('oauth callback error:', err?.message || err)
@@ -1698,8 +1717,8 @@ app.get('/auth/google/callback', async (req, res) => {
   }
 })
 
-app.post('/api/calendar/disconnect', (_req, res) => {
-  clearTokens()
+app.post('/api/calendar/disconnect', async (_req, res) => {
+  await clearTokens()
   res.json({ ok: true })
 })
 
@@ -1729,7 +1748,7 @@ app.get('/api/calendar/events', async (_req, res) => {
     console.error('calendar list error:', err?.message || err)
     if (isAuthError(err)) {
       // Connection is revoked/expired — clear it so the UI prompts a reconnect.
-      clearTokens()
+      await clearTokens()
       return res.json({ connected: false, events: [] })
     }
     res.status(502).json({ connected: true, error: 'list_failed', events: [] })
@@ -1751,7 +1770,7 @@ app.post('/api/calendar/events', async (req, res) => {
   } catch (err) {
     console.error('calendar insert error:', err?.message || err)
     if (isAuthError(err)) {
-      clearTokens()
+      await clearTokens()
       return res.status(409).json({ connected: false })
     }
     res.status(502).json({ connected: true, error: 'insert_failed' })
@@ -1769,7 +1788,7 @@ app.delete('/api/calendar/events/:id', async (req, res) => {
   } catch (err) {
     console.error('calendar delete error:', err?.message || err)
     if (isAuthError(err)) {
-      clearTokens()
+      await clearTokens()
       return res.status(409).json({ connected: false })
     }
     res.status(502).json({ connected: true, error: 'delete_failed' })
@@ -1794,11 +1813,11 @@ app.post('/api/google/link', async (req, res) => {
   const { refreshToken, accessToken } = req.body || {}
   if (!refreshToken && !accessToken)
     return res.status(400).json({ ok: false, error: 'no_token' })
-  const prev = loadTokens() || {}
+  const prev = (await loadTokens()) || {}
   const tokens = refreshToken
     ? { ...prev, refresh_token: refreshToken, expiry_date: 1 }
     : { ...prev, access_token: accessToken, expiry_date: Date.now() + 50 * 60_000 }
-  saveTokens(tokens)
+  await saveTokens(tokens)
   res.json({ ok: true })
 })
 
@@ -1826,7 +1845,7 @@ app.post('/api/google/create', async (req, res) => {
   } catch (err) {
     console.error('google create error:', err?.message || err)
     if (isAuthError(err)) {
-      clearTokens()
+      await clearTokens()
       return res.status(409).json({ ok: false, error: 'not_connected' })
     }
     res.status(502).json({ ok: false, error: 'create_failed' })
@@ -1958,14 +1977,17 @@ function pad(n) {
 // skip it and the Vite dev server serves the UI instead. Mounted last so it
 // never shadows the /api and /auth routes above.
 // ---------------------------------------------------------------------------
+// (Skipped on serverless — Vercel serves `dist/` from its CDN, and a catch-all
+// here would shadow that and route every page request through a function.)
 const DIST_DIR = path.resolve(__dirname, '..', 'dist')
-if (fs.existsSync(DIST_DIR)) {
+if (!IS_SERVERLESS && fs.existsSync(DIST_DIR)) {
   app.use(express.static(DIST_DIR))
   app.get('*', (_req, res) => res.sendFile(path.join(DIST_DIR, 'index.html')))
   console.log(`  Frontend: serving built app from ${DIST_DIR}`)
 }
 
-app.listen(PORT, () => {
+if (!IS_SERVERLESS)
+  app.listen(PORT, () => {
   console.log(`Proactive Notes server on http://localhost:${PORT}`)
   console.log(
     `  Claude tier: ${
@@ -2033,8 +2055,14 @@ app.listen(PORT, () => {
 // 60s even without an external pinger (this alone is enough on an always-on
 // host). On a free tier that sleeps, the external cron pinger is what wakes it —
 // see /api/cron/tick. No-op when push isn't configured.
-if (pushConfigured()) {
+// NOT available on serverless: the instance is frozen between requests, so a
+// timer never fires. There, /api/cron/tick is the ONLY delivery path and an
+// external scheduler must call it (see DEPLOYMENT.md → Vercel).
+if (!IS_SERVERLESS && pushConfigured()) {
   setInterval(() => {
     runTick().catch((err) => console.error('internal tick error:', err?.message || err))
   }, 60000)
 }
+
+// Serverless entry point — Vercel imports this and calls it per request.
+export default app
