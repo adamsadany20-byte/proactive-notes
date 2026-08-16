@@ -3,7 +3,7 @@ import { AiTierSelector, SpendLimit } from './Sidebar'
 import { ThemeToggle } from './ThemeToggle'
 import { PushControls } from './PushControls'
 import { GoogleConnection } from './GoogleConnection'
-import { BetaUsage } from './BetaUsage'
+import { UsageMeter } from './UsageMeter'
 import { FeedbackForm } from './FeedbackControls'
 import { OwnerAnalytics } from './OwnerAnalytics'
 import { isSupabaseEnabled, supabase } from '../services/supabase'
@@ -50,7 +50,7 @@ export function SettingsSheet({
         <div className="settings-body">
           <ThemeToggle />
           <AiTierSelector />
-          <BetaUsage />
+          <UsageMeter />
           <PushControls />
           <GoogleConnection />
           <SpendLimit />

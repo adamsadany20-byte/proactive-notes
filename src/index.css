@@ -6744,6 +6744,23 @@ input {
 
 /* ---- In-app beta allowance meter (Settings) ------------------------------ */
 
+/* Per-pool rows in the Settings usage meter. */
+.usage-row {
+  margin-bottom: 10px;
+}
+.usage-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  margin-bottom: 4px;
+}
+.usage-over {
+  color: var(--accent-ink);
+  font-weight: 650;
+}
+
 .beta-meter {
   height: 7px;
   border-radius: 999px;

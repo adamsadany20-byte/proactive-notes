@@ -66,16 +66,11 @@ export function Beta() {
   // Fall back to the current defaults if the server can't be reached, so the
   // page still says something true rather than rendering blanks.
   const rate = pricing?.overageMarkup ?? 1.5
-  const normal = pricing?.standardMarkup ?? 2
   const classPrice = pricing?.classifierPricePence ?? 100
   const classIncl = pricing?.classifierIncludedPence ?? 50
   const evPrice = pricing?.evolvePricePence ?? 600
   const evAiIncl = pricing?.evolveAiIncludedPence ?? 250
   const evClIncl = pricing?.evolveClassifierIncludedPence ?? 50
-  // Only claim a beta discount when one actually exists. If BETA_MARKUP isn't
-  // set the server reports the standard rate for both, and saying "you pay 2×,
-  // not 2×" would be nonsense — so fall back to describing the normal rate.
-  const discounted = rate < normal
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
@@ -223,49 +218,25 @@ export function Beta() {
 
         <div className="beta-allowance">
           <h3 className="beta-allow-title">
-            {discounted ? (
-              <>
-                Beta deal: you pay {rate}× cost, not {normal}×
-                <span className="beta-allow-chip">{rate}× tokens</span>
-              </>
-            ) : (
-              <>
-                How usage beyond your plan works
-                <span className="beta-allow-chip">{rate}× tokens</span>
-              </>
-            )}
+            How usage beyond your plan works
+            <span className="beta-allow-chip">{rate}× tokens</span>
           </h3>
 
           <p className="beta-allow-body">
             Your monthly fee already covers the usage listed above. You only pay
-            more if you go <em>past</em> it — and then only for what you
-            actually use, at{' '}
-            <strong>
-              {rate}× what the tokens genuinely cost me
-            </strong>
-            {discounted ? (
-              <>
-                {' '}
-                instead of the standard <strong>{normal}×</strong>. That’s real
-                cost plus {Math.round((rate - 1) * 100)}% — enough to cover the
-                Anthropic bill and card fees without profiting off you while
-                you’re doing me a favour.
-              </>
-            ) : (
-              <>
-                . That margin covers the Anthropic bill, Stripe’s fees and
-                hosting — it isn’t a markup for its own sake.
-              </>
-            )}
+            more if you go <em>past</em> it — and then only for what you actually
+            use, at <strong>{rate}× what the tokens genuinely cost me</strong>.
+            That margin covers the Anthropic bill, Stripe’s cut and hosting; it
+            isn’t a markup for its own sake, and there’s no separate “beta rate”
+            that quietly expires on you later.
           </p>
 
           <p className="beta-allow-body">
             <strong>In real money.</strong> The expensive action is a web-search
             lookup at about 20p of raw cost, which bills you{' '}
-            <strong>~{Math.round(20 * rate)}p</strong>
-            {discounted ? <> rather than ~{Math.round(20 * normal)}p</> : null}.
-            Everything else — classifying a note, building a tool — is a penny
-            or less, so on Evolve AI you’d have to run{' '}
+            <strong>~{Math.round(20 * rate)}p</strong>. Everything else —
+            classifying a note, building a tool — is a penny or less, so on
+            Evolve AI you’d have to run{' '}
             <strong>~{Math.round(evAiIncl / (20 * rate))} web searches</strong>{' '}
             in a month before paying anything above {money(evPrice)} at all.
           </p>

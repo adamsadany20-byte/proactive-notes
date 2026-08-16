@@ -9,10 +9,6 @@ import { createHmac, timingSafeEqual } from 'node:crypto'
 import { saveTokens, loadTokens, clearTokens } from './tokenStore.js'
 import {
   getEntitlement,
-  isActive,
-  hasCredit,
-  activate,
-  addCredit,
   recordUsage,
   setCap,
   planOf,
@@ -105,14 +101,10 @@ function todayContext() {
 }
 
 // ---------------------------------------------------------------------------
-// Billing — credit model. The whole app stays usable for free until
-// BILLING_ENABLED=true, so you can keep building and testing without paying.
-//
-// When it's on:
-//   • £10 one-time activation unlocks the Claude tools and includes £5 of AI
-//     token credit (credit is measured in real token value).
-//   • Every Claude call meters its actual Anthropic cost and deducts it.
-//   • More usage is bought at £2 per £1 of tokens (a £4 top-up = £2 of credit).
+// Billing — two recurring subscription plans. The whole app stays usable for
+// free until BILLING_ENABLED=true, so you can keep building and testing without
+// paying. There is exactly ONE pricing model; nothing is conditional on a "beta"
+// flag, so what the UI quotes is always what the invoice charges.
 //
 // Everything is lazy/optional: with no Stripe key the billing endpoints simply
 // report "not configured". No Stripe Price objects are needed — Checkout uses
@@ -122,12 +114,7 @@ const BILLING_ENABLED =
   String(process.env.BILLING_ENABLED || 'false').toLowerCase() === 'true'
 const billingConfigured = () => !!process.env.STRIPE_SECRET_KEY
 
-// The commercial knobs, all overridable per env (values in pence).
-const ACTIVATION_PRICE_PENCE = Number(process.env.ACTIVATION_PRICE_PENCE || 1000) // £10 flat fee
-const ACTIVATION_CREDIT_PENCE = Number(process.env.ACTIVATION_CREDIT_PENCE || 500) // includes £5 of tokens
-const TOKEN_MARKUP = Number(process.env.TOKEN_MARKUP || 2) // £2 paid per £1 of tokens
-const TOPUP_PRICE_PENCE = Number(process.env.TOPUP_PRICE_PENCE || 400) // default top-up: £4 → £2 of tokens
-// Anthropic bills in USD; credit is in GBP pence. Fixed conversion, env-tunable.
+// Anthropic bills in USD; usage is metered in GBP pence. Fixed, env-tunable.
 const USD_TO_GBP = Number(process.env.USD_TO_GBP || 0.78)
 
 // ---------------------------------------------------------------------------
@@ -138,12 +125,11 @@ const USD_TO_GBP = Number(process.env.USD_TO_GBP || 0.78)
 //   • evolve     — £6/mo, includes £2.50 of coding+world-knowledge ('ai' pool)
 //                  AND £0.50 of classifier usage.
 //
-// Beta pricing: halved from the original £2/£12 to make the paid beta an easier
-// yes. The INCLUDED usage was halved by the same factor on purpose — a plan must
-// keep costing more than the usage it bundles, or every subscriber is a loss.
-// Each plan bundles usage worth half its fee (50% gross margin before overage),
-// which still has to cover Stripe's ~2.9% + 30p per charge. If you raise the
-// included figures without raising the price, subscribers start losing money.
+// The INCLUDED usage is deliberately half the fee — a plan must keep costing
+// more than the usage it bundles, or every subscriber is a loss. Each plan
+// bundles usage worth half its fee (50% gross margin before overage), which
+// still has to cover Stripe's ~2.9% + 30p per charge. If you raise the included
+// figures without raising the price, subscribers start losing money.
 // All values in pence, env-tunable.
 // ---------------------------------------------------------------------------
 const CLASSIFIER_PRICE_PENCE = Number(process.env.CLASSIFIER_PRICE_PENCE || 100) // £1/mo
@@ -153,33 +139,17 @@ const EVOLVE_AI_INCLUDED_PENCE = Number(process.env.EVOLVE_AI_INCLUDED_PENCE || 
 const EVOLVE_CLASSIFIER_INCLUDED_PENCE = Number(
   process.env.EVOLVE_CLASSIFIER_INCLUDED_PENCE || 50,
 ) // 50p classifier
-const OVERAGE_MARKUP = Number(process.env.OVERAGE_MARKUP || 2) // charge £2 per £1 of overage
+// The ONE rate charged on usage beyond a plan's included allowance: £1.50 per
+// £1 of real token cost. Covers the Anthropic bill plus Stripe's cut without
+// gouging. Raise it later by setting OVERAGE_MARKUP — note that changes the rate
+// for EXISTING subscribers at their next cycle (their monthly plan fee is held
+// by Stripe and never changes retroactively).
+const OVERAGE_MARKUP = Number(process.env.OVERAGE_MARKUP || 1.5)
 
 // Format pence as £, keeping pence when they matter: 600 -> "£6", 50 -> "£0.50".
 // Never round a sub-pound allowance up to "£1" — this text goes on the Stripe
 // checkout page and the invoice, so it has to state the real figure.
 const gbp = (pence) => `£${(pence / 100).toFixed(pence % 100 ? 2 : 0)}`
-
-// Beta pricing. During the open beta testers pay a REDUCED markup on the usage
-// they cause: BETA_MARKUP (1.5 = token cost + 50%) instead of the standard
-// OVERAGE_MARKUP (2 = cost + 100%). It's a thank-you for testing that still
-// covers the Anthropic bill, so usage funds itself instead of coming out of the
-// owner's pocket.
-//
-// DEFAULTS TO THE BETA RATE so a deployment needs no env var to run the beta —
-// the beta is the current state of the product. **To END the beta, set
-// BETA_MARKUP=0** (in Render → Environment): the rate reverts to OVERAGE_MARKUP
-// and the /beta page automatically stops advertising a discount. Note this
-// changes the overage rate for EXISTING subscribers on their next cycle; the
-// monthly plan fee they signed up at is locked by Stripe and does NOT change.
-const BETA_MARKUP = Number(
-  process.env.BETA_MARKUP === undefined || process.env.BETA_MARKUP === ''
-    ? 1.5
-    : process.env.BETA_MARKUP,
-)
-const betaPricing = () => BETA_MARKUP > 0
-// The markup actually charged on beyond-plan usage right now.
-const effectiveMarkup = () => (betaPricing() ? BETA_MARKUP : OVERAGE_MARKUP)
 
 // What a plan includes for a given usage pool ('ai' | 'classifier'), in pence.
 function includedFor(plan, pool) {
@@ -196,11 +166,10 @@ const planPrice = (plan) =>
 // spend limit caps — the plan fee itself never counts toward it.
 function overageChargePence(ent) {
   if (!ent || ent.plan === 'none') return 0
-  const markup = effectiveMarkup()
   return (
-    Math.max(0, (ent.aiUsedPence || 0) - includedFor(ent.plan, 'ai')) * markup +
+    Math.max(0, (ent.aiUsedPence || 0) - includedFor(ent.plan, 'ai')) * OVERAGE_MARKUP +
     Math.max(0, (ent.classifierUsedPence || 0) - includedFor(ent.plan, 'classifier')) *
-      markup
+      OVERAGE_MARKUP
   )
 }
 
@@ -208,35 +177,6 @@ function overageChargePence(ent) {
 // they chose to spend. (cap 0 = no limit.)
 function capReached(ent) {
   return !!ent && ent.capPence > 0 && overageChargePence(ent) >= ent.capPence
-}
-
-// ---------------------------------------------------------------------------
-// Beta mode — a free public beta that can't bankrupt the owner.
-//
-// During the beta billing is OFF (there is nothing to buy), but every Claude
-// call still costs the OWNER real money at Anthropic. BETA_ALLOWANCE_PENCE gives
-// each tester a fixed allowance of REAL spend (not a token count): once their
-// metered usage passes it, the paid routes 402 with reason 'beta_limit' and the
-// app falls back to the local engine, which is free, offline and unmetered — so
-// a tester whose allowance runs out still has a working app, just without the
-// cloud AI. 0 disables the cap (unlimited, and unlimited cost).
-//
-// Usage is already metered per client even in free mode (see meterUsage), so
-// this reads numbers we're recording anyway.
-// ---------------------------------------------------------------------------
-const BETA_ALLOWANCE_PENCE = Number(process.env.BETA_ALLOWANCE_PENCE || 0)
-const betaMode = () => !BILLING_ENABLED && BETA_ALLOWANCE_PENCE > 0
-
-// Total real spend a tester has caused, across both metered pools.
-function betaUsedPence(ent) {
-  if (!ent) return 0
-  return (ent.aiUsedPence || 0) + (ent.classifierUsedPence || 0)
-}
-function betaRemainingPence(ent) {
-  return Math.max(0, BETA_ALLOWANCE_PENCE - betaUsedPence(ent))
-}
-function betaExhausted(ent) {
-  return betaMode() && betaUsedPence(ent) >= BETA_ALLOWANCE_PENCE
 }
 
 // Comma-separated clientIds that are never billed — put your own browser's
@@ -259,33 +199,19 @@ const isOwner = (id) => !!(id && FREE_CLIENT_IDS.has(id))
 const FEEDBACK_WEBHOOK_URL = (process.env.FEEDBACK_WEBHOOK_URL || '').trim()
 
 // Free mode (billing off) → always allowed, so editing/trying never gets gated.
-// With billing on, a client needs an activated account with credit remaining.
+// With billing on, the Evolve subscription unlocks the coding/world-knowledge
+// features — unless the user's own spend limit has been reached.
 async function hasAccess(clientId) {
-  if (!BILLING_ENABLED) {
-    // Free mode. In an open beta each tester still gets a hard spend allowance,
-    // because the owner is the one paying Anthropic for every call.
-    if (!betaMode()) return true
-    if (clientId && FREE_CLIENT_IDS.has(clientId)) return true
-    return !betaExhausted(await getEntitlement(clientId))
-  }
+  if (!BILLING_ENABLED) return true
   if (clientId && FREE_CLIENT_IDS.has(clientId)) return true
-  // New model: the Evolve subscription unlocks the coding/world-knowledge
-  // features — unless the user's own spend limit has been reached.
-  if (await hasEvolve(clientId)) {
-    return !capReached(await getEntitlement(clientId))
-  }
-  // Legacy one-time credit, still honoured for pre-subscription accounts.
-  return (await isActive(clientId)) && (await hasCredit(clientId))
+  if (!(await hasEvolve(clientId))) return false
+  return !capReached(await getEntitlement(clientId))
 }
 
 // Classification is unlocked by EITHER paid plan (classifier or evolve), and
 // stops at the user's spend limit like everything else.
 async function hasClassifyAccess(clientId) {
-  if (!BILLING_ENABLED) {
-    if (!betaMode()) return true
-    if (clientId && FREE_CLIENT_IDS.has(clientId)) return true
-    return !betaExhausted(await getEntitlement(clientId))
-  }
+  if (!BILLING_ENABLED) return true
   if (clientId && FREE_CLIENT_IDS.has(clientId)) return true
   if (!(await hasClassifier(clientId))) return false
   return !capReached(await getEntitlement(clientId))
@@ -296,21 +222,6 @@ async function hasClassifyAccess(clientId) {
 async function paywallBody(clientId, extra = {}, need = 'evolve') {
   const ent = await getEntitlement(clientId)
   const money = (p) => `£${(p / 100).toFixed(2)}`
-
-  // Beta tester who has spent their allowance. There is nothing to sell them —
-  // be straight about what happened and what still works.
-  if (betaExhausted(ent)) {
-    return {
-      configured: true,
-      subscribed: false,
-      reason: 'beta_limit',
-      error:
-        `You've used your ${money(BETA_ALLOWANCE_PENCE)} of free AI during the beta — ` +
-        `thank you, that was real money and genuinely useful. Everything on-device ` +
-        `still works; reply to your beta email if you need more.`,
-      ...extra,
-    }
-  }
 
   // Subscribed, but they've hit the limit they set on beyond-plan usage.
   if (capReached(ent)) {
@@ -338,16 +249,11 @@ async function paywallBody(clientId, extra = {}, need = 'evolve') {
     }
   }
 
-  // Evolve features. Legacy credit accounts get the old top-up message.
-  const active = await isActive(clientId)
-  const legacyCredit = active && (ent?.plan || 'none') === 'none'
   return {
     configured: true,
     subscribed: false,
-    reason: legacyCredit ? 'no_credit' : 'no_plan',
-    error: legacyCredit
-      ? 'AI credit used up — top up to continue.'
-      : `The AI tools are part of Evolve AI (${money(EVOLVE_PRICE_PENCE)}/mo).`,
+    reason: 'no_plan',
+    error: `The AI tools are part of Evolve AI (${money(EVOLVE_PRICE_PENCE)}/mo).`,
     ...extra,
   }
 }
@@ -581,11 +487,22 @@ app.get('/api/analytics/summary', async (req, res) => {
 // Billing endpoints (Stripe). Lazy-load the SDK so the server boots instantly
 // and runs fine with no Stripe keys at all.
 // ---------------------------------------------------------------------------
+// Pin the Stripe API version. Unpinned, the SDK sends whichever version it was
+// built against, so a routine `npm update` can silently change response shapes —
+// and the fields this code depends on (subscription.current_period_*,
+// invoice.subscription) MOVED in 2025-03-31.basil. The failure would be silent:
+// renewals stop billing overage and cycles stop resetting, with no error.
+// Pinning makes the shape deterministic; subscriptionPeriod()/invoiceKey() also
+// read the newer shape, so raising this version is safe when you choose to.
+const STRIPE_API_VERSION = process.env.STRIPE_API_VERSION || '2025-02-24.acacia'
+
 let _stripe = null
 async function getStripe() {
   if (!_stripe) {
     const { default: Stripe } = await import('stripe')
-    _stripe = new Stripe(process.env.STRIPE_SECRET_KEY)
+    _stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
+      apiVersion: STRIPE_API_VERSION,
+    })
   }
   return _stripe
 }
@@ -597,29 +514,19 @@ app.get('/api/billing/status', async (req, res) => {
   // Prefer userId (from Supabase JWT); fall back to clientId (legacy, for local-only)
   const key = req.userId || req.clientId
   const pricing = {
-    // New subscription tiers.
     classifierPricePence: CLASSIFIER_PRICE_PENCE,
     classifierIncludedPence: CLASSIFIER_INCLUDED_PENCE,
     evolvePricePence: EVOLVE_PRICE_PENCE,
     evolveAiIncludedPence: EVOLVE_AI_INCLUDED_PENCE,
     evolveClassifierIncludedPence: EVOLVE_CLASSIFIER_INCLUDED_PENCE,
-    // £ charged per £1 of usage beyond a pool's allowance. This is the rate the
-    // UI must quote — it's the reduced beta rate while the beta is running.
-    overageMarkup: effectiveMarkup(),
-    // The standard (non-beta) rate, so the UI can show what the discount is off.
-    standardMarkup: OVERAGE_MARKUP,
-    betaPricing: betaPricing(),
-    // Legacy one-time credit model (kept for old accounts / back-compat).
-    activationPence: ACTIVATION_PRICE_PENCE,
-    includedCreditPence: ACTIVATION_CREDIT_PENCE,
-    topupPence: TOPUP_PRICE_PENCE,
-    tokenMarkup: TOKEN_MARKUP,
+    // £ charged per £1 of usage beyond a pool's allowance. One rate, quoted by
+    // the UI and used by billOverage — they can't diverge.
+    overageMarkup: OVERAGE_MARKUP,
   }
   try {
-    const [e, subscribed, active, classifier, evolve] = await Promise.all([
+    const [e, subscribed, classifier, evolve] = await Promise.all([
       getEntitlement(key),
       hasAccess(key),
-      isActive(key),
       hasClassifyAccess(key),
       hasEvolve(key),
     ])
@@ -630,7 +537,6 @@ app.get('/api/billing/status', async (req, res) => {
       billingConfigured: billingConfigured(),
       freeMode: !BILLING_ENABLED,
       subscribed,
-      active: active || freeBypass,
       // Subscription state + the two metered pools this cycle.
       plan,
       hasClassifier: classifier || freeBypass || !BILLING_ENABLED,
@@ -646,22 +552,9 @@ app.get('/api/billing/status', async (req, res) => {
         },
       },
       periodEnd: e?.periodEnd || 0,
-      // Beta allowance — the real spend this tester has caused and what's left.
-      // Surfaced so the beta UI can be honest about cost instead of vague.
-      beta: betaMode()
-        ? {
-            active: true,
-            allowancePence: BETA_ALLOWANCE_PENCE,
-            usedPence: Math.round(betaUsedPence(e) * 100) / 100,
-            remainingPence: Math.round(betaRemainingPence(e) * 100) / 100,
-            exhausted: betaExhausted(e) && !freeBypass,
-          }
-        : { active: false },
       // What beyond-plan usage would cost this cycle — the figure the user's
       // spend limit caps.
       overagePence: e ? Math.round(overageChargePence(e) * 100) / 100 : 0,
-      creditPence: e ? Math.max(0, Math.round(e.creditPence * 100) / 100) : 0,
-      usedPence: e ? Math.round(e.usedPence * 100) / 100 : 0,
       paidPence: e ? Math.round(e.paidPence) : 0,
       capPence: e ? Math.round(e.capPence) : 0,
       pricing,
@@ -675,9 +568,9 @@ app.get('/api/billing/status', async (req, res) => {
       billingConfigured: billingConfigured(),
       freeMode: !BILLING_ENABLED,
       subscribed: !BILLING_ENABLED,
-      active: false,
-      creditPence: 0,
-      usedPence: 0,
+      plan: 'none',
+      hasClassifier: !BILLING_ENABLED,
+      hasEvolve: !BILLING_ENABLED,
       paidPence: 0,
       capPence: 0,
       pricing,
@@ -686,125 +579,58 @@ app.get('/api/billing/status', async (req, res) => {
 })
 
 // Start a Stripe Checkout session for this client and return its URL.
-// kind: 'activate' (£10 one-time, includes £5 of AI credit) or
-//       'topup'    (buys credit at £{TOKEN_MARKUP} per £1 of tokens).
+// `kind` is the plan: 'classifier' or 'evolve'. Both are monthly subscriptions
+// created with inline price_data (no Stripe Price objects to keep in sync).
 app.post('/api/billing/checkout', async (req, res) => {
   if (!BILLING_ENABLED) return res.json({ freeMode: true })
   if (!billingConfigured())
     return res.status(400).json({ error: 'Billing is not configured on the server.' })
   // Prefer userId (from JWT); fall back to clientId from body (legacy)
   const key = req.userId || req.body?.clientId
-  const { kind = 'activate' } = req.body || {}
   if (!key) return res.status(400).json({ error: 'Missing auth or clientId' })
 
-  // New model: recurring subscription plans. `kind` is the plan id.
-  if (kind === 'classifier' || kind === 'evolve') {
-    const plan = kind
-    const amount = planPrice(plan)
-    const name =
-      plan === 'evolve'
-        ? `Evolve AI — ${gbp(EVOLVE_PRICE_PENCE)}/mo (incl. ${gbp(
-            EVOLVE_AI_INCLUDED_PENCE,
-          )} coding & world knowledge + ${gbp(EVOLVE_CLASSIFIER_INCLUDED_PENCE)} classifier)`
-        : `Classification — ${gbp(CLASSIFIER_PRICE_PENCE)}/mo (incl. ${gbp(
-            CLASSIFIER_INCLUDED_PENCE,
-          )} classifier usage)`
-    try {
-      const stripe = await getStripe()
-      const session = await stripe.checkout.sessions.create({
-        mode: 'subscription',
-        line_items: [
-          {
-            price_data: {
-              currency: 'gbp',
-              product_data: { name },
-              unit_amount: amount,
-              recurring: { interval: 'month' },
-            },
-            quantity: 1,
-          },
-        ],
-        client_reference_id: key,
-        metadata: { key, plan },
-        // Copy the key+plan onto the subscription so invoice/subscription
-        // webhooks (which don't carry the checkout session) can resolve them.
-        subscription_data: { metadata: { key, plan } },
-        success_url: `${APP_ORIGIN}/?billing=success`,
-        cancel_url: `${APP_ORIGIN}/?billing=cancel`,
-      })
-      return res.json({ url: session.url })
-    } catch (err) {
-      console.error('subscription checkout error:', err?.message || err)
-      return res.status(502).json({ error: 'checkout_failed' })
-    }
+  // `kind` is the plan id. There is no default — an unrecognised value must be
+  // rejected rather than silently charging for something the user didn't pick.
+  const plan = req.body?.kind
+  if (plan !== 'classifier' && plan !== 'evolve') {
+    return res.status(400).json({ error: 'Unknown plan' })
   }
 
-  const isTopup = kind === 'topup'
-  const amount = isTopup ? TOPUP_PRICE_PENCE : ACTIVATION_PRICE_PENCE
-
-  // Respect the user's own spend limit. The limit is what they're willing to
-  // spend ON TOP OF the one-time activation fee — i.e. it caps top-up spend, not
-  // the entry fee. So activation is never blocked by the cap; only top-ups are,
-  // and they're measured against how much they've already topped up (paid beyond
-  // the activation price). (cap = 0 → no limit.)
-  if (isTopup) {
-    try {
-      const ent = await getEntitlement(key)
-      const cap = ent?.capPence || 0
-      const paid = ent?.paidPence || 0
-      const topupSpend = Math.max(0, paid - ACTIVATION_PRICE_PENCE)
-      if (cap > 0 && topupSpend + amount > cap) {
-        return res.status(400).json({
-          error:
-            `This top-up (£${(amount / 100).toFixed(2)}) would take you past the ` +
-            `£${(cap / 100).toFixed(2)} spending limit you set for usage on top of ` +
-            `your plan — you've added £${(topupSpend / 100).toFixed(2)} so far. ` +
-            `Raise or clear your limit to continue.`,
-          capReached: true,
-          capPence: cap,
-          topupPence: topupSpend,
-          remainingPence: Math.max(0, cap - topupSpend),
-        })
-      }
-    } catch (err) {
-      console.error('cap check error:', err?.message || err)
-      // Don't hard-block a purchase on a transient read error; fall through.
-    }
-  }
-
-  const creditPence = isTopup
-    ? Math.floor(TOPUP_PRICE_PENCE / TOKEN_MARKUP)
-    : ACTIVATION_CREDIT_PENCE
-  const name = isTopup
-    ? `Evolve AI credit top-up (£${(creditPence / 100).toFixed(2)} of AI usage)`
-    : `Evolve AI — one-time activation (includes £${(
-        ACTIVATION_CREDIT_PENCE / 100
-      ).toFixed(2)} of AI usage)`
+  const name =
+    plan === 'evolve'
+      ? `Evolve AI — ${gbp(EVOLVE_PRICE_PENCE)}/mo (incl. ${gbp(
+          EVOLVE_AI_INCLUDED_PENCE,
+        )} coding & world knowledge + ${gbp(EVOLVE_CLASSIFIER_INCLUDED_PENCE)} classifier)`
+      : `Classification — ${gbp(CLASSIFIER_PRICE_PENCE)}/mo (incl. ${gbp(
+          CLASSIFIER_INCLUDED_PENCE,
+        )} classifier usage)`
 
   try {
     const stripe = await getStripe()
     const session = await stripe.checkout.sessions.create({
-      mode: 'payment',
+      mode: 'subscription',
       line_items: [
         {
           price_data: {
             currency: 'gbp',
             product_data: { name },
-            unit_amount: amount,
+            unit_amount: planPrice(plan),
+            recurring: { interval: 'month' },
           },
           quantity: 1,
         },
       ],
-      // client_reference_id ties the payment back to this client in the
-      // webhook; metadata is a belt-and-braces copy plus the purchase kind.
       client_reference_id: key,
-      metadata: { key, kind: isTopup ? 'topup' : 'activate' },
+      metadata: { key, plan },
+      // Copy the key+plan onto the subscription so invoice/subscription
+      // webhooks (which don't carry the checkout session) can resolve them.
+      subscription_data: { metadata: { key, plan } },
       success_url: `${APP_ORIGIN}/?billing=success`,
       cancel_url: `${APP_ORIGIN}/?billing=cancel`,
     })
     res.json({ url: session.url })
   } catch (err) {
-    console.error('checkout error:', err?.message || err)
+    console.error('subscription checkout error:', err?.message || err)
     res.status(502).json({ error: 'checkout_failed' })
   }
 })
@@ -858,31 +684,19 @@ app.post(
           // checkout sets both client_reference_id and metadata.key to the
           // billing key (Supabase userId, or anonymous clientId).
           const clientId = s.client_reference_id || s.metadata?.key
-          if (!clientId) break
-          // New: subscription checkouts start a plan and set its billing window.
-          if (s.mode === 'subscription' && s.metadata?.plan) {
-            const sub = s.subscription ? await stripe.subscriptions.retrieve(s.subscription) : null
-            await setSubscription(clientId, {
-              plan: s.metadata.plan,
-              subscriptionId: s.subscription ?? null,
-              customerId: s.customer ?? null,
-              periodStart: sub ? sub.current_period_start * 1000 : Date.now(),
-              periodEnd: sub ? sub.current_period_end * 1000 : null,
-              paidPence: s.amount_total ?? planPrice(s.metadata.plan),
-            })
-            break
-          }
-          // Legacy one-time credit model.
-          if (s.metadata?.kind === 'topup') {
-            const credit = Math.floor((s.amount_total ?? 0) / TOKEN_MARKUP)
-            await addCredit(clientId, credit, s.amount_total ?? 0)
-          } else {
-            await activate(clientId, {
-              customerId: s.customer,
-              creditPence: ACTIVATION_CREDIT_PENCE,
-              paidPence: s.amount_total ?? ACTIVATION_PRICE_PENCE,
-            })
-          }
+          if (!clientId || s.mode !== 'subscription' || !s.metadata?.plan) break
+          const sub = s.subscription
+            ? await stripe.subscriptions.retrieve(s.subscription)
+            : null
+          const period = subscriptionPeriod(sub)
+          await setSubscription(clientId, {
+            plan: s.metadata.plan,
+            subscriptionId: s.subscription ?? null,
+            customerId: s.customer ?? null,
+            periodStart: period.start ?? Date.now(),
+            periodEnd: period.end,
+            paidPence: s.amount_total ?? planPrice(s.metadata.plan),
+          })
           break
         }
         // A renewal payment. Bill the just-ended cycle's overage (one cycle in
@@ -890,17 +704,17 @@ app.post(
         case 'invoice.paid': {
           const inv = event.data.object
           if (inv.billing_reason !== 'subscription_cycle') break // create handled above
-          const clientId = inv.subscription_details?.metadata?.key || inv.metadata?.key
+          const clientId = invoiceKey(inv)
           if (!clientId) break
           const ent = await getEntitlement(clientId)
           if (!ent || ent.plan === 'none') break
           await billOverage(stripe, ent, inv.customer)
-          const sub = inv.subscription
-            ? await stripe.subscriptions.retrieve(inv.subscription)
-            : null
+          const subId = invoiceSubscriptionId(inv)
+          const sub = subId ? await stripe.subscriptions.retrieve(subId) : null
+          const period = subscriptionPeriod(sub)
           await resetCycle(clientId, {
-            periodStart: sub ? sub.current_period_start * 1000 : Date.now(),
-            periodEnd: sub ? sub.current_period_end * 1000 : null,
+            periodStart: period.start ?? Date.now(),
+            periodEnd: period.end,
             paidPence: inv.amount_paid ?? 0,
           })
           break
@@ -922,14 +736,50 @@ app.post(
   },
 )
 
+// ---- Stripe shape helpers (API-version resilient) ---------------------------
+// Stripe moved these fields in API version 2025-03-31.basil:
+//   • subscription.current_period_start/end  →  subscription.items.data[].*
+//   • invoice.subscription                   →  invoice.parent.subscription_details.*
+// STRIPE_API_VERSION pins us to a known version, but reading BOTH shapes means a
+// future SDK/version bump can't silently break renewal billing (the failure mode
+// is invisible: overage stops being charged and cycles stop resetting).
+
+// The current billing window, in ms. Returns {start, end} with null when unknown.
+function subscriptionPeriod(sub) {
+  if (!sub) return { start: null, end: null }
+  const item = sub.items?.data?.[0]
+  const start = sub.current_period_start ?? item?.current_period_start ?? null
+  const end = sub.current_period_end ?? item?.current_period_end ?? null
+  return {
+    start: start ? start * 1000 : null,
+    end: end ? end * 1000 : null,
+  }
+}
+
+// The billing key carried on an invoice's subscription metadata.
+function invoiceKey(inv) {
+  return (
+    inv.parent?.subscription_details?.metadata?.key ||
+    inv.subscription_details?.metadata?.key ||
+    inv.metadata?.key ||
+    null
+  )
+}
+
+// The subscription id an invoice belongs to (string, or null).
+function invoiceSubscriptionId(inv) {
+  const s = inv.parent?.subscription_details?.subscription ?? inv.subscription ?? null
+  return typeof s === 'string' ? s : (s?.id ?? null)
+}
+
 // Compute a subscriber's overage for the ending cycle (each pool beyond its
-// included allowance, charged at the current markup — the reduced BETA_MARKUP
-// while the beta is on) and add it as an invoice item on the customer, so it
-// lands on the upcoming invoice. No-op when nothing's owed. This must use the
-// SAME rate the UI quotes, or people are billed something they weren't shown.
+// included allowance, at OVERAGE_MARKUP) and add it as an invoice item on the
+// customer, so it lands on the upcoming invoice. No-op when nothing's owed.
+// Uses the SAME rate the UI quotes — there is only one rate, so they can't
+// diverge and bill someone something they were never shown.
 async function billOverage(stripe, ent, customerId) {
-  if (!customerId) return
-  const markup = effectiveMarkup()
+  const id = typeof customerId === 'string' ? customerId : customerId?.id
+  if (!id) return
   const pools = [
     { pool: 'ai', used: ent.aiUsedPence || 0 },
     { pool: 'classifier', used: ent.classifierUsedPence || 0 },
@@ -937,12 +787,12 @@ async function billOverage(stripe, ent, customerId) {
   let overagePence = 0
   for (const { pool, used } of pools) {
     const over = Math.max(0, used - includedFor(ent.plan, pool))
-    overagePence += over * markup
+    overagePence += over * OVERAGE_MARKUP
   }
   overagePence = Math.round(overagePence)
   if (overagePence <= 0) return
   await stripe.invoiceItems.create({
-    customer: customerId,
+    customer: id,
     currency: 'gbp',
     amount: overagePence,
     description: `AI usage over your plan's included allowance (£${(overagePence / 100).toFixed(2)})`,
@@ -2131,9 +1981,11 @@ app.listen(PORT, () => {
     `  Billing: ${
       BILLING_ENABLED
         ? billingConfigured()
-          ? `ENABLED — £${(ACTIVATION_PRICE_PENCE / 100).toFixed(0)} activation incl. £${(
-              ACTIVATION_CREDIT_PENCE / 100
-            ).toFixed(2)} credit, £${TOKEN_MARKUP} per £1 of tokens after`
+          ? `ENABLED — Classification ${gbp(CLASSIFIER_PRICE_PENCE)}/mo (incl. ${gbp(
+              CLASSIFIER_INCLUDED_PENCE,
+            )}), Evolve AI ${gbp(EVOLVE_PRICE_PENCE)}/mo (incl. ${gbp(
+              EVOLVE_AI_INCLUDED_PENCE,
+            )} + ${gbp(EVOLVE_CLASSIFIER_INCLUDED_PENCE)}), overage ${OVERAGE_MARKUP}× cost`
           : 'ENABLED but Stripe NOT configured (set STRIPE_SECRET_KEY)'
         : 'free mode (BILLING_ENABLED=false) — nothing gated'
     }`,

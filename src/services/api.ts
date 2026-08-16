@@ -57,15 +57,10 @@ export interface BillingStatus {
   freeMode: boolean
   // True whenever the client may use paid features — always true in free mode.
   subscribed: boolean
-  // Credit model: £10 one-time activation includes £1 of AI token credit;
-  // further usage is bought at £{tokenMarkup} per £1 of tokens.
-  active?: boolean
-  creditPence?: number
-  usedPence?: number
   // Lifetime amount actually paid, and the user's self-set spend limit (0 = none).
   paidPence?: number
   capPence?: number
-  // Recurring-subscription model: which plan is live and the two metered pools.
+  // Which plan is live, and the two independently-metered usage pools.
   plan?: 'none' | 'classifier' | 'evolve'
   hasClassifier?: boolean
   hasEvolve?: boolean
@@ -74,36 +69,16 @@ export interface BillingStatus {
     classifier: { usedPence: number; includedPence: number }
   }
   periodEnd?: number
-  // Open-beta allowance. During the beta nothing is for sale, but every AI call
-  // costs the owner real money, so each tester gets a fixed allowance of real
-  // spend. When it's gone the cloud AI stops and the local engine carries on.
-  beta?: {
-    active: boolean
-    allowancePence?: number
-    usedPence?: number
-    remainingPence?: number
-    exhausted?: boolean
-  }
   // What beyond-plan usage would cost this cycle (pence) — what capPence caps.
   overagePence?: number
   pricing?: {
-    // Subscription pricing.
     classifierPricePence?: number
     classifierIncludedPence?: number
     evolvePricePence?: number
     evolveAiIncludedPence?: number
     evolveClassifierIncludedPence?: number
-    // The markup actually charged on usage beyond a plan's allowance — the
-    // reduced beta rate while the beta is running. Always quote THIS one.
+    // £ charged per £1 of real token cost beyond a plan's allowance.
     overageMarkup?: number
-    // The standard rate the beta discount is measured against.
-    standardMarkup?: number
-    betaPricing?: boolean
-    // Legacy credit-model pricing.
-    activationPence?: number
-    includedCreditPence?: number
-    topupPence?: number
-    tokenMarkup?: number
   }
 }
 

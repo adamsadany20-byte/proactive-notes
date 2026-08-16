@@ -21,6 +21,10 @@ Most recent session, in order:
    (Classification £1/mo, Evolve AI £6/mo with two metered pools), and the spend
    cap was rewired to limit **overage** instead of a dead top-up path. (See
    "Billing".)
+5. **Payment overhaul** — collapsed the beta/standard dual rate into ONE rate
+   (`OVERAGE_MARKUP`, default 1.5), deleted the legacy credit model, and pinned
+   the Stripe API version. (See "Payment overhaul", which supersedes the
+   dual-rate description in "Billing" below.)
 
 **Note:** the Stripe subscription path is now verified in test mode (see "Known
 Limitations"). The paragraph below is retained for the deployment steps; the
@@ -31,54 +35,62 @@ migration has been applied, and the webhook must subscribe to
 
 ## Recent Work (Jul 2026)
 
-### Open beta: recruitment page + beta pricing (1.5× instead of 2×)
+### Payment overhaul: ONE pricing model (no beta rate, no legacy credit)
 
-A beta that funds itself. Two halves that must stay in sync — the page states a
-rate, the server charges that same rate.
+The dual-rate "beta pricing" system is **gone**. There is now exactly one rate,
+so the number the UI quotes and the number `billOverage()` charges cannot
+diverge — that class of bug is removed structurally, not by keeping two values in
+sync. `BETA_MARKUP`, `betaPricing()`, `effectiveMarkup()`, `standardMarkup`,
+`BETA_ALLOWANCE_PENCE`, `betaMode()` and the `beta_limit` 402 no longer exist.
 
-**Beta pricing is the live model**: testers pay the normal plan prices, but usage
-beyond a plan's included allowance bills at **`BETA_MARKUP`** (1.5 = token cost
-+50%) instead of the standard `OVERAGE_MARKUP` (2 = +100%). `effectiveMarkup()`
-is the single source of truth and is used by `overageChargePence()` (so the spend
-cap matches), the `/api/billing/status` `pricing` quote, **and `billOverage()`**
-(the Stripe invoice item) — they must never diverge, or people get billed
-something they weren't shown. `pricing.standardMarkup`/`betaPricing` let the UI
-show what the discount is off. Needs `BILLING_ENABLED=true`. Verified: £1 of raw
-overage bills 150p at the beta rate vs 200p standard, and the quote matches.
+**The model**: Free (local engine) · Classification **£1/mo** (incl. 50p) ·
+Evolve AI **£6/mo** (incl. £2.50 `ai` + 50p `classifier`, metered separately).
+Usage beyond a plan bills at **`OVERAGE_MARKUP`, now defaulting to 1.5**× real
+token cost, one cycle in arrears. Raising it later applies to existing
+subscribers at their next cycle; their monthly fee is held by Stripe and never
+changes retroactively.
 
-**`BETA_MARKUP` defaults to 1.5** — the beta is the product's current state, so a
-deployment needs no env var to run it. Plan prices (£1/£6) are code defaults too.
-**To end the beta: set `BETA_MARKUP=0`.** The rate reverts to `OVERAGE_MARKUP` and
-the `/beta` page stops advertising a discount by itself (it only claims one when
-`rate < standard`). Raising the plan prices afterwards affects **new** checkouts
-only — an existing subscriber's monthly fee is held by Stripe and never changes
-retroactively. Their *overage* rate does move to 2× on the next cycle, though.
+**The legacy one-time credit model is also gone** (`activate`/`topup`,
+`ACTIVATION_*`, `TOKEN_MARKUP`, `TOPUP_*`, `creditPence`, `no_credit`). It was
+dead weight with a live footgun: `/api/billing/checkout` defaulted to
+`kind='activate'`, so a request with a missing/……typo'd plan silently created a
+£10 one-time charge. It now **400s on an unrecognised plan**.
 
-The `/beta` page and Settings → **Beta pricing** ([BetaUsage.tsx](src/components/BetaUsage.tsx))
-both read these rates from the server rather than hardcoding them.
+**Stripe API version is pinned** (`STRIPE_API_VERSION`, default
+`2025-02-24.acacia`). It was unpinned, which meant the SDK's own bundled version
+was in force — and the fields this code depends on MOVED in `2025-03-31.basil`:
+`subscription.current_period_start/end` → `subscription.items.data[]`, and
+`invoice.subscription` → `invoice.parent.subscription_details`. A routine
+`npm update` would have silently stopped overage billing and cycle resets with no
+error. `subscriptionPeriod()` / `invoiceKey()` / `invoiceSubscriptionId()` read
+**both** shapes, so raising the pinned version is safe. Verified against the live
+account: at `2026-06-24.dahlia` the top-level `current_period_end` is `null`
+while `items[0]` still has it, and the helper resolves it either way.
 
-**The free-allowance path below is the alternative** (free beta, owner absorbs
-the cost) — still implemented and off by default; the two are independent.
-- **`/beta`** ([Beta.tsx](src/components/Beta.tsx), routed in
-  [main.tsx](src/main.tsx) like `/welcome`) recruits testers. It asks for
-  *specific* things (where it misread you / wasted your time / what was missing /
-  what broke) rather than "any feedback welcome", and carries a blunt cost
-  section: local engine £0, small models ~0.1–1p, **web-search calls ~20p each**.
-  The allowance figure is **fetched from the server** (`billing.beta.allowancePence`)
-  so the page can't drift from what's enforced. Signups post with source `beta`
-  (`submitBetaSignup`), separable from `/welcome`'s `interest` signups.
-- **`BETA_ALLOWANCE_PENCE`** (server, pence, 0/unset = off) gives each tester a
-  fixed allowance of REAL Anthropic spend. Active only when
-  `BILLING_ENABLED=false` (`betaMode()`); usage was already metered per client in
-  free mode (`meterUsage`), so this just reads it. `hasAccess`/`hasClassifyAccess`
-  gate on `betaExhausted()`; `FREE_CLIENT_IDS` bypasses it.
-- **Running out is not a paywall.** The 402 carries `reason: 'beta_limit'` with a
-  message saying the local engine still works and to reply to the beta email —
-  there is nothing to buy. `/api/billing/status` returns a `beta` block
-  (`allowance/used/remaining/exhausted`), surfaced in Settings → **Beta usage**
-  ([BetaUsage.tsx](src/components/BetaUsage.tsx)) as a real-money meter that warns
-  at 25% left. Verified: fresh tester allowed, exhausted tester 402s, owner
-  bypasses, and with the allowance unset free mode is unchanged.
+**Verified end-to-end against real Stripe (test mode)**: unknown plan → 400;
+subscription checkout (£6 GBP monthly, correct metadata, product name showing
+"incl. £2.50 … + £0.50" — it previously rounded 50p up to "£1");
+`checkout.session.completed` with a REAL subscription → plan set and a real
+`periodEnd`; `invoice.paid` sent in the NEW basil shape → 300p invoice item
+(200p over × 1.5) and pools reset; spend cap → 402 `cap_reached`;
+`customer.subscription.deleted` → downgrade and 402 `no_plan`; free mode
+(`BILLING_ENABLED=false`) unchanged.
+
+Usage is surfaced in Settings → **Usage this month**
+([UsageMeter.tsx](src/components/UsageMeter.tsx)) — per-pool bars of real money
+used vs included, what overage will be added to the next invoice, and the rate.
+It replaces `BetaUsage.tsx`.
+
+### Open beta recruitment page (`/beta`)
+
+[Beta.tsx](src/components/Beta.tsx), routed in [main.tsx](src/main.tsx) like
+`/welcome`. Recruits testers by asking for *specific* things (where it misread
+you / wasted your time / what was missing / what broke) rather than "any feedback
+welcome", and carries a blunt cost section: local engine £0, small models
+~0.1–1p, **web-search calls ~20p each**. Every price and rate is **fetched from
+the server** (`/api/billing/status` → `pricing`) so the page cannot quote a
+number different from the one charged. Signups post with source `beta`
+(`submitBetaSignup`), separable from `/welcome`'s `interest` signups.
 
 ### Auto-suggested Google Docs / Sheets / Slides
 
@@ -202,7 +214,7 @@ half its fee (50% gross margin). Raising an `*_INCLUDED_PENCE` without raising
 the price eats that margin, and a plan that bundles as much usage as it charges
 for loses money on every subscriber once Stripe's ~2.9% + 30p is taken.
 
-Each pool overages at **£2 per £1** (`OVERAGE_MARKUP`) beyond its allowance.
+Each pool overages at **£1.50 per £1** (`OVERAGE_MARKUP`) beyond its allowance.
 Checkout is `mode:'subscription'` with inline recurring `price_data` (no Stripe
 Price IDs). Webhooks: `checkout.session.completed` (start plan + window),
 `invoice.paid` on `subscription_cycle` (bill the ENDING cycle's overage as an
@@ -212,7 +224,7 @@ Anthropic cost (`usageCostPence`) into its pool via `meterUsage(id, cost, pool)`
 
 Route gating: `/api/classify` needs **classifier-or-evolve**; suggest / recommend
 / generate-feature / enrich need **evolve**. 402s carry `reason`
-(`no_plan` | `cap_reached` | `no_credit`).
+(`no_plan` | `cap_reached`).
 
 Spend cap (`capPence`) now limits **overage** — the plan fee never counts toward
 it — and is enforced on **every paid call** (`capReached()`), not just checkout,
@@ -494,22 +506,17 @@ Nudges fire via `useReminders` (20-second poll). Copy is streak-aware: *"keep yo
 - Mobile: safe areas + top bar done (see UI Patterns); touch interactions could
   still be smoother
 - Performance: large note collections (100+) untested
-- **Billing: the subscription path IS now verified against real Stripe (test
-  mode).** Exercised end-to-end against `sk_test_`: subscription checkout
-  (`mode:subscription`, £6 GBP, monthly recurring, key+plan metadata, correct
-  product description), `checkout.session.completed` → plan + pools set,
-  `invoice.paid`/`subscription_cycle` → `stripe.invoiceItems.create` for the
-  ENDING cycle then pool reset, and `customer.subscription.deleted` → downgrade
-  with gating re-enforced (402 `no_plan`). The overage invoice item billed at
-  the **beta 1.5× rate, not 2×** — confirming `effectiveMarkup()` reaches the
-  actual invoice, which is the divergence that would bill people something they
-  weren't shown. **Still unverified:** real webhook *signature* validation
-  (tested with `STRIPE_WEBHOOK_SECRET` unset, which takes the unsigned-parse
-  branch) and anything against a **live** key. Overage still bills one cycle in
-  arrears, so a live mistake wouldn't surface for a month.
-- Billing: the legacy one-time credit path (`activate`/`topup`) is still in the
-  code for pre-subscription accounts. There are no such accounts in practice —
-  it can probably be deleted.
+- **Billing: the subscription path IS verified against real Stripe (test mode)** —
+  see "Payment overhaul" for the full list of what was exercised, including a
+  REAL subscription (so `current_period_*` is actually resolved) and an
+  `invoice.paid` sent in the new basil shape. **Still unverified:** real webhook
+  *signature* validation (tested with `STRIPE_WEBHOOK_SECRET` unset, which takes
+  the unsigned-parse branch) and anything against a **live** key. Overage bills
+  one cycle in arrears, so a live mistake wouldn't surface for a month.
+- **Billing: with `STRIPE_WEBHOOK_SECRET` unset the webhook accepts UNSIGNED
+  events** — anyone who knows the URL can POST a forged
+  `checkout.session.completed` and grant themselves a paid plan. Fine for local
+  `stripe listen`; must be set in production.
 - Billing: `capPence` stops usage at the limit, but Stripe has no hard cap of its
   own — the cap is only enforced by our own `capReached()` on each call.
 - `deriveTopic` is heuristic. It degrades to `undefined` (no label) rather than

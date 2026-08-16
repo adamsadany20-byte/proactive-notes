@@ -208,7 +208,8 @@ export function SpendLimit() {
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
 
-  if (!billing?.billingEnabled || !billing?.active) return null
+  // Only meaningful once a plan is live — there's no overage to cap without one.
+  if (!billing?.billingEnabled || (billing.plan ?? 'none') === 'none') return null
 
   const capPence = billing.capPence ?? 0
   // What beyond-plan usage has cost this cycle — the figure the cap limits.
