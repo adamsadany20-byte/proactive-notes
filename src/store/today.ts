@@ -47,10 +47,31 @@ export interface TodayItem {
   reminderId?: string
 }
 
-// A note is "stale" when it has open items but hasn't been touched in a while.
-// Long enough that it's genuinely been forgotten, not just left overnight.
-const STALE_DAYS = 7
+// A workspace goes stale when it hasn't been ticked off, opened, or edited for
+// this long. Five days is long enough to mean "forgotten" rather than "it's the
+// weekend", and short enough to still be rescuable.
+export const STALE_DAYS = 5
 const DAY_MS = 86400000
+
+// The last time the user had anything to do with this note — reading counts,
+// not just typing. A note ticked off is never stale.
+export function lastTouched(n: Note): number {
+  return Math.max(n.openedAt ?? 0, n.updatedAt ?? 0, n.createdAt ?? 0)
+}
+
+export function isNoteStale(n: Note, now: Date = new Date()): boolean {
+  if (n.doneAt) return false
+  if (!n.text.trim()) return false
+  return now.getTime() - lastTouched(n) >= STALE_DAYS * DAY_MS
+}
+
+// Every forgotten workspace, most neglected first. Shared by the Now panel, the
+// in-app nudge and the push projection so all three agree on what "stale" means.
+export function staleNotes(notes: Note[], now: Date = new Date()): Note[] {
+  return notes
+    .filter((n) => isNoteStale(n, now))
+    .sort((a, b) => lastTouched(a) - lastTouched(b))
+}
 
 function noteTitle(n: Note): string {
   return n.text.trim().split('\n')[0].slice(0, 60) || 'Untitled note'
@@ -78,6 +99,9 @@ export function collectToday(
   const out: TodayItem[] = []
 
   for (const note of notes) {
+    // A ticked-off workspace is finished — nothing from it should still be
+    // asking for attention.
+    if (note.doneAt) continue
     const title = noteTitle(note)
 
     for (const seg of note.segments ?? []) {
@@ -174,11 +198,9 @@ export function collectToday(
     })
   }
 
-  // Picked up and quietly dropped: open items, untouched for a while. This is
-  // the proactive one — nothing else in the app ever mentions these again.
-  for (const note of notes) {
-    const age = now.getTime() - (note.updatedAt ?? 0)
-    if (age < STALE_DAYS * DAY_MS) continue
+  // Picked up and quietly dropped. This is the proactive one — nothing else in
+  // the app ever mentions a forgotten workspace again.
+  for (const note of staleNotes(notes, now)) {
     let open = 0
     for (const seg of note.segments ?? []) {
       if (seg.type !== 'checklist' || !seg.filled) continue
@@ -186,15 +208,18 @@ export function collectToday(
         (i: ChecklistItem) => i && !i.done,
       ).length
     }
-    if (!open) continue
     out.push({
       id: `stale-${note.id}`,
       kind: 'stale',
-      text: `${open} thing${open === 1 ? '' : 's'} still open on "${noteTitle(note)}"`,
+      text: open
+        ? `${open} thing${open === 1 ? '' : 's'} still open on "${noteTitle(note)}"`
+        : `"${noteTitle(note)}" hasn't been touched`,
       noteId: note.id,
       noteTitle: noteTitle(note),
-      when: agoLabel(age),
-      rank: 700,
+      when: agoLabel(now.getTime() - lastTouched(note)),
+      // Stale band 700-799, most neglected first — otherwise ties broke
+      // alphabetically and a 6-day-old note outranked a 9-day-old one.
+      rank: 700 + Math.max(0, 99 - Math.floor((now.getTime() - lastTouched(note)) / DAY_MS)),
     })
   }
 

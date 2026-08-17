@@ -98,6 +98,7 @@ const MAX_COMPLETION_LOG = 250
 type Action =
   | { type: 'CREATE_NOTE' }
   | { type: 'SELECT'; id: string }
+  | { type: 'TOGGLE_NOTE_DONE'; id: string }
   | { type: 'DELETE'; id: string }
   | { type: 'SET_TEXT'; id: string; text: string }
   | { type: 'APPEND_TEXT'; id: string; text: string; block?: boolean }
@@ -265,8 +266,21 @@ function reducer(state: State, action: Action): State {
       const n = newNote()
       return { ...state, notes: [n, ...state.notes], selectedId: n.id }
     }
-    case 'SELECT':
-      return { ...state, selectedId: action.id }
+    case 'TOGGLE_NOTE_DONE': {
+      const notes = state.notes.map((n) =>
+        n.id === action.id ? { ...n, doneAt: n.doneAt ? undefined : Date.now() } : n,
+      )
+      return { ...state, notes }
+    }
+    case 'SELECT': {
+      // Opening a note counts as touching it, which is what the 5-day stale
+      // nudge measures. Deliberately does NOT bump updatedAt — that would make
+      // merely reading a note look like an edit to the Supabase sync.
+      const notes = state.notes.map((n) =>
+        n.id === action.id ? { ...n, openedAt: Date.now() } : n,
+      )
+      return { ...state, selectedId: action.id, notes }
+    }
     case 'DELETE': {
       const removedReminderIds = state.reminders
         .filter((r) => r.noteId === action.id)
@@ -586,6 +600,7 @@ interface StoreApi {
   setClassification: (id: string, classification: RemoteClassification) => void
   setTailoredQuestions: (id: string, tailoredQuestions: TailoredQuestions) => void
   setExternalEvents: (events: ExternalEvent[]) => void
+  toggleNoteDone: (id: string) => void
   toggleOccurrence: (reminderId: string, iso: string) => void
   updateReminder: (reminderId: string, patch: Partial<Reminder>) => void
   startStreak: (noteId: string) => void
@@ -809,6 +824,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         dispatch({ type: 'SET_TAILORED_QUESTIONS', id, tailoredQuestions }),
       setExternalEvents: (events) =>
         dispatch({ type: 'SET_EXTERNAL_EVENTS', events }),
+      toggleNoteDone: (id) => dispatch({ type: 'TOGGLE_NOTE_DONE', id }),
       toggleOccurrence: (reminderId, iso) =>
         dispatch({ type: 'TOGGLE_OCCURRENCE', reminderId, iso }),
       updateReminder: (reminderId, patch) =>

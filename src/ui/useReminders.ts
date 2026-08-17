@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useStore } from '../store/appStore'
 import type { ChecklistItem } from '../types'
 import { computeStreak, isExpectedOn, sessionDates, todayIso } from '../store/streak'
+import { staleNotes, lastTouched, STALE_DAYS } from '../store/today'
 
 // Watches one-off checklist reminders and recurring goal reminders. When one
 // comes due (while the app is open), it raises an in-app toast plus a browser
@@ -29,6 +30,21 @@ export function useReminders() {
   useEffect(() => {
     const tick = () => {
       const now = Date.now()
+
+      // Workspaces that have gone quiet. Once per note per day — the key
+      // includes the date, so it won't re-fire in the same session or repeat
+      // itself before tomorrow.
+      for (const note of staleNotes(state.notes, new Date(now))) {
+        const key = `stale-${note.id}@${todayIso()}`
+        if (fired.current.has(key)) continue
+        fired.current.add(key)
+        const title = note.text.trim().split('\n')[0].slice(0, 48) || 'A note'
+        const days = Math.floor((now - lastTouched(note)) / 86400000)
+        show(
+          `"${title}" hasn't been touched in ${days} days. Still want it?`,
+          'Still open',
+        )
+      }
       // One-off checklist item reminders.
       for (const note of state.notes) {
         for (const seg of note.segments) {

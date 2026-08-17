@@ -7312,3 +7312,48 @@ input {
   color: var(--accent-ink);
   font-weight: 600;
 }
+
+/* ---- Ticking a workspace off ---------------------------------------------- */
+
+.note-done {
+  position: absolute;
+  right: 30px;
+  top: 10px;
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: transparent;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.note-item:hover .note-done,
+.note-item:focus-within .note-done {
+  opacity: 1;
+}
+.note-done:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+/* A ticked-off workspace stays visible even when not hovered — it's state now,
+   not an affordance. */
+.note-done.on {
+  opacity: 1;
+  background: #1f8a54;
+  border-color: #1f8a54;
+  color: #fff;
+}
+.note-item.is-done .ni-title {
+  text-decoration: line-through;
+}
+.note-item.is-done {
+  opacity: 0.55;
+}

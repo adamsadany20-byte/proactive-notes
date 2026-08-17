@@ -304,6 +304,13 @@ export interface Note {
   classification?: RemoteClassification
   // Cloud-tailored basic questions for this note (Classifier/Evolve tiers).
   tailoredQuestions?: TailoredQuestions
+  // Ticked off — the whole workspace is finished. Done notes drop out of the
+  // "Now" panel and stop nudging; they're kept, not deleted, so the record (and
+  // anything generated for them) survives.
+  doneAt?: number
+  // Last time the note was OPENED, as distinct from edited. "Haven't touched
+  // this in a while" has to count reading it, not just typing in it.
+  openedAt?: number
   // True once the user has declined the "start a streak?" offer for this goal,
   // so we stop asking (they can still opt in from the tracker later).
   streakDeclined?: boolean

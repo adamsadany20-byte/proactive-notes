@@ -8,6 +8,7 @@
 
 import type { Note, Reminder } from '../types'
 import { sessionDates } from '../store/streak'
+import { STALE_DAYS, lastTouched, staleNotes } from '../store/today'
 import { getClientId } from './api'
 
 const configuredApiBase = (import.meta as any).env?.VITE_API_BASE as
@@ -219,6 +220,31 @@ export async function disablePush(): Promise<void> {
 
 // --- schedule sync -----------------------------------------------------------
 
+// Nudges for workspaces that have gone quiet, projected into the SAME shape the
+// server sweep already understands — a 'sessions' reminder is just "due on these
+// dates", so no server change is needed at all.
+//
+// Three dates rather than one per day: the day it goes stale, then +3 and +7.
+// A forgotten note is worth mentioning a few times and then letting go; nagging
+// daily is how people turn notifications off.
+function projectStaleNudges(notes: Note[]) {
+  const iso = (ms: number) => new Date(ms).toISOString().slice(0, 10)
+  return staleNotes(notes).slice(0, 5).map((n) => {
+    const goesStaleAt = lastTouched(n) + STALE_DAYS * 86400000
+    const title = n.text.trim().split('\n')[0].slice(0, 48) || 'a note'
+    return {
+      id: `stale-${n.id}`,
+      title: `Still open: ${title}`,
+      target: undefined,
+      mode: 'sessions' as const,
+      weekdays: [] as number[],
+      time: '10:00',
+      completions: [] as string[],
+      sessionDates: [0, 3, 7].map((d) => iso(goesStaleAt + d * 86400000)),
+    }
+  })
+}
+
 // Project the client's reminders into the compact shape the server sweep needs.
 function projectReminders(reminders: Reminder[], notes: Note[]) {
   const noteById = new Map(notes.map((n) => [n.id, n]))
@@ -255,7 +281,10 @@ export async function syncReminderSchedule(
       method: 'POST',
       headers: await authHeaders(),
       body: JSON.stringify({
-        reminders: projectReminders(reminders, notes),
+        reminders: [
+          ...projectReminders(reminders, notes),
+          ...projectStaleNudges(notes),
+        ],
         tzOffset: tzOffset(),
         clientId: getClientId(),
       }),

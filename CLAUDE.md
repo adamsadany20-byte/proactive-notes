@@ -72,6 +72,43 @@ ranked correctly, ticking the hero from the panel removed it and promoted the
 next item with the summary updating, and the progress bar read 33% with the done
 item sunk to the bottom.
 
+### Ticking workspaces off + the 5-day "still open" nudge
+
+**`Note.doneAt`** — a whole workspace can be ticked off from its sidebar row
+(green check, strikethrough, dimmed). Done notes are *kept, not deleted*, and
+drop out of the Now panel entirely: nothing from a finished workspace should
+still be asking for attention.
+
+**`Note.openedAt`** — SELECT now records that a note was *entered*, distinct from
+edited. "Haven't touched this" has to count reading it, not just typing in it.
+Deliberately does NOT bump `updatedAt`, or merely opening a note would look like
+an edit to the Supabase sync.
+
+**One shared staleness rule** in [today.ts](src/store/today.ts) —
+`lastTouched()` / `isNoteStale()` / `staleNotes()` — used by all three consumers
+so they can't disagree: stale = not done, has text, and `max(openedAt,
+updatedAt, createdAt)` older than **`STALE_DAYS` (5)**.
+
+**Two delivery paths, no server change:**
+- *In-app* — [useReminders.ts](src/ui/useReminders.ts) raises a toast, keyed
+  `stale-{id}@{today}` so it fires once per note per day.
+- *Closed-app push* — `projectStaleNudges()` in
+  [push.ts](src/services/push.ts) projects each stale note as a **`sessions`-mode
+  pseudo-reminder**, which is just "due on these dates". The existing server
+  sweep already understands that shape, so this needed **zero** server work.
+  Dates are the day it goes stale, **+3 and +7** — a forgotten note is worth
+  mentioning a few times and then letting go; nagging daily is how people turn
+  notifications off. Capped at 5 notes.
+
+Stale items sort **most-neglected-first** within their band (`700 + max(0, 99 -
+daysStale)`) — a flat 700 tie-broke alphabetically and let a 6-day-old note
+outrank a 9-day-old one.
+
+Verified in-browser with four seeded notes: touched-today didn't nudge, 9-day and
+6-day did (in that order), and a 20-day note that was **ticked off** correctly
+stayed silent. The toast was confirmed by temporarily widening its 8s auto-hide
+(reverted) — earlier checks kept landing ~20s after load and missing the window.
+
 ### The proactive layer in the "Now" panel
 
 Three signals, all derived on-device from data the app already had. No network,

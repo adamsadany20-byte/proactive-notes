@@ -324,7 +324,7 @@ export function Sidebar({
   onOpenCalendar?: () => void
   onOpenSettings?: () => void
 }) {
-  const { state, select, createNote, remove } = useStore()
+  const { state, select, createNote, remove, toggleNoteDone } = useStore()
 
   const newNote = () => {
     createNote()
@@ -403,7 +403,7 @@ export function Sidebar({
           return (
             <div
               key={n.id}
-              className={`note-item ${n.id === state.selectedId ? 'active' : ''} ${
+              className={`note-item ${n.doneAt ? 'is-done' : ''} ${n.id === state.selectedId ? 'active' : ''} ${
                 n.segments.length > 0 ? 'is-workspace' : ''
               }`}
               role="button"
@@ -436,6 +436,18 @@ export function Sidebar({
                   <span className="ni-workspace">· Workspace</span>
                 )}
               </span>
+              <button
+                className={`note-done${n.doneAt ? ' on' : ''}`}
+                title={n.doneAt ? 'Reopen this workspace' : 'Tick this workspace off'}
+                aria-label={n.doneAt ? 'Reopen workspace' : 'Tick workspace off'}
+                aria-pressed={!!n.doneAt}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  toggleNoteDone(n.id)
+                }}
+              >
+                ✓
+              </button>
               <button
                 className="note-delete"
                 title="Delete note"
