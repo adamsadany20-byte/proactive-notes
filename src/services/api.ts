@@ -57,6 +57,9 @@ export interface BillingStatus {
   freeMode: boolean
   // True whenever the client may use paid features — always true in free mode.
   subscribed: boolean
+  // An owner account (OWNER_EMAILS / FREE_CLIENT_IDS on the server): never
+  // billed, never rate-limited, and never shown an upgrade prompt.
+  owner?: boolean
   // Lifetime amount actually paid, and the user's self-set spend limit (0 = none).
   paidPence?: number
   capPence?: number

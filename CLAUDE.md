@@ -72,6 +72,30 @@ ranked correctly, ticking the hero from the panel removed it and promoted the
 next item with the summary updating, and the progress bar read 33% with the done
 item sunk to the bottom.
 
+### Owner accounts by email (`OWNER_EMAILS`)
+
+`FREE_CLIENT_IDS` was browser-scoped — it died whenever storage was cleared and
+didn't follow you to another device. `OWNER_EMAILS` (comma-separated) allowlists
+by **email**, read off the Supabase JWT, so it follows the person.
+
+For an owner: `hasAccess()` / `hasClassifyAccess()` return true regardless of
+plan, `rateLimit()` is skipped entirely, and both `/api/config` and
+`/api/billing/status` report `owner: true`. The client uses that to unlock all
+tiers (`lockedFor()` short-circuits) and to suppress the paywall in
+`FeatureGenerator` — so an owner never sees an upgrade prompt.
+
+**Security note worth keeping in mind:** this is exactly as trustworthy as the
+token it reads. With `SUPABASE_JWT_SECRET` set the email is signature-verified
+and unforgeable — verified by sending a token carrying the owner email with a
+junk signature, which correctly came back `owner: false`. WITHOUT that secret the
+server decodes tokens unverified and anyone could claim the address, which is
+the same caveat that already applies to billing identity.
+
+What this does NOT bypass: the genuinely *time*-based behaviour — the learned
+rhythm needs ≥8 completions, stale nudges need 5 days of silence, streaks need
+occurrences. Those aren't permissions, they're thresholds for a claim being true;
+relaxing them for an owner would just display an invented pattern.
+
 ### Ticking workspaces off + the 5-day "still open" nudge
 
 **`Note.doneAt`** — a whole workspace can be ticked off from its sidebar row

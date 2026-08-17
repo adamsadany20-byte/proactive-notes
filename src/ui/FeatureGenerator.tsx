@@ -37,7 +37,10 @@ export function FeatureGenerator({ note }: Props) {
   const aiOn = state.settings.broaderAi
   // Paywalled only when billing is on and this client isn't subscribed. Free
   // mode (default) leaves this false so the generator stays fully usable.
-  const locked = !!state.billing?.billingEnabled && !state.billing?.subscribed
+  // Owner accounts are never paywalled and never see the upgrade pitch.
+  const owner = !!state.billing?.owner || !!state.config?.owner
+  const locked =
+    !owner && !!state.billing?.billingEnabled && !state.billing?.subscribed
 
   const goToCheckout = async () => {
     const { url, error } = await startSubscription('evolve')

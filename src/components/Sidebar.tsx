@@ -43,9 +43,11 @@ export function AiTierSelector() {
   // should see "limit reached", not a padlock offering to sell them the plan
   // they already own. Free mode (the default) leaves everything unlocked.
   const billingOn = !!billing?.billingEnabled
+  // Owner accounts own everything: nothing is locked and no price is quoted.
+  const owner = !!billing?.owner || !!cfg?.owner
   const plan = billing?.plan ?? 'none'
   const lockedFor = (id: Tier): boolean => {
-    if (!billingOn) return false
+    if (!billingOn || owner) return false
     if (id === 'classifier') return plan === 'none'
     if (id === 'evolve') return plan !== 'evolve'
     return false

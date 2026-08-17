@@ -196,9 +196,28 @@ const FREE_CLIENT_IDS = new Set(
     .filter(Boolean),
 )
 
-// The owner(s) — the never-billed client ids also gate the product-analytics
-// view (only the owner should see cross-user usage).
-const isOwner = (id) => !!(id && FREE_CLIENT_IDS.has(id))
+// Owner accounts by EMAIL. Easier to reason about than a browser-scoped
+// clientId: it follows the person across devices and survives clearing storage.
+// Everything an owner touches is unbilled and unpaywalled, and the client hides
+// its upgrade prompts for them.
+//
+// SECURITY: this is only as trustworthy as the token it reads. With
+// SUPABASE_JWT_SECRET set, the email comes off a signature-verified JWT and
+// cannot be forged. WITHOUT it the server decodes tokens unverified, so anyone
+// could claim this email — which is why the startup banner warns about it and
+// why it must be set before charging real money.
+const OWNER_EMAILS = new Set(
+  String(process.env.OWNER_EMAILS || '')
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean),
+)
+
+// The owner(s) — never billed, and the only ones who see the cross-user
+// analytics view. Matches on either the allowlisted email or clientId.
+const isOwner = (id, email) =>
+  !!(email && OWNER_EMAILS.has(String(email).toLowerCase())) ||
+  !!(id && FREE_CLIENT_IDS.has(id))
 
 // ---------------------------------------------------------------------------
 // Rate limiting on the routes that spend money.
@@ -240,7 +259,7 @@ function rateLimit(tier, emptyShape = {}, message) {
     if (!(limit > 0)) return next()
 
     const key = req.userId || req.clientId || req.body?.clientId || req.ip || 'anon'
-    if (FREE_CLIENT_IDS.has(key)) return next()
+    if (isOwner(key, req.userEmail)) return next()
 
     const now = Date.now()
     if (rateHits.size > 2000) sweepRateHits(now)
@@ -275,18 +294,18 @@ const FEEDBACK_WEBHOOK_URL = (process.env.FEEDBACK_WEBHOOK_URL || '').trim()
 // Free mode (billing off) → always allowed, so editing/trying never gets gated.
 // With billing on, the Evolve subscription unlocks the coding/world-knowledge
 // features — unless the user's own spend limit has been reached.
-async function hasAccess(clientId) {
+async function hasAccess(clientId, email) {
   if (!BILLING_ENABLED) return true
-  if (clientId && FREE_CLIENT_IDS.has(clientId)) return true
+  if (isOwner(clientId, email)) return true
   if (!(await hasEvolve(clientId))) return false
   return !capReached(await getEntitlement(clientId))
 }
 
 // Classification is unlocked by EITHER paid plan (classifier or evolve), and
 // stops at the user's spend limit like everything else.
-async function hasClassifyAccess(clientId) {
+async function hasClassifyAccess(clientId, email) {
   if (!BILLING_ENABLED) return true
-  if (clientId && FREE_CLIENT_IDS.has(clientId)) return true
+  if (isOwner(clientId, email)) return true
   if (!(await hasClassifier(clientId))) return false
   return !capReached(await getEntitlement(clientId))
 }
@@ -477,6 +496,10 @@ app.use((req, res, next) => {
       ? verifySupabaseJwt(token)
       : decodeJwtUnverified(token)
     if (payload?.sub) req.userId = payload.sub // Supabase user UUID
+    // The email rides on the same verified token, so owner-by-email is exactly
+    // as trustworthy as owner-by-id (and no more — see the note on
+    // SUPABASE_JWT_SECRET above; without it, nothing here is verified at all).
+    if (payload?.email) req.userEmail = String(payload.email).trim().toLowerCase()
     // A forged/expired token yields no userId → treated as anonymous below.
   }
   if (!req.userId) {
@@ -513,7 +536,7 @@ app.get('/api/config', async (req, res) => {
     // Whether this client is an owner (in FREE_CLIENT_IDS) — gates the product
     // analytics view. Read from the query so the unauthenticated config call can
     // still identify the owner by their clientId.
-    owner: isOwner(req.userId || req.query.clientId),
+    owner: isOwner(req.userId || req.query.clientId, req.userEmail),
   })
 })
 
@@ -640,17 +663,19 @@ app.get('/api/billing/status', async (req, res) => {
   try {
     const [e, subscribed, classifier, evolve] = await Promise.all([
       getEntitlement(key),
-      hasAccess(key),
-      hasClassifyAccess(key),
+      hasAccess(key, req.userEmail),
+      hasClassifyAccess(key, req.userEmail),
       hasEvolve(key),
     ])
     const plan = e?.plan || 'none'
-    const freeBypass = !!(key && FREE_CLIENT_IDS.has(key))
+    const freeBypass = isOwner(key, req.userEmail)
     res.json({
       billingEnabled: BILLING_ENABLED,
       billingConfigured: billingConfigured(),
       freeMode: !BILLING_ENABLED,
       subscribed,
+      // Owner accounts are never billed and never shown an upgrade prompt.
+      owner: freeBypass,
       // Subscription state + the two metered pools this cycle.
       plan,
       hasClassifier: classifier || freeBypass || !BILLING_ENABLED,
@@ -1232,7 +1257,7 @@ If the candidate is just a personal name or something not in world knowledge, se
 app.post('/api/enrich', rateLimit('expensive', { configured: true }), async (req, res) => {
   const { text = '', candidate = '', backend } = req.body || {}
   const key = req.userId || req.body?.clientId
-  if (!(await hasAccess(key))) return res.status(402).json(await paywallBody(key))
+  if (!(await hasAccess(key, req.userEmail))) return res.status(402).json(await paywallBody(key))
   const resolved = resolveBackend(backend)
   if (!resolved) return res.json({ configured: false })
   if (!candidate.trim()) return res.json({ configured: true, recognized: false })
@@ -1318,7 +1343,7 @@ Return JSON only.`
 app.post('/api/classify', rateLimit('cheap', { classified: false }), async (req, res) => {
   const { text = '', localKind = '', localConfidence = 0, backend } = req.body || {}
   const key = req.userId || req.body?.clientId
-  if (!(await hasClassifyAccess(key)))
+  if (!(await hasClassifyAccess(key, req.userEmail)))
     return res.status(402).json(await paywallBody(key, { classified: false }, 'classifier'))
   const resolved = resolveBackend(backend)
   if (!resolved) return res.json({ configured: false })
@@ -1399,7 +1424,7 @@ Return JSON only.`
 app.post('/api/questions', rateLimit('cheap', { questions: [] }), async (req, res) => {
   const { text = '', kind = '', topic = '', backend } = req.body || {}
   const key = req.userId || req.body?.clientId
-  if (!(await hasClassifyAccess(key)))
+  if (!(await hasClassifyAccess(key, req.userEmail)))
     return res.status(402).json(await paywallBody(key, { questions: [] }, 'classifier'))
   const resolved = resolveBackend(backend)
   if (!resolved) return res.json({ configured: false, questions: [] })
@@ -1481,7 +1506,7 @@ icon, and a one-line description of what it does for this note.`
 app.post('/api/suggest', rateLimit('cheap', { suggestions: [] }), async (req, res) => {
   const { text = '', backend, context = '' } = req.body || {}
   const key = req.userId || req.body?.clientId
-  if (!(await hasAccess(key)))
+  if (!(await hasAccess(key, req.userEmail)))
     return res.status(402).json(await paywallBody(key, { suggestions: [] }))
   const resolved = resolveBackend(backend)
   if (!resolved) return res.json({ configured: false, suggestions: [] })
@@ -1596,7 +1621,7 @@ Examples of recommendations:
 app.post('/api/recommend', rateLimit('expensive', { recommendations: [] }), async (req, res) => {
   const { text = '', backend, context = '' } = req.body || {}
   const key = req.userId || req.body?.clientId
-  if (!(await hasAccess(key)))
+  if (!(await hasAccess(key, req.userEmail)))
     return res.status(402).json(await paywallBody(key, { recommendations: [] }))
   const resolved = resolveBackend(backend)
   if (!resolved) return res.json({ configured: false, recommendations: [] })
@@ -1717,7 +1742,7 @@ Styling rules so it blends in seamlessly:
 app.post('/api/generate-feature', rateLimit('cheap', { configured: true }), async (req, res) => {
   const { label = '', description = '', text = '', backend, context = '' } = req.body || {}
   const key = req.userId || req.body?.clientId
-  if (!(await hasAccess(key))) return res.status(402).json(await paywallBody(key))
+  if (!(await hasAccess(key, req.userEmail))) return res.status(402).json(await paywallBody(key))
   const resolved = resolveBackend(backend)
   if (!resolved) return res.json({ configured: false })
   if (!label.trim()) return res.json({ configured: true, code: '' })
