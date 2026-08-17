@@ -2,6 +2,7 @@ import { useStore } from '../store/appStore'
 import type { CalendarEvent } from '../types'
 import { relativeDay } from '../store/calendar'
 import { reminderCalendarEvents } from '../store/streak'
+import { TodayPanel } from './TodayPanel'
 import { GlobalStreak } from './GlobalStreak'
 import { DayGlyphIcon, FlameIcon } from '../ui/icons'
 
@@ -63,6 +64,7 @@ export function CalendarPanel() {
   return (
     <div className="col col-cal">
       <GlobalStreak />
+      <TodayPanel />
       <div className="cal-head">
         <DayGlyphIcon className="ico" /> Calendar
       </div>

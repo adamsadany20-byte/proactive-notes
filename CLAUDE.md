@@ -35,6 +35,43 @@ migration has been applied, and the webhook must subscribe to
 
 ## Recent Work (Jul 2026)
 
+### "Now" panel — the 1→done half of the app
+
+The app was excellent at 0→1 (a blank note becomes a workspace) and absent at
+1→done: once a checklist had twelve items, nothing helped you work THROUGH them.
+Measurably — segment code had **zero** hits for progress, reorder, priority,
+estimate, subtask or dependency, and checklist items never surfaced outside
+their own note. `GlobalStreak` covered streak commitments only.
+
+**[today.ts](src/store/today.ts) `collectToday()`** merges what already existed
+in five separate places: overdue/due checklist items (`remindAt`), study sessions
+today, streak commitments due today, today's calendar events, project tasks in
+`doing`, and — the proactive one — **stale notes** (open items, untouched 7+
+days), which nothing in the app ever mentioned again. Pure, deterministic, no
+network and no AI: this is the panel a user sees most, so it must never spin or
+cost money.
+
+Ranking is by **urgency in bands**, not chronology: overdue `0`, due-today
+`100-199` (scaled by clock time), commitments `200`, sessions `300`, calendar
+`400-499`, doing `600`, stale `700`. The scaling matters — an early version used
+raw minutes, so an item due at 23:30 scored ~1510 and sorted *below* a backlog
+task.
+
+**[TodayPanel.tsx](src/components/TodayPanel.tsx)** renders it under
+`GlobalStreak`. The top item is called out as **"Start here"** — a ranked list
+still makes you choose; naming one thing is what turns a list into a
+recommendation. Everything tickable completes in place (writing back through
+`editSegment`/`toggleOccurrence`) and re-ranks immediately.
+
+Also: checklists gained a **progress bar** and **finished items sink** (display
+order only, stable sort — the stored order is untouched so nothing jumps while
+editing).
+
+Verified in-browser with seeded data: 1 overdue + 1 due-today + 1 doing + 1 stale
+ranked correctly, ticking the hero from the panel removed it and promoted the
+next item with the summary updating, and the progress bar read 33% with the done
+item sunk to the bottom.
+
 ### Vercel deployment (alongside Render)
 
 Deploys as **static `dist/` on Vercel's CDN + the entire Express app as ONE

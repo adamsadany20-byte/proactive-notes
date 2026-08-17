@@ -260,10 +260,31 @@ function ChecklistSeg({ note, seg }: { note: Note; seg: Segment }) {
   }
 
   const done = items.filter((i) => i.done).length
+  const pct = items.length ? Math.round((done / items.length) * 100) : 0
+  // Display order only — finished work sinks so the open items are what you see
+  // first. The stored order is untouched, so nothing jumps around while editing
+  // beyond the item you just ticked. Array.sort is stable, so items keep their
+  // relative order within each group.
+  const ordered = [...items].sort((a, b) => Number(a.done) - Number(b.done))
 
   return (
     <SegShell seg={seg} meta={items.length ? `${done}/${items.length}` : undefined}>
-      {items.map((i) => (
+      {items.length > 1 && (
+        <div
+          className="check-progress"
+          role="progressbar"
+          aria-valuemin={0}
+          aria-valuemax={items.length}
+          aria-valuenow={done}
+          aria-label={`${done} of ${items.length} done`}
+        >
+          <div
+            className={`check-progress-fill${pct === 100 ? ' is-complete' : ''}`}
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      )}
+      {ordered.map((i) => (
         <div key={i.id} className={`check-item editable ${i.done ? 'done' : ''}`}>
           <button
             className={`check-box ${i.done ? 'on' : ''}`}
