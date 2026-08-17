@@ -189,6 +189,22 @@ content and linked back onto the note.
   that type for the note (`Note.docsDeclined`). Created files list under it and
   persist (`Note.docs: DocLink[]`, synced via the whole-note Supabase row).
   Per-type accents: doc blue, sheet green, slides amber.
+- **Sheets get real column names, with no AI call.** `seedToRows(title, seed, kind)`
+  used to put the note title in A1 and split lines on commas — a grid, but an
+  anonymous one. It now uses the note's **kind** to pick headers
+  (`SHEET_TEMPLATES`: finance → `Item | Amount | Due | Notes`, travel →
+  `Item | Qty | Packed`, recipe → `Ingredient | Quantity`, …) and lifts a
+  trailing amount ("rent 900") or leading quantity ("500g flour", "2x shirts")
+  out of the text into its own cell. If the note is ALREADY tabular it uses its
+  own header row when one looks like headers, else names the columns from the
+  kind. Rows are padded rectangular. A1 is now a header row, not a redundant
+  title (the file is already named after the note). Deterministic and free —
+  an AI-structured version would have cost ~0.2p a sheet, which is cheap but
+  buys little over this. The client sends `kind` with the create request.
+- **`/api/google/create` is rate-limited** (`cheap` bucket, with its own 429
+  message since no AI runs there). The Google token is single-user, so every
+  call writes a file into the CONNECTED account's Drive — uncapped, an open
+  endpoint lets anyone fill the owner's Drive with junk.
 - **Creation** — `POST /api/google/create` (server/index.js) creates the file via
   the Docs/Sheets/Slides APIs and seeds it (doc: note text as body; sheet:
   lines→rows, commas→cols via `seedToRows`; slides: note title/subtitle on the

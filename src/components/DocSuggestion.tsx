@@ -43,7 +43,12 @@ export function DocSuggestion({ note }: { note: Note }) {
     setBusy(type)
     try {
       if (connected) {
-        const res = await createGoogleDoc({ type, title, seed: note.text })
+        const res = await createGoogleDoc({
+          type,
+          title,
+          seed: note.text,
+          kind: note.kind,
+        })
         if (res.ok && res.doc) {
           const link: DocLink = {
             id: res.doc.id,

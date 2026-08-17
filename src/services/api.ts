@@ -480,6 +480,9 @@ export async function createGoogleDoc(input: {
   type: 'doc' | 'sheet' | 'slides'
   title: string
   seed?: string
+  // The note's classification. Lets the server pick real column names for a
+  // sheet ("Item | Amount | Due" for finance) instead of an unlabelled grid.
+  kind?: string
 }): Promise<CreateDocResult> {
   const r = await safeJson<CreateDocResult>(API_BASE + '/api/google/create', {
     method: 'POST',

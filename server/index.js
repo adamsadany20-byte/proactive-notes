@@ -234,7 +234,7 @@ function sweepRateHits(now) {
 // Express middleware. `emptyShape` mirrors the paywall convention: routes return
 // their own empty payload alongside the error so the UI degrades quietly instead
 // of choking on a missing field.
-function rateLimit(tier, emptyShape = {}) {
+function rateLimit(tier, emptyShape = {}, message) {
   return (req, res, next) => {
     const limit = tier === 'expensive' ? RATE_EXPENSIVE : RATE_CHEAP
     if (!(limit > 0)) return next()
@@ -250,10 +250,12 @@ function rateLimit(tier, emptyShape = {}) {
     if (recent.length >= limit) {
       const retryAfter = Math.ceil((RATE_WINDOW_MS - (now - recent[0])) / 1000)
       res.set('Retry-After', String(retryAfter))
+      const mins = Math.ceil(retryAfter / 60)
       return res.status(429).json({
-        error: `That's a lot of AI requests in one go — try again in ${Math.ceil(
-          retryAfter / 60,
-        )} min. (Each of these costs real money to run.)`,
+        error:
+          message?.(mins) ??
+          `That's a lot of AI requests in one go — try again in ${mins} min. ` +
+            `(Each of these costs real money to run.)`,
         reason: 'rate_limited',
         retryAfter,
         ...emptyShape,
@@ -1938,8 +1940,19 @@ app.post('/api/google/link', async (req, res) => {
   res.json({ ok: true })
 })
 
-app.post('/api/google/create', async (req, res) => {
-  const { type, title, seed } = req.body || {}
+// Rate-limited: the Google token is single-user, so every call creates a file
+// in the CONNECTED account's Drive. Without a cap, an open endpoint means anyone
+// can fill the owner's Drive with junk. No AI runs here, so 'cheap' is the right
+// bucket — this is spam protection, not spend protection.
+app.post(
+  '/api/google/create',
+  rateLimit(
+    'cheap',
+    { ok: false },
+    (mins) => `That's a lot of files at once — try again in ${mins} min.`,
+  ),
+  async (req, res) => {
+  const { type, title, seed, kind } = req.body || {}
   if (!['doc', 'sheet', 'slides'].includes(type))
     return res.status(400).json({ ok: false, error: 'bad_type' })
   if (!calendarConfigured())
@@ -1956,7 +1969,7 @@ app.post('/api/google/create', async (req, res) => {
     let doc
     if (type === 'doc') doc = await createDoc(google, client, cleanTitle, seedText)
     else if (type === 'sheet')
-      doc = await createSheet(google, client, cleanTitle, seedText)
+      doc = await createSheet(google, client, cleanTitle, seedText, kind)
     else doc = await createSlides(google, client, cleanTitle, seedText)
     res.json({ ok: true, doc: { ...doc, type, title: cleanTitle } })
   } catch (err) {
@@ -1967,7 +1980,8 @@ app.post('/api/google/create', async (req, res) => {
     }
     res.status(502).json({ ok: false, error: 'create_failed' })
   }
-})
+  },
+)
 
 // Create a Google Doc and seed it with the note's text as body paragraphs.
 async function createDoc(google, auth, title, seed) {
@@ -1988,13 +2002,13 @@ async function createDoc(google, auth, title, seed) {
 
 // Create a Google Sheet and seed rows from the note (lines → rows, commas →
 // columns), so a list or a "£40 rent / £12 phone" note lands as a real grid.
-async function createSheet(google, auth, title, seed) {
+async function createSheet(google, auth, title, seed, kind) {
   const sheets = google.sheets({ version: 'v4', auth })
   const { data } = await sheets.spreadsheets.create({
     requestBody: { properties: { title } },
   })
   const id = data.spreadsheetId
-  const values = seedToRows(title, seed)
+  const values = seedToRows(title, seed, kind)
   if (values.length) {
     await sheets.spreadsheets.values.update({
       spreadsheetId: id,
@@ -2006,21 +2020,140 @@ async function createSheet(google, auth, title, seed) {
   return { id, url: data.spreadsheetUrl || `https://docs.google.com/spreadsheets/d/${id}/edit` }
 }
 
-// Turn note text into a 2D array of cells. A leading header row is always the
-// note's title so the sheet isn't anonymous; each subsequent non-empty line
-// becomes a row, split on commas / tabs / " - " / " — " into columns.
-function seedToRows(title, seed) {
-  const rows = [[title]]
-  for (const raw of seed.split('\n')) {
-    const line = raw.trim().replace(/^[-*•\d.)\]]+\s*/, '')
-    if (!line) continue
-    const cells = line
-      .split(/\s*[,\t]\s*|\s+[-—]\s+/)
-      .map((c) => c.trim())
-      .filter(Boolean)
-    rows.push(cells.length ? cells : [line])
+// ---------------------------------------------------------------------------
+// Turning a note into a real spreadsheet — headers and all, with no AI call.
+//
+// The old version put the note title in A1 and split every line on commas. That
+// produced a grid, but an anonymous one: no column names, and a "rent 900" line
+// became two cells with nothing saying which was which.
+//
+// We already know the note's KIND and have the raw text, which is enough to do
+// this deterministically: pick column names from the kind, then pull the numbers
+// and quantities out of each line into their own columns. Free, instant, and
+// nothing leaves the server.
+//
+// The file itself is already named after the note, so A1 is a header row now
+// rather than a redundant title.
+// ---------------------------------------------------------------------------
+
+// Column layouts per note kind. Chosen so the FIRST column is always the thing
+// itself and later columns are what you'd want to fill in about it.
+const SHEET_TEMPLATES = {
+  finance: { headers: ['Item', 'Amount', 'Due', 'Notes'], amount: true },
+  purchase: { headers: ['Option', 'Price', 'Where', 'Notes'], amount: true },
+  travel: { headers: ['Item', 'Qty', 'Packed'], qty: true },
+  recipe: { headers: ['Ingredient', 'Quantity'], qty: true },
+  media: { headers: ['Title', 'Status', 'Notes'] },
+  academic: { headers: ['Topic', 'Confidence', 'Notes'] },
+  health: { headers: ['Item', 'Date', 'Notes'] },
+  tasks: { headers: ['Task', 'Done', 'Notes'] },
+  project: { headers: ['Task', 'Owner', 'Status'] },
+  goal: { headers: ['Step', 'Target', 'Done'] },
+  event: { headers: ['Item', 'Who', 'Notes'] },
+}
+const DEFAULT_TEMPLATE = { headers: ['Item', 'Notes'] }
+
+// A trailing money/number on a line — "rent 900", "Phone £12.50", "gym 40".
+const TRAILING_AMOUNT = /\s*([£$€]\s?\d[\d,]*(?:\.\d+)?|\d[\d,]*(?:\.\d+)?)\s*$/
+// A leading quantity — "2x socks", "3 shirts", "500g flour".
+const LEADING_QTY = /^(\d+\s*(?:x|×)?\s*(?:g|kg|ml|l|tbsp|tsp|cups?)?)\s+(.*)$/i
+
+// Strip list markers so "- rent 900" and "1) rent 900" both come through clean.
+function cleanLine(raw) {
+  return raw.trim().replace(/^[-*•\u2023\u25aa]\s*/, '').replace(/^\d+[.)\]]\s*/, '').trim()
+}
+
+function splitCells(line) {
+  return line
+    .split(/\s*[,\t;]\s*|\s+[-—]\s+/)
+    .map((c) => c.trim())
+    .filter(Boolean)
+}
+
+// Does this row read like column names rather than data? Header rows are short,
+// wordy, and contain no bare numbers or currency.
+function looksLikeHeaderRow(cells) {
+  if (cells.length < 2) return false
+  return cells.every(
+    (c) => c.length <= 24 && !/^[£$€]?\s?\d/.test(c) && !/\d{3,}/.test(c),
+  )
+}
+
+// Pad/trim every row to the same width so the grid is rectangular — Sheets
+// renders a ragged array with confusing gaps otherwise.
+function rectangular(rows, width) {
+  return rows.map((r) => {
+    const out = r.slice(0, width)
+    while (out.length < width) out.push('')
+    return out
+  })
+}
+
+// Generic names when the data is already multi-column but unlabelled.
+function inferHeaders(width, kind) {
+  const tpl = SHEET_TEMPLATES[kind] ?? DEFAULT_TEMPLATE
+  const out = tpl.headers.slice(0, width)
+  while (out.length < width) out.push(`Column ${out.length + 1}`)
+  return out
+}
+
+function seedToRows(title, seed, kind) {
+  const lines = String(seed || '')
+    .split('\n')
+    .map(cleanLine)
+    .filter(Boolean)
+  if (!lines.length) return []
+
+  // The note's own first line is usually a sentence describing the thing, not a
+  // row of it ("Monthly budget:"). Drop it when it reads like a heading.
+  if (lines.length > 1 && /[:：]\s*$/.test(lines[0])) lines.shift()
+  if (!lines.length) return []
+
+  const split = lines.map(splitCells)
+  const multiCol = split.filter((c) => c.length > 1).length
+
+  // CASE 1 — the note is already tabular (most lines have several fields).
+  // Use its own header row if it has one, else name the columns from the kind.
+  if (multiCol >= Math.max(2, Math.ceil(lines.length * 0.6))) {
+    let headers
+    let body = split
+    if (looksLikeHeaderRow(split[0])) {
+      headers = split[0]
+      body = split.slice(1)
+    } else {
+      headers = inferHeaders(Math.max(...split.map((c) => c.length)), kind)
+    }
+    const width = Math.max(headers.length, ...body.map((c) => c.length))
+    return [
+      ...rectangular([headers], width),
+      ...rectangular(body, width),
+    ]
   }
-  return rows.length > 1 ? rows : []
+
+  // CASE 2 — a plain list. Give it real columns from the kind, and lift any
+  // trailing amount or leading quantity out of the text into its own cell.
+  const tpl = SHEET_TEMPLATES[kind] ?? DEFAULT_TEMPLATE
+  const width = tpl.headers.length
+  const body = lines.map((line) => {
+    const row = new Array(width).fill('')
+    let text = line
+    if (tpl.amount) {
+      const m = text.match(TRAILING_AMOUNT)
+      if (m) {
+        text = text.slice(0, m.index).trim()
+        row[1] = m[1].replace(/\s+/g, '')
+      }
+    } else if (tpl.qty) {
+      const m = text.match(LEADING_QTY)
+      if (m) {
+        row[1] = m[1].trim()
+        text = m[2].trim()
+      }
+    }
+    row[0] = text
+    return row
+  })
+  return [tpl.headers, ...body]
 }
 
 // Create a Google Slides deck. The default deck has one title slide; we set its
