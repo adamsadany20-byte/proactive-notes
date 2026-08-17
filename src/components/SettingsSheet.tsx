@@ -60,6 +60,15 @@ export function SettingsSheet({
             Notes evolve as you type. The local engine handles everything; Evolve
             AI is only consulted for richer suggestions and tool generation.
           </p>
+          {/* Legal footnote. Opens in a new tab so a half-written note is never
+              lost to a navigation. */}
+          <p className="settings-legal">
+            Your notes stay on this device unless you sign in.{' '}
+            <a href="/privacy" target="_blank" rel="noreferrer">
+              Privacy Policy
+            </a>{' '}
+            — what we collect, what goes to the AI, and your rights.
+          </p>
           {isSupabaseEnabled && (
             <button
               className="side-signout"

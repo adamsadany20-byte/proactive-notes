@@ -302,7 +302,10 @@ export function Beta() {
 
       <footer className="lp-foot">
         <span>Evolve — notes that think ahead</span>
-        <a href="/">Open the app</a>
+        <span className="lp-foot-links">
+          <a href="/privacy">Privacy</a>
+          <a href="/">Open the app</a>
+        </span>
       </footer>
     </div>
   )

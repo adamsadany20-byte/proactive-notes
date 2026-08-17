@@ -4,6 +4,7 @@ import './index.css'
 import { App } from './App'
 import { Landing } from './components/Landing'
 import { Beta } from './components/Beta'
+import { PrivacyPolicy } from './components/PrivacyPolicy'
 import { StoreProvider } from './store/appStore'
 import { isSupabaseEnabled, supabase } from './services/supabase'
 import { AuthGate } from './components/AuthGate'
@@ -33,6 +34,8 @@ try {
   const isLanding = path === '/welcome'
   // The beta recruitment page — same standalone treatment as /welcome.
   const isBeta = path === '/beta'
+  // The privacy notice — standalone, and reachable without an account.
+  const isPrivacy = path === '/privacy'
 
   const appContent = (
     <StoreProvider>
@@ -44,7 +47,9 @@ try {
 
   root.render(
     <StrictMode>
-      {isBeta ? (
+      {isPrivacy ? (
+        <PrivacyPolicy />
+      ) : isBeta ? (
         <Beta />
       ) : isLanding ? (
         <Landing />
