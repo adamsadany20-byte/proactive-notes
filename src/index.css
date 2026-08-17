@@ -7298,3 +7298,17 @@ input {
   color: var(--ink-faint);
   font-variant-numeric: tabular-nums;
 }
+
+/* Learned rhythm + day-load lines in the Now panel. Quiet by default; the
+   rhythm line brightens only when RIGHT NOW is the user's habitual window. */
+.today-rhythm,
+.today-load {
+  margin: 0 0 9px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--ink-faint);
+}
+.today-rhythm.is-now {
+  color: var(--accent-ink);
+  font-weight: 600;
+}

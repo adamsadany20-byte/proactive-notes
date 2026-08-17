@@ -72,6 +72,40 @@ ranked correctly, ticking the hero from the panel removed it and promoted the
 next item with the summary updating, and the progress bar read 33% with the done
 item sunk to the bottom.
 
+### The proactive layer in the "Now" panel
+
+Three signals, all derived on-device from data the app already had. No network,
+no AI, no cost.
+
+**1. Time-of-day framing.** `dayPhase()` / `todayHeading()` — the panel is "Your
+day" at 7am, "Now" in the afternoon, "Left today" in the evening, "Still open"
+late. Same list; different message about it.
+
+**2. Learned rhythm — when this person actually gets things done.** Needed
+history that didn't exist, so `Habits.completionLog` was added: a timestamp each
+time anything is ticked off (checklist item, board task, streak commitment),
+de-duplicated within a minute (clearing five things is ONE work session, not
+five signals), capped at 250, **local-only and never synced** — same treatment as
+`shoppingLog`, because it's behavioural and worthless to anyone but this device.
+`describeRhythm()` finds the dominant weekday and day-phase and renders
+"You usually clear things on Monday afternoons" — upgrading to "— this is that
+window" when now falls inside it.
+
+It **stays silent unless the pattern is real**: ≥8 samples AND ≥34% share on both
+the weekday and the phase. A flat spread returns null rather than inventing a
+habit out of noise. Verified both ways.
+
+**3. Day load.** `dayLoad()` — having four things to do reads differently when
+three hours are already booked. Both numbers were to hand; nothing said them
+together. Surfaces only when it's genuinely notable (≥90 min booked AND ≥3
+actionable items).
+
+Verified in-browser: a log weighted 10/13 to the current weekday+phase produced
+"You usually clear things on Monday afternoons — this is that window" with the
+is-now styling; flattening the same log to a spread removed the line entirely
+while the rest of the panel kept working; 3.5h of meetings + 3 tasks produced the
+load line.
+
 ### Vercel deployment (alongside Render)
 
 Deploys as **static `dist/` on Vercel's CDN + the entire Express app as ONE

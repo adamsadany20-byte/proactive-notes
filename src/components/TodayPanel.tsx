@@ -1,6 +1,16 @@
 import { useMemo } from 'react'
 import { useStore } from '../store/appStore'
-import { collectToday, todaySummary, type TodayItem, type TodayKind } from '../store/today'
+import {
+  collectToday,
+  todaySummary,
+  dayPhase,
+  todayHeading,
+  describeRhythm,
+  dayLoad,
+  loadLabel,
+  type TodayItem,
+  type TodayKind,
+} from '../store/today'
 
 // "What should I do right now", merged across every note.
 //
@@ -20,17 +30,25 @@ const META: Record<TodayKind, { icon: string; label: string }> = {
 }
 
 export function TodayPanel() {
-  const { state, select, editSegment, toggleOccurrence } = useStore()
+  const { state, select, editSegment, toggleOccurrence, logCompletion } = useStore()
 
   const items = useMemo(
     () => collectToday(state.notes, state.calendar, state.reminders),
     [state.notes, state.calendar, state.reminders],
   )
 
+  // Time of day, learned rhythm, and how booked the day already is. All local.
+  const phase = dayPhase()
+  const heading = todayHeading(phase, items)
+  const rhythm = describeRhythm(state.habits.completionLog ?? [])
+  const load = dayLoad(state.calendar, items)
+
   if (!items.length) return null
 
   // Tick something off without leaving the panel.
   const complete = (it: TodayItem) => {
+    // Feeds the rhythm: when this person actually gets things done.
+    logCompletion()
     if (it.reminderId) {
       toggleOccurrence(it.reminderId, new Date().toISOString().slice(0, 10))
       return
@@ -63,9 +81,20 @@ export function TodayPanel() {
   return (
     <section className="today" aria-label="What to do now">
       <div className="today-head">
-        <h2 className="today-title">Now</h2>
+        <h2 className="today-title">{heading}</h2>
         <span className="today-sum">{todaySummary(items)}</span>
       </div>
+
+      {/* Only speaks when the pattern is real — see describeRhythm's thresholds. */}
+      {rhythm && (
+        <p className={`today-rhythm${rhythm.isNow ? ' is-now' : ''}`}>
+          {rhythm.isNow
+            ? `You usually clear things on ${rhythm.label} — this is that window.`
+            : `You usually get through these on ${rhythm.label}.`}
+        </p>
+      )}
+
+      {load.notable && <p className="today-load">{loadLabel(load)}</p>}
 
       {/* The single next thing. A ranked list still makes you choose. */}
       <div className={`today-hero is-${first.kind}`}>

@@ -215,3 +215,146 @@ export function todaySummary(items: TodayItem[]): string {
 }
 
 export { todayIso }
+
+// ---------------------------------------------------------------------------
+// The proactive layer: noticing things about the day, and about the user.
+// All derived from data already on the device. No network, no AI, no cost.
+// ---------------------------------------------------------------------------
+
+export type DayPhase = 'morning' | 'afternoon' | 'evening' | 'night'
+
+export function dayPhase(now: Date = new Date()): DayPhase {
+  const h = now.getHours()
+  if (h >= 5 && h < 12) return 'morning'
+  if (h >= 12 && h < 18) return 'afternoon'
+  if (h >= 18 && h < 23) return 'evening'
+  return 'night'
+}
+
+// The panel's heading changes with the time of day, because "here's your day"
+// at 7am and "still open" at 10pm are different messages about the same list.
+export function todayHeading(phase: DayPhase, items: TodayItem[]): string {
+  const actionable = items.filter((i) => i.kind !== 'event' && i.kind !== 'stale').length
+  if (!actionable) return phase === 'morning' ? 'Your day' : 'Now'
+  switch (phase) {
+    case 'morning':
+      return 'Your day'
+    case 'afternoon':
+      return 'Now'
+    case 'evening':
+      return 'Left today'
+    case 'night':
+      return 'Still open'
+  }
+}
+
+// ---- Learned rhythm ---------------------------------------------------------
+//
+// When does this person actually get things done? Derived from the local
+// completion log (see Habits.completionLog): the dominant weekday and part of
+// the day across their history. It only speaks when the pattern is real —
+// enough history AND a genuinely dominant slot — otherwise it stays quiet
+// rather than inventing a habit out of three data points.
+
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+const PHASE_WORD: Record<DayPhase, string> = {
+  morning: 'mornings',
+  afternoon: 'afternoons',
+  evening: 'evenings',
+  night: 'late nights',
+}
+
+// Below this there isn't enough history to claim a habit.
+const RHYTHM_MIN_SAMPLES = 8
+// The slot has to actually stand out, not just edge ahead of a flat spread.
+const RHYTHM_MIN_SHARE = 0.34
+
+export interface Rhythm {
+  // "Sunday evenings"
+  label: string
+  weekday: number
+  phase: DayPhase
+  // True when right now falls inside that habitual window.
+  isNow: boolean
+  samples: number
+}
+
+export function describeRhythm(log: number[], now: Date = new Date()): Rhythm | null {
+  if (!log || log.length < RHYTHM_MIN_SAMPLES) return null
+
+  const byDay = new Array(7).fill(0)
+  const byPhase: Record<DayPhase, number> = {
+    morning: 0,
+    afternoon: 0,
+    evening: 0,
+    night: 0,
+  }
+  for (const ts of log) {
+    const d = new Date(ts)
+    if (Number.isNaN(d.getTime())) continue
+    byDay[d.getDay()]++
+    byPhase[dayPhase(d)]++
+  }
+
+  const weekday = byDay.indexOf(Math.max(...byDay))
+  const phase = (Object.keys(byPhase) as DayPhase[]).reduce((a, b) =>
+    byPhase[a] >= byPhase[b] ? a : b,
+  )
+
+  // Both halves must be genuinely dominant, or we're reading noise.
+  if (byDay[weekday] / log.length < RHYTHM_MIN_SHARE) return null
+  if (byPhase[phase] / log.length < RHYTHM_MIN_SHARE) return null
+
+  return {
+    label: `${WEEKDAYS[weekday]} ${PHASE_WORD[phase]}`,
+    weekday,
+    phase,
+    isNow: now.getDay() === weekday && dayPhase(now) === phase,
+    samples: log.length,
+  }
+}
+
+// ---- How full the day already is -------------------------------------------
+//
+// Having four things to do matters differently when three hours are already
+// booked. Both numbers are to hand; nothing was saying them together.
+
+export interface DayLoad {
+  bookedMins: number
+  actionable: number
+  // Only worth surfacing when there's both real work AND real commitments.
+  notable: boolean
+}
+
+export function dayLoad(
+  calendar: CalendarEvent[],
+  items: TodayItem[],
+  now: Date = new Date(),
+): DayLoad {
+  const today = isoOf(now)
+  let bookedMins = 0
+  for (const e of calendar) {
+    if (e.date !== today || !e.start) continue
+    const [sh, sm] = e.start.split(':').map(Number)
+    // No end time means we can't measure it; assume an hour rather than zero.
+    if (!e.end) {
+      bookedMins += 60
+      continue
+    }
+    const [eh, em] = e.end.split(':').map(Number)
+    const mins = eh * 60 + em - (sh * 60 + sm)
+    if (mins > 0) bookedMins += mins
+  }
+  const actionable = items.filter((i) => i.kind !== 'event' && i.kind !== 'stale').length
+  return {
+    bookedMins,
+    actionable,
+    notable: bookedMins >= 90 && actionable >= 3,
+  }
+}
+
+export function loadLabel(load: DayLoad): string {
+  const hrs = Math.round((load.bookedMins / 60) * 10) / 10
+  const h = Number.isInteger(hrs) ? String(hrs) : hrs.toFixed(1)
+  return `${load.actionable} to do, and ${h}h already booked — pick the ones that matter.`
+}

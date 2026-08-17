@@ -230,7 +230,7 @@ function ReminderControl({
 // ---- Checklist --------------------------------------------------------------
 
 function ChecklistSeg({ note, seg }: { note: Note; seg: Segment }) {
-  const { editSegment } = useStore()
+  const { editSegment, logCompletion } = useStore()
   const items: ChecklistItem[] = seg.data.items ?? []
 
   // Edits are preserved by the reconciler's merge (it only ever appends new
@@ -238,8 +238,12 @@ function ChecklistSeg({ note, seg }: { note: Note; seg: Segment }) {
   // item records its topic in `dismissed` so the note won't re-add it.
   const patchItems = (next: ChecklistItem[]) =>
     editSegment(note.id, seg.id, { ...seg.data, items: next })
-  const toggle = (id: string) =>
+  const toggle = (id: string) => {
+    // Ticking something off is the signal the rhythm engine learns from — only
+    // on completion, not on un-ticking.
+    if (!items.find((i) => i.id === id)?.done) logCompletion()
     patchItems(items.map((i) => (i.id === id ? { ...i, done: !i.done } : i)))
+  }
   const setReminder = (id: string, remindAt?: string) =>
     patchItems(items.map((i) => (i.id === id ? { ...i, remindAt } : i)))
   const setText = (id: string, text: string) =>

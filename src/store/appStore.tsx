@@ -64,6 +64,13 @@ interface Habits {
   // pattern engine derives a weekly cadence ("you usually shop Tuesday
   // evenings") from these once there's a repeated weekday.
   shoppingLog: number[]
+  // Timestamps of every thing the user has TICKED OFF (a checklist item, a
+  // board task, a streak commitment). Enough to learn when they actually get
+  // work done — which weekday, which part of the day — so the Now panel can
+  // say "this is usually when you clear things" instead of guessing.
+  // Local-only and never synced, same as shoppingLog: it's behavioural, and it
+  // has no value to anyone but this device.
+  completionLog: number[]
 }
 
 interface State {
@@ -85,6 +92,8 @@ const MAX_TOMBSTONES = 500
 // Generated tools carry a few KB of code each, and localStorage has a quota —
 // keep the most recent per note rather than growing without bound.
 const MAX_APPS_PER_NOTE = 12
+// Enough history to see a weekly rhythm without growing forever.
+const MAX_COMPLETION_LOG = 250
 
 type Action =
   | { type: 'CREATE_NOTE' }
@@ -114,6 +123,7 @@ type Action =
   | { type: 'ATTACH_DOC'; noteId: string; doc: DocLink }
   | { type: 'DECLINE_DOC'; noteId: string; docType: DocLink['type'] }
   | { type: 'LOG_SHOPPING'; ts: number }
+  | { type: 'LOG_COMPLETION'; ts: number }
   | { type: 'HYDRATE'; notes: Note[]; reminders: Reminder[] }
 
 const STORAGE_KEY = 'proactive-notes-v1'
@@ -143,7 +153,7 @@ function freshState(): State {
     settings: settingsForTier('free'),
     config: null,
     billing: null,
-    habits: { shoppingLog: [] },
+    habits: { shoppingLog: [], completionLog: [] },
     deletedIds: [],
   }
 }
@@ -177,7 +187,10 @@ function load(): State {
       settings: settingsForTier(tier),
       config: null,
       billing: null,
-      habits: { shoppingLog: parsed.habits?.shoppingLog ?? [] },
+      habits: {
+        shoppingLog: parsed.habits?.shoppingLog ?? [],
+        completionLog: parsed.habits?.completionLog ?? [],
+      },
       deletedIds: parsed.deletedIds ?? [],
     }
   } catch {
@@ -465,6 +478,14 @@ function reducer(state: State, action: Action): State {
       })
       return { ...state, notes }
     }
+    case 'LOG_COMPLETION': {
+      // De-dupe bursts (ticking five things at once is one work session, not
+      // five signals) and keep a bounded window.
+      const log = state.habits.completionLog ?? []
+      if (log.some((t) => Math.abs(t - action.ts) < 60_000)) return state
+      const completionLog = [...log, action.ts].slice(-MAX_COMPLETION_LOG)
+      return { ...state, habits: { ...state.habits, completionLog } }
+    }
     case 'LOG_SHOPPING': {
       // Keep a bounded, de-duplicated history (ignore repeat logs within an
       // hour so a double-tap doesn't skew the learned cadence).
@@ -575,6 +596,7 @@ interface StoreApi {
   attachDoc: (noteId: string, doc: DocLink) => void
   declineDoc: (noteId: string, docType: DocLink['type']) => void
   logShopping: (ts?: number) => void
+  logCompletion: (ts?: number) => void
 }
 
 const StoreContext = createContext<StoreApi | null>(null)
@@ -801,6 +823,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       declineDoc: (noteId, docType) =>
         dispatch({ type: 'DECLINE_DOC', noteId, docType }),
       logShopping: (ts) => dispatch({ type: 'LOG_SHOPPING', ts: ts ?? Date.now() }),
+      logCompletion: (ts) =>
+        dispatch({ type: 'LOG_COMPLETION', ts: ts ?? Date.now() }),
     }),
     [state],
   )
