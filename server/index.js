@@ -384,15 +384,16 @@ const aiConfigured = () => haikuConfigured()
 const calendarConfigured = () =>
   !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET)
 
-app.get('/api/config', (req, res) => {
+app.get('/api/config', async (req, res) => {
+  const connected = !!(await loadTokens())
   res.json({
     aiConfigured: aiConfigured(),
     haikuConfigured: haikuConfigured(),
     calendarConfigured: calendarConfigured(),
-    calendarConnected: !!loadTokens(),
+    calendarConnected: connected,
     // Google Docs/Sheets/Slides creation shares the same OAuth connection.
     googleConfigured: calendarConfigured(),
-    googleConnected: !!loadTokens(),
+    googleConnected: connected,
     // Model names are intentionally not exposed to clients.
     billingEnabled: BILLING_ENABLED,
     billingConfigured: billingConfigured(),
@@ -1646,12 +1647,17 @@ async function oauthClient() {
 
 // Returns an authed client, or null if not connected.
 async function authedClient() {
-  const tokens = loadTokens()
+  const tokens = await loadTokens()
   if (!tokens) return null
   const client = await oauthClient()
   client.setCredentials(tokens)
-  // Persist refreshed tokens so the refresh_token survives.
-  client.on('tokens', (t) => saveTokens({ ...tokens, ...t }))
+  // Persist refreshed tokens so the refresh_token survives. Fire-and-forget:
+  // googleapis emits this synchronously and doesn't await us.
+  client.on('tokens', (t) => {
+    saveTokens({ ...tokens, ...t }).catch((err) =>
+      console.error('token refresh save error:', err?.message || err),
+    )
+  })
   return client
 }
 
@@ -1690,7 +1696,7 @@ app.get('/auth/google/callback', async (req, res) => {
   try {
     const client = await oauthClient()
     const { tokens } = await client.getToken(req.query.code)
-    saveTokens(tokens)
+    await saveTokens(tokens)
     res.redirect(`${APP_ORIGIN}/?google=connected`)
   } catch (err) {
     console.error('oauth callback error:', err?.message || err)
@@ -1698,8 +1704,8 @@ app.get('/auth/google/callback', async (req, res) => {
   }
 })
 
-app.post('/api/calendar/disconnect', (_req, res) => {
-  clearTokens()
+app.post('/api/calendar/disconnect', async (_req, res) => {
+  await clearTokens()
   res.json({ ok: true })
 })
 
@@ -1729,7 +1735,7 @@ app.get('/api/calendar/events', async (_req, res) => {
     console.error('calendar list error:', err?.message || err)
     if (isAuthError(err)) {
       // Connection is revoked/expired — clear it so the UI prompts a reconnect.
-      clearTokens()
+      await clearTokens()
       return res.json({ connected: false, events: [] })
     }
     res.status(502).json({ connected: true, error: 'list_failed', events: [] })
@@ -1751,7 +1757,7 @@ app.post('/api/calendar/events', async (req, res) => {
   } catch (err) {
     console.error('calendar insert error:', err?.message || err)
     if (isAuthError(err)) {
-      clearTokens()
+      await clearTokens()
       return res.status(409).json({ connected: false })
     }
     res.status(502).json({ connected: true, error: 'insert_failed' })
@@ -1769,7 +1775,7 @@ app.delete('/api/calendar/events/:id', async (req, res) => {
   } catch (err) {
     console.error('calendar delete error:', err?.message || err)
     if (isAuthError(err)) {
-      clearTokens()
+      await clearTokens()
       return res.status(409).json({ connected: false })
     }
     res.status(502).json({ connected: true, error: 'delete_failed' })
@@ -1794,11 +1800,11 @@ app.post('/api/google/link', async (req, res) => {
   const { refreshToken, accessToken } = req.body || {}
   if (!refreshToken && !accessToken)
     return res.status(400).json({ ok: false, error: 'no_token' })
-  const prev = loadTokens() || {}
+  const prev = (await loadTokens()) || {}
   const tokens = refreshToken
     ? { ...prev, refresh_token: refreshToken, expiry_date: 1 }
     : { ...prev, access_token: accessToken, expiry_date: Date.now() + 50 * 60_000 }
-  saveTokens(tokens)
+  await saveTokens(tokens)
   res.json({ ok: true })
 })
 
@@ -1826,7 +1832,7 @@ app.post('/api/google/create', async (req, res) => {
   } catch (err) {
     console.error('google create error:', err?.message || err)
     if (isAuthError(err)) {
-      clearTokens()
+      await clearTokens()
       return res.status(409).json({ ok: false, error: 'not_connected' })
     }
     res.status(502).json({ ok: false, error: 'create_failed' })

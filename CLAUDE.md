@@ -121,6 +121,14 @@ content and linked back onto the note.
   `calendar.events` scopes are *sensitive*, which triggers Google's "unverified
   app" warning + a verification review. Do NOT re-add them. `/api/config` reports
   `googleConfigured`/`googleConnected`.
+- **Token storage survives redeploys.** `tokenStore.js` is Supabase-backed (new
+  **`google_tokens`** table, single row `id='default'`) when
+  `SUPABASE_SERVICE_ROLE_KEY` is set, else the old flat file — which Render
+  rebuilds on every push, silently dropping the Google connection so the doc
+  chips fell back to blank `docs.new` tabs until someone reconnected. Its API is
+  **async** (all call sites await it); the googleapis `client.on('tokens')`
+  refresh listener is fire-and-forget with a `.catch`, since googleapis emits it
+  synchronously. Still single-user — per-user Google is a separate change.
 - **Google access is granted AT LOGIN, not a separate step.** "Continue with
   Google" ([AuthGate.tsx](src/components/AuthGate.tsx)) requests the doc scopes +
   `access_type:offline` + `prompt:consent` via Supabase `signInWithOAuth`. The

@@ -107,9 +107,11 @@ Notes:
 - If a user revokes access (or the refresh token expires), the next Calendar call
   detects the dead grant, clears the stored token, and the UI falls back to
   **Connect Google** so they can reconnect — no restart needed.
-- Token storage (`server/.google-tokens.json`) is single-user/dev-grade. For a
-  real multi-user launch, move to per-user tokens in your accounts database
-  (see the accounts step on the roadmap).
+- Token storage is Supabase-backed (`google_tokens` table) when
+  `SUPABASE_SERVICE_ROLE_KEY` is set, so the connection survives redeploys;
+  otherwise it falls back to `server/.google-tokens.json`, which Render rebuilds
+  on every deploy. It's still **single-user** either way — for a real multi-user
+  launch, move to per-user tokens keyed like `entitlements`.
 
 ---
 
@@ -298,7 +300,25 @@ create table push_targets (
   updated_at timestamptz not null default now()
 );
 alter table push_targets enable row level security;
+
+-- Google OAuth tokens (Docs/Sheets/Slides + calendar). Single row, id='default'
+-- — same single-user scope as the flat file it replaces. Without this table the
+-- tokens live in server/.google-tokens.json, which Render rebuilds on every
+-- deploy: Google silently disconnects on each push and the doc chips fall back
+-- to blank docs.new tabs until someone reconnects. RLS ON, service_role only.
+create table if not exists google_tokens (
+  id text primary key,
+  data jsonb not null,
+  updated_at timestamptz not null default now()
+);
+alter table google_tokens enable row level security;
 ```
+
+> ### ⚠️ Migration: already deployed before this table existed?
+> Run the `google_tokens` block above on your existing project, then reconnect
+> Google once (sign in with Google, or hit `/auth/google`). From then on the
+> connection survives redeploys. Until you do, everything else keeps working —
+> the store just falls back to the flat file.
 
 > ### ⚠️ Migration: already created `entitlements` before 2026-07-14?
 > The recurring-subscription model added columns. **Run this before enabling
