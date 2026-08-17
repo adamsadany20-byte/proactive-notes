@@ -300,6 +300,16 @@ async function meterUsage(clientId, costPence, pool = 'ai') {
 }
 
 const app = express()
+
+// Hardening, not a fix for a known break: Express 4 does NOT catch rejections
+// from async handlers — such a request hangs with no response until the client
+// times out. Today every throwing store call sits behind a try/catch, so nothing
+// actually hangs; this wrapper (plus the error handler at the bottom) makes that
+// safe by construction so a future async route can't reintroduce the class.
+const safe =
+  (fn) =>
+  (req, res, next) =>
+    Promise.resolve(fn(req, res, next)).catch(next)
 // Reflect the request origin so the app works regardless of which local port
 // Vite picks (5173, 5174, …). For a local-dev tool this is the simplest robust
 // setup; tighten to APP_ORIGIN if you ever deploy this publicly.
@@ -412,7 +422,7 @@ app.get('/api/config', async (req, res) => {
 // (Supabase when configured, so it survives redeploys) AND forwarded to
 // FEEDBACK_WEBHOOK_URL when set, so it actually reaches the owner. Never gated
 // by billing. The landing "interest" form posts here with source:"interest".
-app.post('/api/feedback', async (req, res) => {
+app.post('/api/feedback', safe(async (req, res) => {
   const { text = '', source = 'form', email = '', clientId = '' } = req.body || {}
   const message = String(text).trim().slice(0, 4000)
   const addr = String(email).trim().slice(0, 200)
@@ -455,7 +465,7 @@ app.post('/api/feedback', async (req, res) => {
   }
 
   res.json({ ok: true })
-})
+}))
 
 // Product analytics — the client batches lightweight events and posts them here.
 // No PII: just event names + the anonymous client id, so the owner can see how
@@ -478,11 +488,11 @@ app.post('/api/analytics', (req, res) => {
 })
 
 // Owner-only usage summary.
-app.get('/api/analytics/summary', async (req, res) => {
+app.get('/api/analytics/summary', safe(async (req, res) => {
   if (!isOwner(req.userId || req.query.clientId))
     return res.status(403).json({ error: 'Owner only' })
   res.json(await summarizeEvents())
-})
+}))
 
 // ---------------------------------------------------------------------------
 // Billing endpoints (Stripe). Lazy-load the SDK so the server boots instantly
@@ -1680,7 +1690,7 @@ function isAuthError(err) {
   )
 }
 
-app.get('/auth/google', async (_req, res) => {
+app.get('/auth/google', safe(async (_req, res) => {
   if (!calendarConfigured())
     return res.status(400).send('Google is not configured on the server.')
   const client = await oauthClient()
@@ -1690,7 +1700,7 @@ app.get('/auth/google', async (_req, res) => {
     scope: SCOPES,
   })
   res.redirect(url)
-})
+}))
 
 app.get('/auth/google/callback', async (req, res) => {
   try {
@@ -1964,6 +1974,15 @@ function pad(n) {
 // skip it and the Vite dev server serves the UI instead. Mounted last so it
 // never shadows the /api and /auth routes above.
 // ---------------------------------------------------------------------------
+// Last-resort error handler. Anything that reaches here (a sync throw, or an
+// async rejection forwarded by `safe`) becomes a 500 instead of a request that
+// never answers. Must be registered after the routes.
+app.use((err, _req, res, _next) => {
+  console.error('unhandled route error:', err?.stack || err?.message || err)
+  if (res.headersSent) return
+  res.status(500).json({ error: 'server_error' })
+})
+
 const DIST_DIR = path.resolve(__dirname, '..', 'dist')
 if (fs.existsSync(DIST_DIR)) {
   app.use(express.static(DIST_DIR))

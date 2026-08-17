@@ -650,14 +650,28 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (!user || cancelled) return
 
       // RLS scopes these selects to the current user automatically.
-      const [{ data: notesData }, { data: remindersData }] = await Promise.all([
+      const [notesRes, remindersRes] = await Promise.all([
         supabase.from('notes').select('data'),
         supabase.from('reminders').select('data'),
       ])
       if (cancelled) return
 
-      const notes = (notesData ?? []).map((row: any) => row.data as Note)
-      const reminders = (remindersData ?? []).map((row: any) => row.data as Reminder)
+      // A FAILED read must NOT enable pruning. Both selects returning an error
+      // looks identical to "this account has no notes" once the error is
+      // discarded — and the sync would then delete every cloud row that isn't in
+      // local state, i.e. wipe the user's notes off their other devices after a
+      // transient network blip. Bail and leave `hydrated` false so the next
+      // attempt (or the SIGNED_IN re-pull) can try again safely.
+      if (notesRes.error || remindersRes.error) {
+        console.error(
+          'Failed to load from Supabase (pruning stays disabled):',
+          notesRes.error || remindersRes.error,
+        )
+        return
+      }
+
+      const notes = (notesRes.data ?? []).map((row: any) => row.data as Note)
+      const reminders = (remindersRes.data ?? []).map((row: any) => row.data as Reminder)
       if (notes.length || reminders.length) {
         dispatch({ type: 'HYDRATE', notes, reminders })
       }
