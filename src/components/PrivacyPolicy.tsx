@@ -5,16 +5,17 @@
 // what's collected, sent to a third party, or retained, change this too: a
 // privacy notice that doesn't match the system is worse than none.
 //
-// PLACEHOLDERS marked [[LIKE THIS]] MUST be filled in before publishing. They're
-// facts only the operator knows (legal identity, contact address), and inventing
-// them would make the notice false.
-
 // Last substantive update. Bump when the content changes.
 const UPDATED = '17 August 2026'
 
-const OPERATOR = '[[YOUR NAME OR COMPANY]]'
-const CONTACT = '[[YOUR CONTACT EMAIL]]'
-const COUNTRY = '[[YOUR COUNTRY, e.g. the United Kingdom]]'
+// The data controller must be a LEGAL PERSON — a human being or a registered
+// entity. "Evolve Notes" on its own is a trading name, which is neither, so it
+// can't be named here. Sole trader = the individual, trading as the brand.
+// If this ever becomes a limited company, swap this one line for the company
+// name and add its number and registered office.
+const OPERATOR = 'Adam Yousef, trading as Evolve Notes'
+const CONTACT = 'adamsadany20@gmail.com'
+const COUNTRY = 'the United Kingdom'
 
 export function PrivacyPolicy() {
   return (
