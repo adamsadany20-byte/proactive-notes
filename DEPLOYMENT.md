@@ -77,6 +77,60 @@ sleeps after idle and the first request takes ~30s to wake; also the flat-file
 stores under `server/` reset on redeploy — fine for testing, another reason
 real accounts + a DB come before charging money.)
 
+### Deploy to Vercel (static frontend + the API as one function)
+
+`vercel.json` builds the Vite app to `dist/` (served from Vercel's CDN) and routes
+`/api/*` and `/auth/*` into `api/index.js`, which re-exports the whole Express app
+as a single serverless function — so the API behaves identically on Vercel and on
+a plain Node host.
+
+**What changes on serverless:**
+
+| | Render (long-running) | Vercel (serverless) |
+| --- | --- | --- |
+| `app.listen` / static serving | used | skipped (gated on `process.env.VERCEL`) |
+| 60s internal push sweep | runs | **never runs** — instances freeze between requests |
+| Reminder delivery | internal timer **or** cron ping | **cron only** (`/api/cron/tick`) |
+| Flat-file stores | work until redeploy | **must use Supabase** — the FS is ephemeral *and* per-instance |
+| Rate limiter | effective (one instance) | **weakened** — see below |
+
+**Mandatory on Vercel** (not optional as they are on Render):
+- `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`. Without them, entitlements, push
+  targets, feedback and Google tokens all fall back to files that vanish between
+  invocations — paid subscriptions would silently disappear.
+- `APP_ORIGIN` set to the final domain. It drives both the OAuth/Stripe redirects
+  and the CORS allow-list.
+
+**The rate limiter gets weaker.** `rateLimit()` keeps its counts in memory. On one
+Render instance that's a real cap; on Vercel every cold start begins with an empty
+map and concurrent instances don't share state, so a determined caller gets
+roughly *limit × instances*. It still stops accidental runaway loops, but it is no
+longer a hard ceiling on spend. If that matters, either keep `BILLING_ENABLED=true`
+(so the per-account spend cap does the real work), lower `MAX_SEARCHES`, or move
+the counter into Supabase/Redis.
+
+**Cron is not configured here** — `vercel.json` intentionally declares no `crons`.
+Wire up whatever scheduler you prefer against:
+`https://YOUR-DOMAIN/api/cron/tick`
+The route accepts the secret three ways, so any scheduler works unchanged:
+`?secret=…`, an `x-cron-secret` header, or `Authorization: Bearer $CRON_SECRET`
+(the form Vercel Cron sends automatically when the project has a `CRON_SECRET`).
+
+**Steps:**
+1. Vercel → **Add New → Project** → import the repo. It reads `vercel.json`;
+   leave the build settings alone.
+2. Copy the env vars across from Render. `VITE_API_BASE` is **not** needed — a
+   production build already defaults to same-origin. `PORT` isn't either.
+3. Set `APP_ORIGIN` to the final URL (your custom domain if you have one).
+4. Update the **Stripe webhook URL**, the **Google OAuth redirect URI**, and
+   **Supabase → Authentication → URL Configuration** to the new domain.
+5. Deploy, then check the rewrite works:
+   ```bash
+   curl -s https://YOUR-DOMAIN/api/config | head -c 200
+   ```
+   JSON back = the API is reachable through the function.
+6. Keep Render running until that passes, then suspend it.
+
 ### Two-service alternative (Vercel frontend + separate backend)
 Only if you want the frontend on a CDN:
 - Deploy the **frontend** to Vercel with `VITE_API_BASE=https://your-backend-url`.

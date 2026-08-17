@@ -35,6 +35,45 @@ migration has been applied, and the webhook must subscribe to
 
 ## Recent Work (Jul 2026)
 
+### Vercel deployment (alongside Render)
+
+Deploys as **static `dist/` on Vercel's CDN + the entire Express app as ONE
+serverless function** (`api/index.js` re-exports `server/index.js`). Routing is in
+[vercel.json](vercel.json): `/api/*` and `/auth/*` rewrite into the function,
+everything else falls through to `index.html` (SPA). One function rather than a
+file-per-route, so the API is identical on Vercel and on `npm start` — no second
+code path to keep in sync. Render still works unchanged.
+
+**`IS_SERVERLESS` (`process.env.VERCEL`) gates everything process-shaped**:
+`app.listen`, `express.static(dist)` + the `*` catch-all, and the 60s push
+`setInterval`. Without those guards the function would bind a port it doesn't own
+and shadow the CDN.
+
+**Two things get worse on serverless, and both are deliberate trade-offs:**
+- **The 60s push sweep never runs** (instances freeze between requests), so
+  `/api/cron/tick` is the ONLY reminder path. `vercel.json` declares **no crons**
+  — the owner wires up their own scheduler. The route accepts the secret as
+  `?secret=`, `x-cron-secret`, or `Authorization: Bearer` (the Vercel Cron form),
+  so any scheduler works without a code change.
+- **The rate limiter is weakened.** `rateHits` is in-memory, so every cold start
+  begins empty and concurrent instances don't share counts — a determined caller
+  gets ~`limit × instances`. It still catches accidental loops but is no longer a
+  hard spend ceiling. The per-account `capPence` (billing on) is the durable
+  control; moving the counter to Supabase/Redis would fix it properly.
+
+**Supabase is mandatory here, not optional** — the FS is ephemeral *and*
+per-instance, so every flat-file fallback silently loses data. `tokenStore` was
+the gap and already has a Supabase backend (`google_tokens`).
+
+Server deps are hoisted into the **root** `package.json` so Vercel's bundler can
+trace them; `server/package.json` stays for local dev. No `VITE_API_BASE` needed —
+a production build already defaults to same-origin.
+
+Verified by importing the exported app under `VERCEL=1`: `/api/config`,
+`/api/billing/status` and `/api/cron/tick` (GET) all 200, `/privacy` correctly
+404s inside the function (the CDN serves it), nothing binds port 8787, and
+non-serverless mode still boots and serves `dist/`.
+
 ### Generated apps persist + the topic workspace
 
 Three changes that turn generated tools from a demo into a feature, and finally

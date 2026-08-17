@@ -49,6 +49,13 @@ dotenv.config({ path: path.join(__dirname, '.env') })
 
 const PORT = process.env.PORT || 8787
 const APP_ORIGIN = process.env.APP_ORIGIN || 'http://localhost:5173'
+
+// On a serverless host (Vercel) this module is imported as a request handler,
+// not run as a process: there is no port to listen on, the platform serves the
+// static frontend itself, and background timers never fire because the instance
+// is frozen between requests. Everything process-shaped is gated on this.
+// VERCEL is set by the platform; SERVERLESS is a manual escape hatch.
+const IS_SERVERLESS = !!(process.env.VERCEL || process.env.SERVERLESS)
 // Two models split the work by what each is best at per pound:
 //   • CODE (tool suggestions + tool generation) — Haiku: fast, cheap, and
 //     plenty for emitting well-specified JSON and React components.
@@ -1026,7 +1033,12 @@ app.post('/api/push/test', async (req, res) => {
 const CRON_SECRET = (process.env.CRON_SECRET || '').trim()
 app.all('/api/cron/tick', async (req, res) => {
   if (CRON_SECRET) {
-    const given = req.query.secret || req.headers['x-cron-secret']
+    // Three accepted forms so any scheduler works without a code change:
+    //   ?secret=…                — cron-job.org and friends
+    //   x-cron-secret: …         — header-based pingers
+    //   Authorization: Bearer …  — what Vercel Cron sends automatically
+    const bearer = (req.headers.authorization || '').replace(/^Bearer\s+/i, '')
+    const given = req.query.secret || req.headers['x-cron-secret'] || bearer
     if (given !== CRON_SECRET) return res.status(401).json({ error: 'unauthorized' })
   }
   try {
@@ -2091,14 +2103,17 @@ app.use((err, _req, res, _next) => {
   res.status(500).json({ error: 'server_error' })
 })
 
+// (Skipped on serverless — Vercel serves `dist/` from its CDN, and a catch-all
+// here would shadow that and route every page request through a function.)
 const DIST_DIR = path.resolve(__dirname, '..', 'dist')
-if (fs.existsSync(DIST_DIR)) {
+if (!IS_SERVERLESS && fs.existsSync(DIST_DIR)) {
   app.use(express.static(DIST_DIR))
   app.get('*', (_req, res) => res.sendFile(path.join(DIST_DIR, 'index.html')))
   console.log(`  Frontend: serving built app from ${DIST_DIR}`)
 }
 
-app.listen(PORT, () => {
+if (!IS_SERVERLESS)
+  app.listen(PORT, () => {
   console.log(`Proactive Notes server on http://localhost:${PORT}`)
   console.log(
     `  Claude tier: ${
@@ -2174,8 +2189,14 @@ app.listen(PORT, () => {
 // 60s even without an external pinger (this alone is enough on an always-on
 // host). On a free tier that sleeps, the external cron pinger is what wakes it —
 // see /api/cron/tick. No-op when push isn't configured.
-if (pushConfigured()) {
+// NOT available on serverless: the instance is frozen between requests, so a
+// timer never fires. There, /api/cron/tick is the ONLY delivery path and an
+// external scheduler must call it.
+if (!IS_SERVERLESS && pushConfigured()) {
   setInterval(() => {
     runTick().catch((err) => console.error('internal tick error:', err?.message || err))
   }, 60000)
 }
+
+// Serverless entry point — Vercel imports this and calls it per request.
+export default app
