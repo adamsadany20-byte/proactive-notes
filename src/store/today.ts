@@ -59,17 +59,27 @@ export function lastTouched(n: Note): number {
   return Math.max(n.openedAt ?? 0, n.updatedAt ?? 0, n.createdAt ?? 0)
 }
 
-export function isNoteStale(n: Note, now: Date = new Date()): boolean {
+export function isNoteStale(
+  n: Note,
+  now: Date = new Date(),
+  preview = false,
+): boolean {
   if (n.doneAt) return false
   if (!n.text.trim()) return false
-  return now.getTime() - lastTouched(n) >= STALE_DAYS * DAY_MS
+  // Demo mode drops the wait to zero so the behaviour can be shown on demand.
+  const days = preview ? 0 : STALE_DAYS
+  return now.getTime() - lastTouched(n) >= days * DAY_MS
 }
 
 // Every forgotten workspace, most neglected first. Shared by the Now panel, the
 // in-app nudge and the push projection so all three agree on what "stale" means.
-export function staleNotes(notes: Note[], now: Date = new Date()): Note[] {
+export function staleNotes(
+  notes: Note[],
+  now: Date = new Date(),
+  preview = false,
+): Note[] {
   return notes
-    .filter((n) => isNoteStale(n, now))
+    .filter((n) => isNoteStale(n, now, preview))
     .sort((a, b) => lastTouched(a) - lastTouched(b))
 }
 
@@ -94,6 +104,7 @@ export function collectToday(
   calendar: CalendarEvent[],
   reminders: Reminder[],
   now: Date = new Date(),
+  preview = false,
 ): TodayItem[] {
   const today = isoOf(now)
   const out: TodayItem[] = []
@@ -200,7 +211,9 @@ export function collectToday(
 
   // Picked up and quietly dropped. This is the proactive one — nothing else in
   // the app ever mentions a forgotten workspace again.
-  for (const note of staleNotes(notes, now)) {
+  // Capped so a long backlog can't bury the actionable items (and so demo
+  // mode, which treats every note as stale, doesn't render a wall).
+  for (const note of staleNotes(notes, now, preview).slice(0, 5)) {
     let open = 0
     for (const seg of note.segments ?? []) {
       if (seg.type !== 'checklist' || !seg.filled) continue
@@ -304,8 +317,16 @@ export interface Rhythm {
   samples: number
 }
 
-export function describeRhythm(log: number[], now: Date = new Date()): Rhythm | null {
-  if (!log || log.length < RHYTHM_MIN_SAMPLES) return null
+export function describeRhythm(
+  log: number[],
+  now: Date = new Date(),
+  preview = false,
+): Rhythm | null {
+  // Demo mode lowers the bar so the feature can be shown before the history
+  // exists. What it surfaces is NOT a real finding — the UI badges it.
+  const minSamples = preview ? 2 : RHYTHM_MIN_SAMPLES
+  const minShare = preview ? 0 : RHYTHM_MIN_SHARE
+  if (!log || log.length < minSamples) return null
 
   const byDay = new Array(7).fill(0)
   const byPhase: Record<DayPhase, number> = {
@@ -327,8 +348,8 @@ export function describeRhythm(log: number[], now: Date = new Date()): Rhythm | 
   )
 
   // Both halves must be genuinely dominant, or we're reading noise.
-  if (byDay[weekday] / log.length < RHYTHM_MIN_SHARE) return null
-  if (byPhase[phase] / log.length < RHYTHM_MIN_SHARE) return null
+  if (byDay[weekday] / log.length < minShare) return null
+  if (byPhase[phase] / log.length < minShare) return null
 
   return {
     label: `${WEEKDAYS[weekday]} ${PHASE_WORD[phase]}`,

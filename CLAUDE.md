@@ -72,6 +72,30 @@ ranked correctly, ticking the hero from the panel removed it and promoted the
 next item with the summary updating, and the progress bar read 33% with the done
 item sunk to the bottom.
 
+### Demo mode (owner-only preview of the time-based features)
+
+The learned rhythm needs 8+ completions and stale nudges need 5 days of silence,
+which makes both impossible to show on demand. `settings.demoMode` relaxes those
+thresholds — rhythm to 2 samples with no dominance requirement, staleness to 0
+days — so the behaviour can be demonstrated immediately.
+
+**It is a labelled preview, not a silent unlock.** The panel heading carries a
+`Demo` badge, and the rhythm line changes to state exactly how thin the evidence
+is: *"Preview — from only 3 completions, this would read 'Saturday afternoons'."*
+The thresholds exist because they're what make the claim true; surfacing early
+without saying so would put invented findings on the owner's own screen with no
+way to tell them from real ones.
+
+**Owner-gated twice over:** [DemoMode.tsx](src/components/DemoMode.tsx) renders
+nothing for non-owners, AND `TodayPanel` re-checks ownership before applying the
+flag (`preview = demoMode && isOwner`), so a hand-edited localStorage value on
+some other account has no effect. Verified both ways. `SET_TIER` carries
+`demoMode` through rather than resetting it, and `load()` preserves it across the
+settings migration.
+
+Stale items are also now capped at 5 in the panel — demo mode treats every note
+as stale, and a long real backlog shouldn't bury the actionable items either.
+
 ### Owner accounts by email (`OWNER_EMAILS`)
 
 `FREE_CLIENT_IDS` was browser-scoped — it died whenever storage was cleared and

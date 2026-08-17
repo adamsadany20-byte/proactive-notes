@@ -7357,3 +7357,19 @@ input {
 .note-item.is-done {
   opacity: 0.55;
 }
+
+/* Owner-only demo badge: anything shown before its thresholds are met carries
+   this, so previewed output can't be mistaken for an earned finding. */
+.today-demo {
+  margin-left: 7px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent-ink);
+  font-family: var(--ui, inherit);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}

@@ -3,6 +3,7 @@ import { AiTierSelector, SpendLimit } from './Sidebar'
 import { ThemeToggle } from './ThemeToggle'
 import { PushControls } from './PushControls'
 import { GoogleConnection } from './GoogleConnection'
+import { DemoMode } from './DemoMode'
 import { UsageMeter } from './UsageMeter'
 import { FeedbackForm } from './FeedbackControls'
 import { OwnerAnalytics } from './OwnerAnalytics'
@@ -55,6 +56,7 @@ export function SettingsSheet({
           <GoogleConnection />
           <SpendLimit />
           <FeedbackForm />
+          <DemoMode />
           <OwnerAnalytics />
           <p className="settings-note">
             Notes evolve as you type. The local engine handles everything; Evolve

@@ -39,6 +39,12 @@ export type Tier = 'free' | 'classifier' | 'evolve'
 
 interface Settings {
   tier: Tier
+  // Owner-only demo switch. Relaxes the thresholds on the TIME-based features
+  // (learned rhythm, stale nudges) so they can be shown on demand instead of
+  // waiting days for real history. Everything it reveals is badged "Demo" in
+  // the UI — the whole point of those thresholds is that the claim is true, so
+  // anything surfaced early has to be visibly marked as not-yet-earned.
+  demoMode?: boolean
   // Derived from tier. 'local' = no network; 'haiku' = cloud on (classifier or
   // evolve). Sent as the `backend` param and gates "is any cloud on".
   aiBackend: AiBackend
@@ -49,9 +55,10 @@ interface Settings {
 }
 
 // Fan a chosen tier out into the derived settings fields.
-function settingsForTier(tier: Tier): Settings {
+function settingsForTier(tier: Tier, demoMode = false): Settings {
   return {
     tier,
+    demoMode,
     aiBackend: tier === 'free' ? 'local' : 'haiku',
     broaderAi: tier === 'evolve',
   }
@@ -108,6 +115,7 @@ type Action =
   | { type: 'EDIT_SEGMENT'; id: string; segmentId: string; data: any }
   | { type: 'SET_BACKEND'; backend: AiBackend }
   | { type: 'SET_TIER'; tier: Tier }
+  | { type: 'SET_DEMO_MODE'; on: boolean }
   | { type: 'SET_CONFIG'; config: ServerConfig }
   | { type: 'SET_BILLING'; billing: BillingStatus }
   | { type: 'SET_ENRICHMENT'; id: string; enrichment: Enrichment }
@@ -185,7 +193,7 @@ function load(): State {
         weekdays: r.weekdays ?? [0, 1, 2, 3, 4, 5, 6],
         bestStreak: r.bestStreak ?? 0,
       })),
-      settings: settingsForTier(tier),
+      settings: settingsForTier(tier, !!(parsed.settings as any)?.demoMode),
       config: null,
       billing: null,
       habits: {
@@ -389,8 +397,14 @@ function reducer(state: State, action: Action): State {
         ...state,
         settings: settingsForTier(action.backend === 'local' ? 'free' : 'evolve'),
       }
+    case 'SET_DEMO_MODE':
+      return { ...state, settings: { ...state.settings, demoMode: action.on } }
     case 'SET_TIER':
-      return { ...state, settings: settingsForTier(action.tier) }
+      // Carry demoMode over — changing tier shouldn't silently switch it off.
+      return {
+        ...state,
+        settings: settingsForTier(action.tier, !!state.settings.demoMode),
+      }
     case 'SET_CONFIG':
       return { ...state, config: action.config }
     case 'SET_BILLING':
@@ -594,6 +608,7 @@ interface StoreApi {
   editSegment: (id: string, segmentId: string, data: any) => void
   setBackend: (backend: AiBackend) => void
   setTier: (tier: Tier) => void
+  setDemoMode: (on: boolean) => void
   setConfig: (config: ServerConfig) => void
   setBilling: (billing: BillingStatus) => void
   setEnrichment: (id: string, enrichment: Enrichment) => void
@@ -814,6 +829,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         dispatch({ type: 'EDIT_SEGMENT', id, segmentId, data }),
       setBackend: (backend) => dispatch({ type: 'SET_BACKEND', backend }),
       setTier: (tier) => dispatch({ type: 'SET_TIER', tier }),
+      setDemoMode: (on) => dispatch({ type: 'SET_DEMO_MODE', on }),
       setConfig: (config) => dispatch({ type: 'SET_CONFIG', config }),
       setBilling: (billing) => dispatch({ type: 'SET_BILLING', billing }),
       setEnrichment: (id, enrichment) =>

@@ -32,15 +32,21 @@ const META: Record<TodayKind, { icon: string; label: string }> = {
 export function TodayPanel() {
   const { state, select, editSegment, toggleOccurrence, logCompletion } = useStore()
 
+  // Demo mode only counts on an OWNER account — the toggle is owner-only in the
+  // UI, and gating the EFFECT here too means a stray localStorage edit on some
+  // other account can't switch it on.
+  const isOwner = !!state.billing?.owner || !!state.config?.owner
+  const preview = !!state.settings.demoMode && isOwner
+
   const items = useMemo(
-    () => collectToday(state.notes, state.calendar, state.reminders),
-    [state.notes, state.calendar, state.reminders],
+    () => collectToday(state.notes, state.calendar, state.reminders, new Date(), preview),
+    [state.notes, state.calendar, state.reminders, preview],
   )
 
   // Time of day, learned rhythm, and how booked the day already is. All local.
   const phase = dayPhase()
   const heading = todayHeading(phase, items)
-  const rhythm = describeRhythm(state.habits.completionLog ?? [])
+  const rhythm = describeRhythm(state.habits.completionLog ?? [], new Date(), preview)
   const load = dayLoad(state.calendar, items)
 
   if (!items.length) return null
@@ -81,16 +87,27 @@ export function TodayPanel() {
   return (
     <section className="today" aria-label="What to do now">
       <div className="today-head">
-        <h2 className="today-title">{heading}</h2>
+        <h2 className="today-title">
+          {heading}
+          {preview && (
+            <span className="today-demo" title="Time-based features are being previewed early — this is not earned data">
+              Demo
+            </span>
+          )}
+        </h2>
         <span className="today-sum">{todaySummary(items)}</span>
       </div>
 
       {/* Only speaks when the pattern is real — see describeRhythm's thresholds. */}
       {rhythm && (
         <p className={`today-rhythm${rhythm.isNow ? ' is-now' : ''}`}>
-          {rhythm.isNow
-            ? `You usually clear things on ${rhythm.label} — this is that window.`
-            : `You usually get through these on ${rhythm.label}.`}
+          {preview
+            ? `Preview — from only ${rhythm.samples} completion${
+                rhythm.samples === 1 ? '' : 's'
+              }, this would read "${rhythm.label}".`
+            : rhythm.isNow
+              ? `You usually clear things on ${rhythm.label} — this is that window.`
+              : `You usually get through these on ${rhythm.label}.`}
         </p>
       )}
 
