@@ -527,5 +527,16 @@ Nudges fire via `useReminders` (20-second poll). Copy is streak-aware: *"keep yo
   `stripe listen`; must be set in production.
 - Billing: `capPence` stops usage at the limit, but Stripe has no hard cap of its
   own — the cap is only enforced by our own `capReached()` on each call.
+- **Cost exposure in free mode**: with `BILLING_ENABLED=false` (production today)
+  `hasAccess()` returns true for everyone, so the spend cap does nothing. The
+  per-key **rate limit** (`RATE_LIMIT_EXPENSIVE_PER_HOUR` / `..._CHEAP_...`) is
+  the only thing bounding spend there. It runs as a front gate BEFORE the paywall
+  check, so a rejected 402 call still consumes rate budget — deliberate (blunter
+  but strictly safer), and harmless since those calls cost nothing.
+- Rate limiting is in-memory: it resets on redeploy and isn't shared across
+  instances. Fine for one Render instance; would need Redis if scaled out.
+- **CORS is browser-only.** Locking `ALLOWED_ORIGINS` stops another *website*
+  calling the API from a visitor's browser; it does nothing against curl or a
+  script. Don't mistake it for spend protection — the rate limit is that.
 - `deriveTopic` is heuristic. It degrades to `undefined` (no label) rather than
   nonsense, and the paid classifier's topic overrides it when it fires.

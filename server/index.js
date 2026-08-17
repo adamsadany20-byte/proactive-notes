@@ -193,6 +193,71 @@ const FREE_CLIENT_IDS = new Set(
 // view (only the owner should see cross-user usage).
 const isOwner = (id) => !!(id && FREE_CLIENT_IDS.has(id))
 
+// ---------------------------------------------------------------------------
+// Rate limiting on the routes that spend money.
+//
+// Every Claude call costs the OWNER real money at Anthropic, and in free mode
+// (BILLING_ENABLED=false) nothing else bounds it: `hasAccess()` returns true for
+// everyone, so a loop against /api/recommend (~20p a call) could run up an
+// unbounded bill. This caps how many calls one billing key can make per hour.
+//
+// Two tiers, because the costs differ by ~100x:
+//   • expensive — /api/enrich, /api/recommend (Sonnet + live web search, ~10-20p)
+//   • cheap     — classify / questions / suggest / generate-feature (Haiku, <1p)
+//
+// Defaults sit far above real usage: you would never hit them writing notes, but
+// a runaway script stops dead. Set either to 0 to disable. Owner ids in
+// FREE_CLIENT_IDS bypass. In-memory and per-instance — it resets on redeploy and
+// isn't shared across instances, which is fine for a single-instance deploy and
+// is deliberately not worth a Redis dependency here.
+// ---------------------------------------------------------------------------
+const RATE_WINDOW_MS = 3600_000
+const RATE_EXPENSIVE = Number(process.env.RATE_LIMIT_EXPENSIVE_PER_HOUR ?? 20)
+const RATE_CHEAP = Number(process.env.RATE_LIMIT_CHEAP_PER_HOUR ?? 200)
+
+const rateHits = new Map() // `${tier}:${key}` -> number[] (recent call timestamps)
+
+// Drop buckets that have fully aged out, so the map can't grow without bound.
+function sweepRateHits(now) {
+  for (const [k, arr] of rateHits) {
+    if (!arr.length || now - arr[arr.length - 1] >= RATE_WINDOW_MS) rateHits.delete(k)
+  }
+}
+
+// Express middleware. `emptyShape` mirrors the paywall convention: routes return
+// their own empty payload alongside the error so the UI degrades quietly instead
+// of choking on a missing field.
+function rateLimit(tier, emptyShape = {}) {
+  return (req, res, next) => {
+    const limit = tier === 'expensive' ? RATE_EXPENSIVE : RATE_CHEAP
+    if (!(limit > 0)) return next()
+
+    const key = req.userId || req.clientId || req.body?.clientId || req.ip || 'anon'
+    if (FREE_CLIENT_IDS.has(key)) return next()
+
+    const now = Date.now()
+    if (rateHits.size > 2000) sweepRateHits(now)
+
+    const bucket = `${tier}:${key}`
+    const recent = (rateHits.get(bucket) || []).filter((t) => now - t < RATE_WINDOW_MS)
+    if (recent.length >= limit) {
+      const retryAfter = Math.ceil((RATE_WINDOW_MS - (now - recent[0])) / 1000)
+      res.set('Retry-After', String(retryAfter))
+      return res.status(429).json({
+        error: `That's a lot of AI requests in one go — try again in ${Math.ceil(
+          retryAfter / 60,
+        )} min. (Each of these costs real money to run.)`,
+        reason: 'rate_limited',
+        retryAfter,
+        ...emptyShape,
+      })
+    }
+    recent.push(now)
+    rateHits.set(bucket, recent)
+    next()
+  }
+}
+
 // Optional durable delivery for feedback: if set, each submission is POSTed here
 // (a Slack/Discord incoming webhook, or any endpoint that accepts JSON) so it
 // reaches the owner even on an ephemeral host where the flat file resets.
@@ -310,10 +375,39 @@ const safe =
   (fn) =>
   (req, res, next) =>
     Promise.resolve(fn(req, res, next)).catch(next)
-// Reflect the request origin so the app works regardless of which local port
-// Vite picks (5173, 5174, …). For a local-dev tool this is the simplest robust
-// setup; tighten to APP_ORIGIN if you ever deploy this publicly.
-app.use(cors({ origin: true, credentials: true }))
+// CORS: only our own app may call the API from a browser.
+//
+// This is safe to lock down precisely BECAUSE this is a single-service deploy —
+// the built frontend is served from the same origin as the API, and same-origin
+// requests don't go through CORS at all. The only genuinely cross-origin caller
+// is local dev (Vite on :5173 → API on :8787), hence the localhost allowance.
+//
+// Worth being clear about what this does and doesn't buy: CORS is enforced by
+// BROWSERS only. It stops another website calling this API from a visitor's
+// browser; it does nothing against curl or a script. The rate limiter below is
+// what actually bounds spend.
+//
+// Requests with no Origin header (curl, Stripe webhooks, the cron pinger,
+// same-origin fetches) are allowed through — they aren't browser cross-origin
+// requests, so there's nothing for CORS to protect.
+const ALLOWED_ORIGINS = String(process.env.ALLOWED_ORIGINS || APP_ORIGIN || '')
+  .split(',')
+  .map((s) => s.trim().replace(/\/$/, ''))
+  .filter(Boolean)
+app.use(
+  cors({
+    origin(origin, cb) {
+      if (!origin) return cb(null, true)
+      const clean = origin.replace(/\/$/, '')
+      if (ALLOWED_ORIGINS.includes(clean)) return cb(null, true)
+      if (/^https?:\/\/localhost(:\d+)?$/.test(clean)) return cb(null, true)
+      if (/^https?:\/\/127\.0\.0\.1(:\d+)?$/.test(clean)) return cb(null, true)
+      console.warn(`CORS: blocked origin ${clean} (allowed: ${ALLOWED_ORIGINS.join(', ') || 'none'})`)
+      return cb(null, false)
+    },
+    credentials: true,
+  }),
+)
 // JSON-parse everything EXCEPT the Stripe webhook, which must read the raw body
 // to verify the signature. That route registers its own express.raw() parser.
 app.use((req, res, next) => {
@@ -1121,7 +1215,7 @@ Return JSON only:
 - confidence: 0..1 — your genuine certainty that the identification is correct.
 If the candidate is just a personal name or something not in world knowledge, set recognized=false and kind="general".`
 
-app.post('/api/enrich', async (req, res) => {
+app.post('/api/enrich', rateLimit('expensive', { configured: true }), async (req, res) => {
   const { text = '', candidate = '', backend } = req.body || {}
   const key = req.userId || req.body?.clientId
   if (!(await hasAccess(key))) return res.status(402).json(await paywallBody(key))
@@ -1207,7 +1301,7 @@ Guidance:
 - "confidence" is your genuine certainty (0..1).
 Return JSON only.`
 
-app.post('/api/classify', async (req, res) => {
+app.post('/api/classify', rateLimit('cheap', { classified: false }), async (req, res) => {
   const { text = '', localKind = '', localConfidence = 0, backend } = req.body || {}
   const key = req.userId || req.body?.clientId
   if (!(await hasClassifyAccess(key)))
@@ -1288,7 +1382,7 @@ Rules:
 - Keep each question under ~9 words. Friendly, plain language. No preamble.
 Return JSON only.`
 
-app.post('/api/questions', async (req, res) => {
+app.post('/api/questions', rateLimit('cheap', { questions: [] }), async (req, res) => {
   const { text = '', kind = '', topic = '', backend } = req.body || {}
   const key = req.userId || req.body?.clientId
   if (!(await hasClassifyAccess(key)))
@@ -1370,7 +1464,7 @@ matrices, shortlists, and where-to-buy / deal checklists.
 Each suggestion: a short label (2-3 words, Title Case), a single fitting emoji
 icon, and a one-line description of what it does for this note.`
 
-app.post('/api/suggest', async (req, res) => {
+app.post('/api/suggest', rateLimit('cheap', { suggestions: [] }), async (req, res) => {
   const { text = '', backend, context = '' } = req.body || {}
   const key = req.userId || req.body?.clientId
   if (!(await hasAccess(key)))
@@ -1485,7 +1579,7 @@ Examples of recommendations:
 - "weekend in Lisbon" -> heading "Spots to check out"; real neighbourhoods, landmarks, and a signature dish.
 - "learning to cook Thai food" -> heading "Where to start"; real dishes, a classic named cookbook, key pantry ingredients.`
 
-app.post('/api/recommend', async (req, res) => {
+app.post('/api/recommend', rateLimit('expensive', { recommendations: [] }), async (req, res) => {
   const { text = '', backend, context = '' } = req.body || {}
   const key = req.userId || req.body?.clientId
   if (!(await hasAccess(key)))
@@ -1592,7 +1686,7 @@ Styling rules so it blends in seamlessly:
 - Layout: generous spacing (gaps 8-12px), rounded corners, airy. Use flex/grid for tidy alignment.
 - Calm and refined — match a premium, minimal aesthetic. Avoid loud colors, emoji walls, or harsh borders.`
 
-app.post('/api/generate-feature', async (req, res) => {
+app.post('/api/generate-feature', rateLimit('cheap', { configured: true }), async (req, res) => {
   const { label = '', description = '', text = '', backend, context = '' } = req.body || {}
   const key = req.userId || req.body?.clientId
   if (!(await hasAccess(key))) return res.status(402).json(await paywallBody(key))
@@ -2015,6 +2109,14 @@ app.listen(PORT, () => {
         : 'free mode (BILLING_ENABLED=false) — nothing gated'
     }`,
   )
+  console.log(
+    `  Rate limit: ${
+      RATE_EXPENSIVE > 0 || RATE_CHEAP > 0
+        ? `${RATE_EXPENSIVE}/h expensive (enrich, recommend) · ${RATE_CHEAP}/h cheap`
+        : 'OFF — AI routes are uncapped'
+    }`,
+  )
+  console.log(`  CORS: ${ALLOWED_ORIGINS.join(', ') || 'APP_ORIGIN unset — localhost only'}`)
   console.log(
     `  Auth: Supabase JWT ${
       SUPABASE_JWT_SECRET ? 'signature-verified' : 'UNVERIFIED (dev only)'
