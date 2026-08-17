@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Note } from '../types'
 import { useStore } from '../store/appStore'
 import { useInference } from '../ui/useInference'
@@ -15,6 +15,7 @@ import { detectListPattern } from '../engine/patterns'
 import { eventConflicts } from '../store/reconcile'
 import { FeatureGenerator } from '../ui/FeatureGenerator'
 import { KIND_ICONS, MicIcon, StarSixIcon } from '../ui/icons'
+import { TopicWorkspace, topicNoteCount } from './TopicWorkspace'
 
 export function NoteEditor({ note }: { note: Note }) {
   const { state, setText, answer, skip, appendText } = useStore()
@@ -23,6 +24,12 @@ export function NoteEditor({ note }: { note: Note }) {
   useRemoteClassify(note, result)
   useTailoredQuestions(note, result)
   const taRef = useRef<HTMLTextAreaElement>(null)
+  // The topic workspace — everything the app knows about this subject, gathered
+  // across notes. Only offered once a topic actually links more than one note;
+  // for a single note it would just be that note again.
+  const [topicOpen, setTopicOpen] = useState(false)
+  const linkedCount = topicNoteCount(state.notes, result.topic)
+  const canOpenTopic = !!result.topic && linkedCount > 1
 
   // Voice-memo dictation → appended to the note's current text. Runs entirely
   // on-device via the Web Speech API; no cloud involved.
@@ -99,7 +106,18 @@ export function NoteEditor({ note }: { note: Note }) {
                 {/* Lead with the open-ended topic (what it's about); keep the
                     behavioural kind as a quiet suffix. Falls back to the kind
                     label alone when nothing salient has been written yet. */}
-                <span className="ambient-topic">{result.topic || meta.label}</span>
+                {canOpenTopic ? (
+                  <button
+                    className="ambient-topic is-linked"
+                    onClick={() => setTopicOpen(true)}
+                    title={`See everything about ${result.topic} (${linkedCount} notes)`}
+                  >
+                    {result.topic}
+                    <span className="ambient-linked">{linkedCount}</span>
+                  </button>
+                ) : (
+                  <span className="ambient-topic">{result.topic || meta.label}</span>
+                )}
                 {result.topic && <span className="ambient-kind">{meta.label}</span>}
                 <span className="conf">
                   {Math.round(result.confidence * 100)}%
@@ -177,6 +195,10 @@ export function NoteEditor({ note }: { note: Note }) {
             />
           ))}
         </div>
+      )}
+
+      {topicOpen && result.topic && (
+        <TopicWorkspace topic={result.topic} onClose={() => setTopicOpen(false)} />
       )}
 
       {note.text.trim().length >= 3 && (

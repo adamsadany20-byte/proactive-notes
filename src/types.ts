@@ -257,6 +257,27 @@ export interface DocLink {
   blank?: boolean
 }
 
+// ---- Generated apps ---------------------------------------------------------
+
+// A tool the AI wrote for this note. Persisted on the note (localStorage +
+// the whole-note Supabase row) so it survives a reload and follows the user
+// across devices — previously these lived in component state and evaporated,
+// which meant paying for a bespoke tool and losing it on refresh.
+//
+// `data` is the state the user has entered INTO the tool (ticks, rows, values),
+// so persisting it is what makes a generated app feel like a real feature rather
+// than a demo. `loading` is deliberately NOT stored — it's transient UI.
+export interface GeneratedApp {
+  id: string
+  label: string
+  icon: string
+  description: string
+  code?: string
+  data?: any
+  error?: string
+  createdAt: number
+}
+
 // ---- Notes ------------------------------------------------------------------
 
 export interface Note {
@@ -286,6 +307,9 @@ export interface Note {
   // True once the user has declined the "start a streak?" offer for this goal,
   // so we stop asking (they can still opt in from the tracker later).
   streakDeclined?: boolean
+  // Tools the AI has generated for this note (see GeneratedApp). Persisted, so
+  // they and the data entered into them survive reloads and sync across devices.
+  apps?: GeneratedApp[]
   // Google Docs/Sheets/Slides the app has created for this note (see DocLink).
   docs?: DocLink[]
   // Doc types the user has dismissed the "start a doc?" offer for, so we stop

@@ -14,25 +14,19 @@ import {
   type Recommendation,
   type ActionRec,
 } from '../services/api'
-import type { Note } from '../types'
+import type { GeneratedApp, Note } from '../types'
 
-interface GeneratedFeature {
-  id: string
-  label: string
-  icon: string
-  description: string
-  code?: string
-  data?: any
-  loading?: boolean
-  error?: string
-}
+// Generated tools are persisted on the note now — this is just an alias so the
+// component's local naming stays readable. `loading` isn't part of it: whether a
+// tool is mid-build is transient UI state, tracked in `building`.
+type GeneratedFeature = GeneratedApp
 
 interface Props {
   note: Note
 }
 
 export function FeatureGenerator({ note }: Props) {
-  const { state, setBackend } = useStore()
+  const { state, setBackend, saveApp, updateApp, removeApp } = useStore()
   const backend = state.settings.aiBackend
   // Always points at the latest note so debounced effects read the current
   // answers when they fire, without re-subscribing on every keystroke/answer.
@@ -59,7 +53,18 @@ export function FeatureGenerator({ note }: Props) {
   const [suggesting, setSuggesting] = useState(false)
   const [suggestError, setSuggestError] = useState<string | null>(null)
   const [request, setRequest] = useState('')
-  const [generated, setGenerated] = useState<GeneratedFeature[]>([])
+  // Generated tools live ON THE NOTE so they (and the data the user enters into
+  // them) survive a reload and sync across devices. `building` is the only
+  // transient bit — which ids are mid-generation right now.
+  const generated: GeneratedFeature[] = note.apps ?? []
+  const [building, setBuilding] = useState<Set<string>>(new Set())
+  const markBuilding = (id: string, on: boolean) =>
+    setBuilding((prev) => {
+      const next = new Set(prev)
+      if (on) next.add(id)
+      else next.delete(id)
+      return next
+    })
   // Which suggestion chips are picked (by label — the prompt returns distinct
   // labels). Lets the user queue several tools and build them in one go rather
   // than one click at a time.
@@ -172,10 +177,9 @@ export function FeatureGenerator({ note }: Props) {
     track('tool_built', { label })
     // Random suffix so building several tools in the same tick can't collide.
     const id = `${label}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
-    setGenerated((prev) => [
-      ...prev,
-      { id, label, icon, description, loading: true },
-    ])
+    const noteId = note.id
+    saveApp(noteId, { id, label, icon, description, createdAt: Date.now() })
+    markBuilding(id, true)
 
     try {
       const { code, error } = await generateCustomFeature(
@@ -186,26 +190,18 @@ export function FeatureGenerator({ note }: Props) {
         collectNoteContext(note)
       )
       if (error || !code) throw new Error(error || 'Empty response')
-      setGenerated((prev) =>
-        prev.map((f) => (f.id === id ? { ...f, code, loading: false } : f))
-      )
+      updateApp(noteId, id, { code, error: undefined })
     } catch (err) {
-      setGenerated((prev) =>
-        prev.map((f) =>
-          f.id === id ? { ...f, error: String(err), loading: false } : f
-        )
-      )
+      updateApp(noteId, id, { error: String(err) })
+    } finally {
+      markBuilding(id, false)
     }
   }
 
   const handleRegenerate = async (feature: GeneratedFeature) => {
-    setGenerated((prev) =>
-      prev.map((f) =>
-        f.id === feature.id
-          ? { ...f, loading: true, error: undefined, code: undefined }
-          : f
-      )
-    )
+    const noteId = note.id
+    updateApp(noteId, feature.id, { error: undefined, code: undefined })
+    markBuilding(feature.id, true)
     try {
       const { code, error } = await generateCustomFeature(
         feature.label,
@@ -215,19 +211,11 @@ export function FeatureGenerator({ note }: Props) {
         collectNoteContext(note)
       )
       if (error || !code) throw new Error(error || 'Empty response')
-      setGenerated((prev) =>
-        prev.map((f) =>
-          f.id === feature.id ? { ...f, code, loading: false } : f
-        )
-      )
+      updateApp(noteId, feature.id, { code, error: undefined })
     } catch (err) {
-      setGenerated((prev) =>
-        prev.map((f) =>
-          f.id === feature.id
-            ? { ...f, error: String(err), loading: false }
-            : f
-        )
-      )
+      updateApp(noteId, feature.id, { error: String(err) })
+    } finally {
+      markBuilding(feature.id, false)
     }
   }
 
@@ -239,13 +227,13 @@ export function FeatureGenerator({ note }: Props) {
   }
 
   const handleRemove = (id: string) => {
-    setGenerated((prev) => prev.filter((f) => f.id !== id))
+    removeApp(note.id, id)
   }
 
+  // The state the user has entered INTO a generated tool. Persisting this is
+  // what makes it a real feature rather than a demo that resets on reload.
   const handleDataChange = (id: string, newData: any) => {
-    setGenerated((prev) =>
-      prev.map((f) => (f.id === id ? { ...f, data: newData } : f))
-    )
+    updateApp(note.id, id, { data: newData })
   }
 
   if (aiOn && locked) {
@@ -500,7 +488,7 @@ export function FeatureGenerator({ note }: Props) {
                   {feature.label}
                 </span>
                 <span className="gen-card-actions">
-                  {!feature.loading && (
+                  {!building.has(feature.id) && (
                     <button
                       className="gen-act"
                       onClick={() => handleRegenerate(feature)}
@@ -517,7 +505,7 @@ export function FeatureGenerator({ note }: Props) {
                 </span>
               </div>
 
-              {feature.loading && (
+              {building.has(feature.id) && (
                 <div className="gen-loading">
                   <span className="gen-spinner" />
                   Crafting {feature.label.toLowerCase()}…
@@ -536,13 +524,7 @@ export function FeatureGenerator({ note }: Props) {
                     code={feature.code}
                     data={feature.data}
                     onChange={(data) => handleDataChange(feature.id, data)}
-                    onError={(error) => {
-                      setGenerated((prev) =>
-                        prev.map((f) =>
-                          f.id === feature.id ? { ...f, error } : f
-                        )
-                      )
-                    }}
+                    onError={(error) => updateApp(note.id, feature.id, { error })}
                   />
                 </div>
               )}

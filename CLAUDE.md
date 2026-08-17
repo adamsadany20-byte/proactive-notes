@@ -35,6 +35,46 @@ migration has been applied, and the webhook must subscribe to
 
 ## Recent Work (Jul 2026)
 
+### Generated apps persist + the topic workspace
+
+Three changes that turn generated tools from a demo into a feature, and finally
+cash in the `topic` layer.
+
+**1. Generated apps are persisted on the note** (`Note.apps: GeneratedApp[]`).
+They lived in `useState` in [FeatureGenerator.tsx](src/ui/FeatureGenerator.tsx),
+so a bespoke tool the user paid Claude to write evaporated on reload. They now go
+through the store (`saveApp`/`updateApp`/`removeApp`), which means localStorage +
+the whole-note Supabase row — so they follow the user across devices. Crucially
+`data` (the state entered INTO the tool — ticks, rows, values) persists too;
+that's what makes it feel like a real feature. `loading` is deliberately NOT
+stored — it's transient UI, tracked in a local `building` Set. Capped at
+`MAX_APPS_PER_NOTE` (12) because generated code is a few KB each and localStorage
+has a quota.
+
+**2. The generator now sees what the app already knows.**
+`collectNoteContext()` only ever sent the user's *answers*, which is why tools
+came out generic — the model never saw the classification, the extracted
+entities, or what was already on screen. It now also sends the topic + kind, the
+deterministic entities (date, duration, people, places, amounts, priority), a
+summary of the filled segments, and the labels of tools already built, under a
+heading telling the model to **complement, not rebuild**. The server prompt
+gained a "Depth" block: seed 8–15 real items not 3 placeholders, give it totals /
+grouping / progress, handle empty and full states. Input tokens are cheap on
+Haiku, so this costs ~nothing per call.
+
+**3. `/topic` workspace** — [TopicWorkspace.tsx](src/components/TopicWorkspace.tsx).
+`Note.topic` was decorative (a chip, a sidebar label, search matching). Now, when
+a topic links **more than one** note, the editor chip becomes a button opening a
+sheet with everything about that subject: every note, their merged calendar in
+date order, every open checklist item (tickable in place, writing back through
+`editSegment`), and every generated tool **rendered live** and interactive. One
+note = no button, since that would just be the note again.
+
+Verified in-browser with seeded data: 3 notes sharing "Oman" → chip reads "See
+everything about Oman (3 notes)"; the sheet merges 2 calendar events, 2 open
+items and 1 tool; clicking inside the persisted tool updates it, writes through
+to localStorage, and the value survives a full reload.
+
 ### Payment overhaul: ONE pricing model (no beta rate, no legacy credit)
 
 The dual-rate "beta pricing" system is **gone**. There is now exactly one rate,

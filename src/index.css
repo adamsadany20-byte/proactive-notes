@@ -1785,6 +1785,38 @@ button:not(:disabled):active {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* When a topic links several notes, the chip becomes a way in to the topic
+   workspace — carrying the count so the link is discoverable, not hidden. */
+button.ambient-topic.is-linked {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 0;
+  padding: 0;
+  background: none;
+  font: inherit;
+  font-weight: 700;
+  color: inherit;
+  cursor: pointer;
+  border-bottom: 1px dashed currentColor;
+}
+button.ambient-topic.is-linked:hover {
+  opacity: 0.75;
+}
+.ambient-linked {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 18%, transparent);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}
+
 /* The behavioural kind, demoted to a quiet suffix behind a middot when an
    open-ended topic is leading. */
 .ambient-kind {
@@ -6784,4 +6816,192 @@ input {
   .beta-meter-fill {
     transition: none;
   }
+}
+
+/* ---- Topic workspace ------------------------------------------------------ */
+
+/* Everything about one subject, gathered across notes. Wider than the settings
+   sheet because it renders live generated tools, not just controls. */
+.topic-sheet {
+  width: min(560px, 100vw);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border-left: 1px solid var(--line);
+  box-shadow: -18px 0 48px -20px color-mix(in srgb, var(--ink) 55%, transparent);
+  padding-top: env(safe-area-inset-top, 0px);
+  animation: sheet-in 0.36s cubic-bezier(0.2, 0.85, 0.25, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .topic-sheet {
+    animation: none;
+  }
+}
+.topic-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.topic-name {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 19px;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.topic-count {
+  font-size: 12px;
+  color: var(--ink-faint);
+}
+.topic-body {
+  padding-bottom: calc(28px + env(safe-area-inset-bottom, 0px));
+}
+.topic-sec {
+  margin-bottom: 26px;
+}
+.topic-sec-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--ink);
+  margin: 0 0 10px;
+}
+.topic-badge {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  font-family: var(--ui, inherit);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.topic-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.topic-note {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm, 10px);
+  background: var(--panel-2, transparent);
+  cursor: pointer;
+  font: inherit;
+  transition: background 0.15s ease;
+}
+.topic-note:hover {
+  background: var(--accent-soft);
+}
+.topic-note-title {
+  font-size: 13.5px;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.topic-note-kind {
+  flex: none;
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.topic-events,
+.topic-open {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.topic-event {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 7px 10px;
+  border-left: 2px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+  border-radius: 0 8px 8px 0;
+  font-size: 13px;
+}
+.topic-event.is-past {
+  opacity: 0.5;
+}
+.topic-event.is-done .topic-event-title {
+  text-decoration: line-through;
+}
+.topic-event-date {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+.topic-event-title {
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.topic-tick {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  text-align: left;
+  padding: 7px 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  cursor: pointer;
+}
+.topic-tick:hover {
+  border-color: var(--accent);
+}
+.topic-box {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid var(--ink-faint);
+  border-radius: 4px;
+}
+
+.topic-app {
+  border: 1px solid var(--line);
+  border-radius: var(--radius, 14px);
+  padding: 12px;
+  margin-bottom: 12px;
+  background: var(--panel-2, transparent);
+}
+.topic-app-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--display);
+  font-weight: 650;
+  font-size: 13.5px;
+  color: var(--ink);
+  margin-bottom: 10px;
+}
+.topic-empty {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--ink-faint);
 }

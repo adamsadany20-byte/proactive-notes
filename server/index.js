@@ -1637,6 +1637,20 @@ Technical requirements (hard):
 - Bake in REAL, relevant initial data derived from the user's note (never leave it empty).
 - Make it genuinely interactive (inputs, toggles, add/remove, edit) where it makes sense.
 
+Depth — build the REAL thing, not a sketch of it. A tool with three empty rows is
+worse than no tool:
+- Seed it substantially. If it's a list, open with 8-15 genuinely relevant items,
+  not 3 placeholders. If it's a planner, lay out every day/step the note implies.
+  If it's a tracker, include the fields that actually matter for THIS subject.
+- Give it structure a real app would have: totals, counts, progress, grouping by
+  category, sensible ordering, a summary line — whatever suits the job. Prefer one
+  well-organised tool with clear sections over a bare list.
+- Handle the empty and the full state: adding, removing and editing should all
+  work, and the layout should still look right with one item or twenty.
+- If the context below lists what's already on screen, build something that ADDS to
+  it. Don't ship another checklist when a checklist is already there — go deeper on
+  the part that isn't covered.
+
 Use everything you're told, and add what you know (this is what makes the tool
 feel built FOR them):
 - If the note comes with details the user has answered (dates, a destination, a
